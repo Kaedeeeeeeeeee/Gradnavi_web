@@ -13,7 +13,9 @@ import { getChatModel } from "@/lib/ai/model";
 import { buildSystemPrompt } from "@/lib/ai/prompt";
 import { buildTools } from "@/lib/ai/tools";
 import { auth } from "@/lib/auth";
+import { UsageMeter } from "@/lib/credits";
 import { getOrCreateConversation, loadMessages, saveMessages } from "@/server/conversations";
+import { getBalance, InsufficientCreditsError, recordUsageSafe } from "@/server/credits";
 import { getUserMd } from "@/server/profile";
 
 export const maxDuration = 60;
@@ -39,7 +41,21 @@ export async function POST(req: Request) {
   const conversation = await getOrCreateConversation(userId, conversationId);
   if (!conversation) return new Response("无权访问该对话", { status: 403 });
 
-  const tools = buildTools({ userId, conversationId });
+  if ((await getBalance(userId)) <= 0) return new Response(new InsufficientCreditsError().message, { status: 402 });
+
+  // 本轮所有模型步骤 + 工具里的检索/抓取都记在 meter 上，结束（或中断）时扣 credit。
+  // settle 可多次调用，每次只结算新增部分；串成一条链避免并发重复记账。
+  const meter = new UsageMeter();
+  let settling: Promise<void> = Promise.resolve();
+  const settle = () => {
+    settling = settling.then(async () => {
+      await recordUsageSafe({ userId, feature: "chat", meter, refId: conversationId });
+    });
+    return settling;
+  };
+  req.signal.addEventListener("abort", () => void settle(), { once: true });
+
+  const tools = buildTools({ userId, conversationId, meter });
   // 只接受用户发来的新消息，历史一律从数据库读，避免客户端伪造 AI 的发言或工具结果
   const userMessage: UIMessage = { id: message.id, role: "user", parts: message.parts.filter((p) => p.type === "text") };
   const history = await loadMessages(conversationId);
@@ -52,6 +68,10 @@ export async function POST(req: Request) {
     messages: await convertToModelMessages(messages.slice(-HISTORY_LIMIT), { tools }),
     tools,
     stopWhen: isStepCount(6),
+    onStepEnd: (step) => meter.addTokens(step.usage),
+    onEnd: () => settle(),
+    onAbort: () => settle(),
+    onError: () => void settle(),
   });
 
   return createUIMessageStreamResponse({
@@ -63,6 +83,8 @@ export async function POST(req: Request) {
       onEnd: async ({ messages: all }) => {
         // 只写入本轮新增/变化的消息
         await saveMessages(conversationId, all.slice(history.length));
+        // 等扣费写完再结束响应，侧边栏随后取到的余额就是最新的
+        await settle();
       },
       onError: (error) => {
         console.error("[chat]", error);

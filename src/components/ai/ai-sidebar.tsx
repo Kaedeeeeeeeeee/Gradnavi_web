@@ -41,12 +41,14 @@ type Props = {
   initialConversationId: string | null;
   initialMessages: UIMessage[];
   demo: boolean;
+  initialBalance: number;
 };
 
-export function AiSidebar({ initialConversationId, initialMessages, demo }: Props) {
+export function AiSidebar({ initialConversationId, initialMessages, demo, initialBalance }: Props) {
   const open = useSyncExternalStore(subscribeOpen, readOpen, () => true);
   const [conversationId, setConversationId] = useState(() => initialConversationId ?? uuid());
   const [input, setInput] = useState("");
+  const [balance, setBalance] = useState(initialBalance);
   const router = useRouter();
   const pathname = usePathname();
   const pageStore = usePageStore();
@@ -70,11 +72,23 @@ export function AiSidebar({ initialConversationId, initialMessages, demo }: Prop
     [pageStore],
   );
 
+  // 每轮结束后取一次余额（扣费在服务器端，流结束后才结算）
+  const refreshBalance = () => {
+    fetch("/api/credits")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { balance?: number } | null) => {
+        if (typeof d?.balance === "number") setBalance(d.balance);
+      })
+      .catch(() => {});
+  };
+
   const { messages, sendMessage, status, stop, error } = useChat({
     id: conversationId,
     messages: conversationId === initialConversationId ? initialMessages : [],
     transport,
+    onError: () => refreshBalance(),
     onFinish: ({ message }) => {
+      refreshBalance();
       // AI 改了数据（user.md、Todo 等）后刷新页面，让用户马上看到
       const mutated = message.parts.some((p) => isToolUIPart(p) && TOOL_META[getToolName(p)]?.mutates);
       if (mutated) router.refresh();
@@ -133,7 +147,12 @@ export function AiSidebar({ initialConversationId, initialMessages, demo }: Prop
   return (
     <aside className="fixed inset-0 z-30 flex flex-col border-zinc-200 bg-background md:sticky md:top-0 md:inset-auto md:h-dvh md:w-96 md:shrink-0 md:border-l dark:border-zinc-800">
       <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <span className="font-medium">AI 助手{demo && <span className="ml-2 text-xs text-amber-600">演示模式</span>}</span>
+        <span className="font-medium">
+          AI 助手{demo && <span className="ml-2 text-xs text-amber-600">演示模式</span>}
+          <Link href="/credits" className={`ml-2 text-xs font-normal tabular-nums ${balance <= 0 ? "text-red-600" : "text-zinc-500"}`}>
+            余额 {balance.toLocaleString()}
+          </Link>
+        </span>
         <div className="flex gap-3 text-sm text-zinc-500">
           <button
             className="hover:text-foreground disabled:opacity-40"

@@ -19,9 +19,9 @@ export const searchProfessorsTool = defineTool({
     schools: z.array(z.string().min(1).max(50)).max(MAX_SCHOOLS).default([]).describe("目标大学名，日文，如 東京大学"),
     field: z.enum(["humanities", "sciences"]).optional(),
   }),
-  execute: async ({ keywords, schools, field }, { userId }) => {
+  execute: async ({ keywords, schools, field }, { userId, meter }) => {
     const f = field ?? (await getProfile(userId))?.onboarding?.field;
-    return searchProfessors({ keywords, schools, field: f });
+    return searchProfessors({ keywords, schools, field: f }, meter);
   },
 });
 
@@ -92,14 +92,14 @@ export const webSearchTool = defineTool({
   description:
     "联网检索。用于查教授近期论文、研究室主页、募集要项等事实信息，优先权威来源（大学官网、researchmap、KAKEN、CiNii）。支持 site: 语法。回答时附上来源链接。",
   inputSchema: z.object({ query: z.string().min(1).max(200), count: z.number().int().min(1).max(10).default(6) }),
-  execute: async ({ query, count }) => webSearch(query, count),
+  execute: async ({ query, count }, { meter }) => webSearch(query, count, meter),
 });
 
 export const fetchPageTool = defineTool({
   name: "fetch_page",
   description: "读取一个网页的正文（如教授的研究室主页、researchmap 页面、论文摘要页）。",
   inputSchema: z.object({ url: z.string().url().max(500) }),
-  execute: async ({ url }) => fetchPage(url),
+  execute: async ({ url }, { meter }) => fetchPage(url, meter),
 });
 
 export const PROFESSOR_TOOLS = [

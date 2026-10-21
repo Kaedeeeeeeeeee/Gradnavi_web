@@ -3,6 +3,7 @@ import { tool, type ToolSet } from "ai";
 import type { z } from "zod";
 import { db } from "@/db";
 import { aiToolCall } from "@/db/schema";
+import type { UsageMeter } from "@/lib/credits";
 
 // AI 工具注册表。
 // 每个工具只是一层薄包装：真正的读写逻辑放在 src/server/*，页面上的用户操作也调用同一套函数，
@@ -14,6 +15,8 @@ import { aiToolCall } from "@/db/schema";
 export type ToolContext = {
   userId: string;
   conversationId: string;
+  /** 本轮对话的用量累加器：会花钱的工具（检索、抓取、找教授）把用量记在这里，对话结束时一起扣 credit */
+  meter: UsageMeter;
 };
 
 export type AiToolDef<I = unknown, O = unknown> = {

@@ -8,9 +8,10 @@ import type { LanguageModelV4, LanguageModelV4Prompt, LanguageModelV4StreamPart 
 //   “日程：2026-12-01 xxx” → 调用 add_calendar_event
 //   其他 → 固定回复
 
+// 报一个假用量，方便在演示模式下测试 credit 扣费（每步约 1 credit）
 const usage = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: undefined, cacheWrite: undefined },
-  outputTokens: { total: 0, text: 0, reasoning: undefined },
+  inputTokens: { total: 1200, noCache: 1000, cacheRead: 200, cacheWrite: undefined },
+  outputTokens: { total: 80, text: 80, reasoning: undefined },
 };
 
 type Reply = { text: string } | { toolName: string; input: unknown };
