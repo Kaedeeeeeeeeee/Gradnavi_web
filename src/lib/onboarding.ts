@@ -1,6 +1,8 @@
 // 引导问卷：问题定义 + 由答案生成初版 user.md 和路线图（纯函数，前后端共用）
 
 export type Field = "humanities" | "sciences";
+/** 问卷里的学科选择：other = 用户自己填了更具体的领域（存在 fieldDetail） */
+export type FieldChoice = Field | "other";
 export type PathChoice = "kenkyusei" | "master" | "doctor" | "unsure";
 export type PlanStatus = "none" | "rough" | "clear";
 /** A = 方向未定，先找教授；B = 已有明确计划，先打磨计划书 */
@@ -11,7 +13,9 @@ export type OnboardingAnswers = {
   education: string;
   major: string;
   gpa: string;
-  field: Field;
+  field: FieldChoice;
+  /** field 选 other 时用户填写的具体领域；旧数据没有这个字段 */
+  fieldDetail?: string;
   path: PathChoice;
   planStatus: PlanStatus;
   direction: string;
@@ -23,14 +27,25 @@ export type OnboardingAnswers = {
 };
 
 type Option = { value: string; label: string; hint?: string };
+type AnswerKey = keyof OnboardingAnswers;
 
 export type Question = {
-  key: keyof OnboardingAnswers;
+  key: AnswerKey;
   title: string;
   hint?: string;
   optional?: boolean;
   placeholder?: string;
-} & ({ kind: "choice"; options: Option[] } | { kind: "text"; multiline?: boolean });
+  /** 文本题为空时，用另一题的回答预填 */
+  prefillFrom?: AnswerKey;
+} & (
+  | {
+      kind: "choice";
+      options: Option[];
+      /** 附加的“自己填写”选项：选中后 key 记为 value，内容存到 detailKey；没有 detailKey 时内容直接存到 key */
+      other?: { value?: string; label: string; detailKey?: AnswerKey; placeholder?: string };
+    }
+  | { kind: "text"; multiline?: boolean }
+);
 
 export const PATH_LABELS: Record<PathChoice, string> = {
   kenkyusei: "先读研究生，再考修士",
@@ -44,13 +59,23 @@ export const TRACK_LABELS: Record<Track, string> = {
   plan_first: "先打磨计划书，再按计划匹配教授",
 };
 
-/** 生成未来几个入学季供选择（日本大学院主要是 4 月和 10 月入学） */
+const ENTRY_COUNT = 4;
+/** 离入学不到这么多个月时，多数研究科的出愿已截止或临近 */
+const TIGHT_MONTHS = 8;
+
+/** 按当前日期生成接下来几个入学季（日本大学院主要是 4 月和 10 月入学） */
 export function entryOptions(now = new Date()): Option[] {
   const options: Option[] = [];
-  const year = now.getFullYear();
-  for (let y = year; y <= year + 2; y++) {
+  for (let y = now.getFullYear(); options.length < ENTRY_COUNT; y++) {
     for (const m of [4, 10]) {
-      if (new Date(y, m - 1, 1) > now) options.push({ value: `${y}年${m}月`, label: `${y} 年 ${m} 月入学` });
+      const start = new Date(y, m - 1, 1);
+      if (start <= now || options.length >= ENTRY_COUNT) continue;
+      const months = (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth());
+      options.push({
+        value: `${y}年${m}月`,
+        label: `${y} 年 ${m} 月入学`,
+        hint: months < TIGHT_MONTHS ? "时间较紧：多数研究科的出愿已截止或临近，适合已在准备的人" : undefined,
+      });
     }
   }
   options.push({ value: "未定", label: "还没想好" });
@@ -68,7 +93,7 @@ export function onboardingQuestions(now = new Date()): Question[] {
         { value: "国内本科已毕业", label: "国内本科已毕业（工作或备考中）" },
         { value: "国内硕士在读或已毕业", label: "国内硕士在读或已毕业" },
         { value: "日本语言学校在读", label: "在日本读语言学校" },
-        { value: "日本研究生在读", label: "在日本当研究生（研究生）" },
+        { value: "日本研究生在读", label: "在日本当研究生（旁听生，非正式学籍）" },
         { value: "其他", label: "其他" },
       ],
     },
@@ -89,6 +114,12 @@ export function onboardingQuestions(now = new Date()): Question[] {
         { value: "humanities", label: "文科（含社科、经济、教育等）" },
         { value: "sciences", label: "理科（含工学、农学、医学等）" },
       ],
+      other: {
+        value: "other",
+        label: "其他 / 我已经有具体方向（自己填写）",
+        detailKey: "fieldDetail",
+        placeholder: "例如：认知语言学 / 半导体材料 / 文化遗产保护",
+      },
     },
     {
       key: "path",
@@ -118,14 +149,47 @@ export function onboardingQuestions(now = new Date()): Question[] {
       kind: "text",
       multiline: true,
       optional: true,
+      prefillFrom: "fieldDetail",
       placeholder: "想到什么写什么，例如：中日对比语言学 / 图像识别在农业中的应用",
     },
     { key: "targetSchools", title: "有心仪的学校吗？", kind: "text", optional: true, placeholder: "例如：东京大学、早稻田大学；没有可以跳过" },
     { key: "japanese", title: "日语水平？", kind: "text", placeholder: "例如：JLPT N1 135 分 / N2 在备考 / 零基础" },
     { key: "english", title: "英语成绩？", kind: "text", optional: true, placeholder: "例如：TOEFL 85 / TOEIC 750 / 六级 520" },
-    { key: "targetEntry", title: "希望什么时候入学？", kind: "choice", options: entryOptions(now) },
+    {
+      key: "targetEntry",
+      title: "希望什么时候入学？",
+      kind: "choice",
+      options: entryOptions(now),
+      other: { label: "更晚 / 其他（自己填写）", placeholder: "例如：2029 年 4 月 / 先读研究生，大约 3 年后" },
+    },
     { key: "notes", title: "还有什么想让 AI 知道的？", kind: "text", multiline: true, optional: true, placeholder: "例如：预算有限、想去关西、希望读完留日工作……" },
   ];
+}
+
+const SCIENCE_HINT =
+  /理科|理工|工学|工程|理学|农|医|药|看护|护理|兽医|数学|物理|化学|生物|生命|地球|天文|环境科学|材料|机械|电气|电子|电机|通信|半导体|信息|情报|计算机|软件|算法|人工智能|AI|机器学习|深度学习|强化学习|数据科学|统计|建筑|土木|能源|航空|机器人|控制|食品科学|海洋/i;
+const HUMANITIES_HINT =
+  /文科|文学|语言|日语|汉语|翻译|历史|哲学|宗教|艺术|美术|音乐|设计|传媒|新闻|社会|心理|教育|法学|法律|政治|国际关系|经济|经营|管理|商学|会计|金融|市场|观光|旅游|文化|人类学|考古|地理|公共政策|福祉/;
+
+/** 从用户自填的领域粗略判断文理；判断不了返回 undefined，交给 AI 结合上下文判断 */
+export function guessField(detail: string): Field | undefined {
+  const sci = SCIENCE_HINT.test(detail);
+  const hum = HUMANITIES_HINT.test(detail);
+  if (sci === hum) return undefined;
+  return sci ? "sciences" : "humanities";
+}
+
+/** 问卷答案对应的文理（用于模板、检索等需要二选一的地方）；不确定时返回 undefined */
+export function answerField(a: Pick<OnboardingAnswers, "field" | "fieldDetail"> | null | undefined): Field | undefined {
+  if (!a) return undefined;
+  return a.field === "other" ? guessField(a.fieldDetail ?? "") : a.field;
+}
+
+function fieldLabel(a: OnboardingAnswers) {
+  if (a.field !== "other") return a.field === "humanities" ? "文科" : "理科";
+  const f = answerField(a);
+  const detail = a.fieldDetail?.trim() || "（未填）";
+  return f ? `${detail}（偏${f === "humanities" ? "文科" : "理科"}）` : detail;
 }
 
 export function decideTrack(a: Pick<OnboardingAnswers, "planStatus">): Track {
@@ -145,7 +209,7 @@ function hasEnglishScore(english: string) {
 export function suggestPath(a: OnboardingAnswers): Exclude<PathChoice, "unsure"> {
   if (a.status.includes("硕士")) return "doctor";
   if (a.status === "日本研究生在读") return "master";
-  if (a.field === "humanities" && !hasStrongJapanese(a.japanese)) return "kenkyusei";
+  if (answerField(a) === "humanities" && !hasStrongJapanese(a.japanese)) return "kenkyusei";
   return "master";
 }
 
@@ -179,7 +243,7 @@ export function buildRoadmap(a: OnboardingAnswers): RoadmapItem[] {
     );
   }
 
-  if (path === "kenkyusei") items.push({ title: "查目标大学研究生（研究生）的出愿时间和材料要求" });
+  if (path === "kenkyusei") items.push({ title: "查目标大学研究生（旁听生）的出愿时间和材料要求" });
   if (path === "master") items.push({ title: "查目标研究科修士课程的募集要项（出愿期、考试科目）" });
   if (path === "doctor") {
     items.push(
@@ -191,7 +255,7 @@ export function buildRoadmap(a: OnboardingAnswers): RoadmapItem[] {
   if (!hasStrongJapanese(a.japanese)) {
     items.push({ title: "制定日语学习计划，目标 JLPT N2 以上", note: "文科多数研究科要求 N1 或同等水平" });
   }
-  if (a.field === "sciences" && !hasEnglishScore(a.english)) {
+  if (answerField(a) === "sciences" && !hasEnglishScore(a.english)) {
     items.push({ title: "准备 TOEFL 或 TOEIC", note: "理科很多研究科用英语成绩代替英语笔试" });
   }
 
@@ -212,7 +276,7 @@ export function buildUserMd(a: OnboardingAnswers): string {
     line("学历", a.education),
     line("专业", a.major),
     line("GPA", a.gpa),
-    line("学科", a.field === "humanities" ? "文科" : "理科"),
+    line("学科", fieldLabel(a)),
     "",
     "## 语言成绩",
     line("日语", a.japanese),

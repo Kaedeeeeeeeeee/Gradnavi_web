@@ -11,6 +11,7 @@ import {
   updateDocumentSection,
 } from "@/server/documents";
 import { professorToTarget } from "@/lib/professors";
+import { answerField } from "@/lib/onboarding";
 import { getProfile } from "@/server/profile";
 import { getSavedProfessor } from "@/server/professors";
 import { defineTool } from "./registry";
@@ -78,7 +79,7 @@ export const createDocumentTool = defineTool({
   }),
   execute: async ({ kind, title, markdown, targetProfessor: manual, professorId }, { userId }) => {
     const targetProfessor = await resolveTarget(userId, professorId, manual);
-    const field = (await getProfile(userId))?.onboarding?.field;
+    const field = answerField((await getProfile(userId))?.onboarding);
     const template = docTemplate(kind as DocKind, field);
     const doc = await createDocument(userId, {
       kind,

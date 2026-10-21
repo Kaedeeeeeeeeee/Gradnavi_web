@@ -9,6 +9,7 @@ import { letterSkeleton, MAX_SCHOOLS, PROFESSOR_STATUSES, professorToTarget, typ
 import { requireUser } from "@/lib/session";
 import { assertCanSpend, recordUsageSafe } from "@/server/credits";
 import { createDocument } from "@/server/documents";
+import { answerField } from "@/lib/onboarding";
 import { getProfile } from "@/server/profile";
 import { searchProfessors, type ProfessorSearchResult } from "@/server/professor-search";
 import { deleteSavedProfessor, getSavedProfessor, saveProfessor, updateSavedProfessor } from "@/server/professors";
@@ -104,7 +105,7 @@ export async function createLetterAction(professorId: string) {
 export async function createPlanAction(professorId: string) {
   const user = await requireUser();
   const p = await professorOrThrow(user.id, professorId);
-  const template = docTemplate("plan", (await getProfile(user.id))?.onboarding?.field);
+  const template = docTemplate("plan", answerField((await getProfile(user.id))?.onboarding));
   const doc = await createDocument(user.id, {
     kind: "plan",
     title: `研究计划书 · ${p.name}`,
