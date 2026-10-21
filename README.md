@@ -14,10 +14,11 @@ npm run dev            # http://localhost:3000
 ```
 
 - 未配置 `SMTP_URL` 时，登录验证码会打印在 `npm run dev` 的终端里。
+- 未配置 `DEEPSEEK_API_KEY` 时，AI 侧边栏使用演示模型（固定回复，不花钱）：发送「记住：……」会写入 user.md，「待办：……」会添加 Todo，用来测试工具调用链路。
 - 服务启动时会自动执行数据库迁移。
 - 改了 `src/db/schema.ts` 之后运行 `npm run db:generate` 生成迁移文件并提交（CI 会检查）。
 
-常用命令：`npm run lint`、`npm run typecheck`、`npm run build`、`npm run db:studio`。
+常用命令：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`、`npm run db:studio`。
 
 ## 部署
 
@@ -37,13 +38,23 @@ npm run dev            # http://localhost:3000
 
 生产环境必须配置 `SMTP_URL`，否则无法发送验证码。
 
+## AI 工具
+
+用户能做的事 AI 也能做：读写逻辑都在 `src/server/`，页面的 server action 和 AI 工具调用同一套函数。
+新增工具：在 `src/lib/ai/tools/` 用 `defineTool` 定义 → 加进 `tools/index.ts` 的 `ALL_TOOLS` → 在 `src/lib/ai/tool-meta.ts` 登记中文名。
+每次工具调用都记录在 `ai_tool_call` 表。
+
 ## 目录
 
 ```
 src/app/            页面与 API（(app)/ 下为登录后页面）
 src/app/api/auth/   Better Auth 接口
 src/db/             Drizzle schema、连接、启动迁移
-src/lib/            认证、邮件、环境变量
+src/app/api/chat/   AI 对话接口（流式输出 + 工具调用 + 对话持久化）
+src/components/ai/  AI 侧边栏
+src/lib/ai/         模型配置、系统提示、工具注册表（tools/）
+src/lib/            认证、邮件、环境变量、引导问卷与路线图规则
+src/server/         数据读写（user.md、Todo、对话），页面操作和 AI 工具共用
 src/proxy.ts        未登录访问工作台时跳转登录页
 drizzle/            SQL 迁移文件
 deploy/             生产 docker compose 与 Caddyfile

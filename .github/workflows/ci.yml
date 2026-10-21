@@ -17,6 +17,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm test
       - name: 检查数据库迁移是否与 schema 同步
         run: |
           npx drizzle-kit generate --name ci-check

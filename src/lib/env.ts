@@ -28,4 +28,14 @@ export const env = {
   get MAIL_FROM() {
     return process.env.MAIL_FROM ?? "GradNavi <no-reply@localhost>";
   },
+  /** 未设置时 AI 使用演示模型（固定回复，不调用 API） */
+  get DEEPSEEK_API_KEY() {
+    return process.env.DEEPSEEK_API_KEY || undefined;
+  },
+  get DEEPSEEK_MODEL() {
+    return process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+  },
+  get DEEPSEEK_BASE_URL() {
+    return process.env.DEEPSEEK_BASE_URL || undefined;
+  },
 };
