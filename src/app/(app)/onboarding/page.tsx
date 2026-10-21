@@ -16,7 +16,7 @@ export default async function OnboardingPage() {
         <p className="text-sm text-zinc-500">
           {profile?.onboardedAt
             ? "提交后会用新答案覆盖你的档案（user.md），已有的 Todo 不变。"
-            : "回答几个问题（约 2 分钟），我们会生成你的档案和一份初始路线图。之后随时可以修改。"}
+            : "回答几个问题（约 2 分钟），我们会生成你的档案和第一步任务，任务会随你的进度自动更新。档案之后随时可以修改。"}
         </p>
       </div>
       <OnboardingWizard questions={onboardingQuestions()} initial={profile?.onboarding ?? null} />

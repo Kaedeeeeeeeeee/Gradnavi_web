@@ -4,6 +4,7 @@ import { addDays, todayJst } from "@/lib/calendar";
 import { decideTrack, PATH_LABELS, suggestPath, TRACK_LABELS } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
 import { listCalendar } from "@/server/calendar";
+import { syncNextSteps } from "@/server/next-steps";
 import { getProfile } from "@/server/profile";
 import { listTodos } from "@/server/todos";
 import { TodoList } from "./todo-list";
@@ -17,6 +18,7 @@ export default async function WorkbenchPage() {
   if (!profile?.onboardedAt || !answers) redirect("/onboarding");
 
   const today = todayJst();
+  await syncNextSteps(user.id);
   const [todos, calendar] = await Promise.all([listTodos(user.id, { includeDone: true }), listCalendar(user.id, today, addDays(today, 13), today)]);
   const upcoming = calendar.filter((it) => !it.done).slice(0, 8);
   const path = answers.path === "unsure" ? `${PATH_LABELS[suggestPath(answers)]}（建议，待确认）` : PATH_LABELS[answers.path];

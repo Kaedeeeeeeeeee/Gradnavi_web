@@ -99,10 +99,14 @@ export const todo = pgTable(
     createdBy: text("created_by").$type<"user" | "ai" | "system">().notNull().default("user"),
     professorId: text("professor_id").references(() => savedProfessor.id, { onDelete: "set null" }),
     documentId: text("document_id").references(() => document.id, { onDelete: "set null" }),
+    /** 流程任务的 key（见 src/lib/next-steps.ts），系统按进度自动增删勾选；用户和 AI 加的为空 */
+    stepKey: text("step_key"),
+    /** 用户删掉的流程任务只做标记，免得下次对账又加回来 */
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("todo_user_id_idx").on(t.userId)],
+  (t) => [index("todo_user_id_idx").on(t.userId), uniqueIndex("todo_user_step_key_idx").on(t.userId, t.stepKey)],
 );
 
 export const aiConversation = pgTable(

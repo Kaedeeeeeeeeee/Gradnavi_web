@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { buildRoadmap, buildUserMd, type OnboardingAnswers } from "@/lib/onboarding";
+import { buildUserMd, type OnboardingAnswers } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
-import { completeOnboarding, getProfile, saveUserMd } from "@/server/profile";
+import { completeOnboarding, saveUserMd } from "@/server/profile";
 import { addTodos, deleteTodo, updateTodo } from "@/server/todos";
 
 // 用户在页面上的操作。与 AI 工具调用同一套 src/server 函数。
@@ -31,10 +31,8 @@ export async function submitOnboarding(answers: OnboardingAnswers) {
   const user = await requireUser();
   const data = answersSchema.parse(answers);
   if (data.field === "other" && !data.fieldDetail?.trim()) throw new Error("请填写具体领域");
-  const firstTime = !(await getProfile(user.id))?.onboardedAt;
   await completeOnboarding(user.id, data, buildUserMd(data));
-  // 重新填写问卷时不重复生成路线图
-  if (firstTime) await addTodos(user.id, buildRoadmap(data), "system");
+  // 「下一步」流程任务在工作台加载时按进度生成（src/server/next-steps.ts）
   redirect("/workbench");
 }
 

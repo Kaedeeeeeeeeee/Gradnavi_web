@@ -75,7 +75,7 @@ src/db/             Drizzle schema、连接、启动迁移
 src/app/api/chat/   AI 对话接口（流式输出 + 工具调用 + 对话持久化）
 src/components/ai/  AI 侧边栏
 src/lib/ai/         模型配置、系统提示、工具注册表（tools/）
-src/lib/            认证、邮件、环境变量、引导问卷与路线图规则
+src/lib/            认证、邮件、环境变量、引导问卷、「下一步」流程任务规则
 src/server/         数据读写（user.md、Todo、日历、文书、教授、研究科），页面操作和 AI 工具共用
 src/worker/         定时任务进程（打包为 dist/worker.mjs）
 src/proxy.ts        未登录访问工作台时跳转登录页
