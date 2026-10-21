@@ -69,3 +69,14 @@ body {
 .doc-prose hr {
   border-color: #d4d4d8;
 }
+
+/* 文稿栏按需滑入（三栏外壳） */
+@keyframes pane-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@theme {
+  --animate-pane-in: pane-in 180ms ease-out;
+}

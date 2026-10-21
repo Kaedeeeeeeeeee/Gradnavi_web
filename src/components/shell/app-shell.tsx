@@ -15,8 +15,10 @@ import {
   MAX_TABS,
   openTab as openTabIn,
   PANE_LABELS,
-  PANES,
-  PRESET_LABELS,
+  openPanes,
+  presetLabel,
+  presetsFor,
+  shownPanes,
   serializeLayout,
   serializeTabs,
   tabKey,
@@ -26,9 +28,11 @@ import {
   type PaneId,
   type Preset,
   type Tabs,
+  withoutDoc,
 } from "@/lib/shell";
 
 // 三栏外壳：工作台 | 文稿/浏览 | AI 对话，三栏平级、同时打开。
+// 文稿栏按需出现：没打开文书/网页时只有「工作台 | AI 对话」两栏，打开第一个标签时滑入，关掉最后一个后隐藏。
 // - 栏间拖动调宽；每栏可放大（其余收成竖条）或收起成 52px 竖条，竖条上显示未读/待确认标记
 // - 顶栏三个布局预设；布局和文稿栏标签存在 cookie 里，下次打开保持原样
 // - 窄屏（<1024px）只显示一栏，底部标签切换
@@ -122,7 +126,11 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
     [router],
   );
 
-  const isVisible = useCallback((pane: PaneId) => (narrow ? layout.mobile === pane : !layout.collapsed[pane]), [narrow, layout]);
+  const hasDoc = tabs.tabs.length > 0;
+  const isVisible = useCallback(
+    (pane: PaneId) => (pane === "doc" && !hasDoc ? false : narrow ? layout.mobile === pane : !layout.collapsed[pane]),
+    [narrow, layout, hasDoc],
+  );
 
   const api = useMemo<ShellApi>(
     () => ({
@@ -141,6 +149,7 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
       closeTab: (key) => {
         const next = closeTabIn(tabs, key);
         updateTabs(next, next.active !== tabs.active);
+        if (!next.tabs.length) setLayout(withoutDoc);
       },
       renameTab: (key, title) => {
         if (!tabs.tabs.some((t) => tabKey(t) === key && t.title !== title)) return;
@@ -156,7 +165,7 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
   // 告诉 AI 用户正在看什么：工作台栏的页面 + 文稿栏的当前标签（栏收起时不算）
   const current = activeTab(tabs);
   // 窄屏上用户切到 AI 标签问的通常就是刚才看的文稿，所以窄屏一直算可见
-  const docVisible = narrow || !layout.collapsed.doc;
+  const docVisible = hasDoc && (narrow || !layout.collapsed.doc);
   useEffect(() => {
     pageStore.setWorkPath(pathname);
   }, [pageStore, pathname]);
@@ -201,10 +210,12 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
     handle.addEventListener("pointercancel", up);
   }
 
-  const open = PANES.filter((p) => !layout.collapsed[p]);
+  const shown = shownPanes(hasDoc);
+  const open = openPanes(layout, hasDoc);
   const nextOpen = (p: PaneId) => open[open.indexOf(p) + 1];
-  const preset = currentPreset(layout);
-  const choosePreset = (p: Preset) => setLayout((l) => applyPreset(l, p, p === "focus" ? lastPane : l.mobile));
+  const preset = currentPreset(layout, hasDoc);
+  const focusPane = shown.includes(lastPane) ? lastPane : "work";
+  const choosePreset = (p: Preset) => setLayout((l) => applyPreset(l, p, p === "focus" ? focusPane : l.mobile));
 
   const badgeOf = (pane: PaneId): Badge => (pane === "doc" && !badges.doc ? tabs.tabs.length || false : badges[pane]);
 
@@ -234,14 +245,14 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
             GradNavi
           </Link>
           <div className="hidden rounded-md border border-zinc-200 p-0.5 text-xs lg:flex dark:border-zinc-800">
-            {(Object.keys(PRESET_LABELS) as Preset[]).map((p) => (
+            {presetsFor(hasDoc).map((p) => (
               <button
                 key={p}
                 onClick={() => choosePreset(p)}
-                title={p === "focus" ? `放大当前栏（${PANE_LABELS[lastPane]}），其余收成竖条` : undefined}
+                title={p === "focus" ? `放大当前栏（${PANE_LABELS[focusPane]}），其余收成竖条` : undefined}
                 className={`rounded px-2.5 py-1 ${preset === p ? "bg-zinc-200 dark:bg-zinc-700" : "text-zinc-500 hover:text-foreground"}`}
               >
-                {PRESET_LABELS[p]}
+                {presetLabel(p, hasDoc)}
               </button>
             ))}
           </div>
@@ -249,7 +260,7 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
         </header>
 
         <div className="flex min-h-0 flex-1">
-          {PANES.map((p) => (
+          {shown.map((p) => (
             <Fragment key={p}>
               {layout.collapsed[p] && <Rail pane={p} badge={badgeOf(p)} onOpen={() => api.expand(p)} />}
               <section
@@ -258,14 +269,14 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
                 }}
                 onPointerDownCapture={() => setLastPane(p)}
                 style={{ flexGrow: layout.weights[p], flexBasis: 0 }}
-                className={`min-w-0 flex-col ${layout.collapsed[p] ? "lg:hidden" : "lg:flex"} ${layout.mobile === p ? "max-lg:flex" : "max-lg:hidden"} lg:min-w-[280px] ${
+                className={`min-w-0 flex-col ${layout.collapsed[p] ? "lg:hidden" : "lg:flex"} ${layout.mobile === p ? "max-lg:flex" : "max-lg:hidden"} lg:min-w-[280px] ${p === "doc" ? "animate-pane-in" : ""} ${
                   p !== "work" ? "lg:border-l border-zinc-200 dark:border-zinc-800" : ""
                 }`}
                 aria-label={PANE_LABELS[p]}
               >
                 <div className="flex h-10 shrink-0 items-center gap-1 border-b border-zinc-200 pl-2 pr-1 dark:border-zinc-800">
                   <div className="min-w-0 flex-1">{header[p]}</div>
-                  <PaneControls only={open.length === 1} onMax={() => choosePresetFor(p)} onRestore={() => choosePreset("three")} onCollapse={() => setLayout((l) => collapsePane(l, p))} />
+                  <PaneControls only={open.length === 1} onMax={() => choosePresetFor(p)} onRestore={() => choosePreset("three")} onCollapse={() => setLayout((l) => collapsePane(l, p, hasDoc))} />
                 </div>
                 <div className={`min-h-0 flex-1 ${p === "ai" ? "flex flex-col" : "overflow-y-auto"}`}>{body[p]}</div>
               </section>
@@ -283,7 +294,7 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
         </div>
 
         <nav className="flex shrink-0 border-t border-zinc-200 lg:hidden dark:border-zinc-800">
-          {PANES.map((p) => {
+          {shown.map((p) => {
             const badge = badgeOf(p);
             return (
               <button

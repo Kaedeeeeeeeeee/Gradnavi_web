@@ -12,12 +12,12 @@ import { getLatestConversation, loadMessages } from "@/server/conversations";
 import { getBalance } from "@/server/credits";
 import { SignOutButton } from "./sign-out-button";
 
-// 登录后的所有页面共用三栏外壳：工作台（各页面）| 文稿/浏览（多标签）| AI 对话
+// 登录后的所有页面共用三栏外壳：工作台（各页面）| 文稿/浏览（多标签，打开时才出现）| AI 对话
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const jar = await cookies();
-  const layout = parseLayout(jar.get(LAYOUT_COOKIE)?.value);
   const tabs = parseTabs(jar.get(TABS_COOKIE)?.value);
+  const layout = parseLayout(jar.get(LAYOUT_COOKIE)?.value, tabs.tabs.length > 0);
   const [conversation, balance, doc] = await Promise.all([getLatestConversation(user.id), getBalance(user.id), renderDocTab(user.id, activeTab(tabs))]);
   const messages = conversation ? await loadMessages(conversation.id) : [];
 
