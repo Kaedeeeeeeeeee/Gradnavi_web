@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { CONTACT_RULE_LABELS } from "../admissions";
 import { diffGuideEvents, parseGuideReply } from "../admissions";
-import { describeAspiration, matchSchool, nextDeadline, parseScores, requirementGaps } from "../aspirations";
+import { describeAspiration, matchSchool, nextDeadline, parseScores, requirementGaps, contactLabel } from "../aspirations";
 import type { CalendarItem } from "../calendar";
 import { candidateKey, parseCandidates } from "../professors";
 import { openTab } from "../shell";
@@ -144,4 +145,11 @@ test("给 AI 的志愿描述：教授 + 研究科 + 差距", () => {
   assert.match(text, /AI 提议的跟进日：2026-11-10/);
   assert.match(text, /研究科：还没关联/);
   assert.match(text, /差距：TOEFL 要求 80/);
+});
+
+test("事先联系：没有结论时显示要项里的说法，不再显示「未查到」加说法", () => {
+  assert.equal(contactLabel({ contact: "required", contactNote: "出愿前须取得内诺" }), CONTACT_RULE_LABELS.required);
+  assert.equal(contactLabel({ contact: null, contactNote: "未提及需事先联系指导教員" }), "未提及需事先联系指导教員");
+  assert.equal(contactLabel({ contact: null, contactNote: null }), "未查到");
+  assert.equal(contactLabel(null), "未查到");
 });
