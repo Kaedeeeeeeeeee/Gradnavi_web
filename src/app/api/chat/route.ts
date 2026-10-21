@@ -26,7 +26,7 @@ const HISTORY_LIMIT = 30;
 const bodySchema = z.object({
   conversationId: z.string().uuid(),
   message: z.custom<UIMessage>((v) => typeof v === "object" && v !== null && "parts" in v),
-  page: z.object({ path: z.string().max(200), title: z.string().max(200).optional(), content: z.string().max(20000).optional() }).optional(),
+  page: z.object({ path: z.string().max(200), title: z.string().max(200).optional(), content: z.string().max(20000).optional(), workPath: z.string().max(200).optional() }).optional(),
 });
 
 export async function POST(req: Request) {

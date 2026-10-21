@@ -1,68 +1,61 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
-import { AiSidebar } from "@/components/ai/ai-sidebar";
+import { AiPane } from "@/components/ai/ai-pane";
 import { AiPageContextProvider } from "@/components/ai/page-context";
+import { AppShell } from "@/components/shell/app-shell";
+import { renderDocTab } from "@/components/shell/doc-tab";
 import { isDemoMode } from "@/lib/ai/model";
 import { requireUser } from "@/lib/session";
+import { activeTab, LAYOUT_COOKIE, parseLayout, parseTabs, TABS_COOKIE } from "@/lib/shell";
 import { isAdminEmail } from "@/server/beta";
 import { getLatestConversation, loadMessages } from "@/server/conversations";
 import { getBalance } from "@/server/credits";
 import { SignOutButton } from "./sign-out-button";
 
-// 登录后的所有页面共用：顶栏 + 主体 + 右侧 AI 侧边栏
+// 登录后的所有页面共用三栏外壳：工作台（各页面）| 文稿/浏览（多标签）| AI 对话
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const conversation = await getLatestConversation(user.id);
+  const jar = await cookies();
+  const layout = parseLayout(jar.get(LAYOUT_COOKIE)?.value);
+  const tabs = parseTabs(jar.get(TABS_COOKIE)?.value);
+  const [conversation, balance, doc] = await Promise.all([getLatestConversation(user.id), getBalance(user.id), renderDocTab(user.id, activeTab(tabs))]);
   const messages = conversation ? await loadMessages(conversation.id) : [];
-  const balance = await getBalance(user.id);
+
+  const link = "shrink-0 text-zinc-500 hover:text-foreground";
+  const topRight = (
+    <>
+      <Link href="/profile" className={link}>
+        我的档案
+      </Link>
+      <Link href="/feedback" className={link}>
+        反馈
+      </Link>
+      {isAdminEmail(user.email) && (
+        <Link href="/admin" className={link}>
+          管理
+        </Link>
+      )}
+      <Link href="/credits" className={`shrink-0 tabular-nums hover:text-foreground ${balance <= 0 ? "text-red-600" : "text-zinc-500"}`}>
+        {balance.toLocaleString()} credit
+      </Link>
+      <span className="hidden truncate text-zinc-500 xl:inline">{user.email}</span>
+      <SignOutButton />
+    </>
+  );
 
   return (
     <AiPageContextProvider>
-      <div className="flex min-h-full flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-            <nav className="flex items-center gap-5 text-sm">
-              <Link href="/workbench" className="text-base font-semibold">
-                GradNavi
-              </Link>
-              <Link href="/workbench" className="text-zinc-500 hover:text-foreground">
-                工作台
-              </Link>
-              <Link href="/professors" className="text-zinc-500 hover:text-foreground">
-                找教授
-              </Link>
-              <Link href="/documents" className="text-zinc-500 hover:text-foreground">
-                文书
-              </Link>
-              <Link href="/calendar" className="text-zinc-500 hover:text-foreground">
-                日历
-              </Link>
-              <Link href="/schools" className="text-zinc-500 hover:text-foreground">
-                目标研究科
-              </Link>
-              <Link href="/profile" className="text-zinc-500 hover:text-foreground">
-                我的档案
-              </Link>
-              <Link href="/feedback" className="text-zinc-500 hover:text-foreground">
-                反馈
-              </Link>
-              {isAdminEmail(user.email) && (
-                <Link href="/admin" className="text-zinc-500 hover:text-foreground">
-                  管理
-                </Link>
-              )}
-            </nav>
-            <div className="flex items-center gap-4 text-sm">
-              <Link href="/credits" className={`tabular-nums hover:text-foreground ${balance <= 0 ? "text-red-600" : "text-zinc-500"}`}>
-                {balance.toLocaleString()} credit
-              </Link>
-              <span className="hidden text-zinc-500 sm:inline">{user.email}</span>
-              <SignOutButton />
-            </div>
-          </header>
-          <main className="flex-1 px-4 py-6">{children}</main>
-        </div>
-        <AiSidebar initialConversationId={conversation?.id ?? null} initialMessages={messages} demo={isDemoMode()} initialBalance={balance} />
-      </div>
+      <AppShell
+        initialLayout={layout}
+        initialTabs={tabs}
+        docKey={tabs.active}
+        docTitle={doc.title}
+        doc={doc.node}
+        topRight={topRight}
+        ai={<AiPane initialConversationId={conversation?.id ?? null} initialMessages={messages} demo={isDemoMode()} initialBalance={balance} />}
+      >
+        {children}
+      </AppShell>
     </AiPageContextProvider>
   );
 }

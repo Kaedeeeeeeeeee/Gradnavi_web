@@ -5,10 +5,13 @@ export type PageContext = {
   title?: string;
   /** 页面主动提供给 AI 的内容（如编辑器里的文档），可选 */
   content?: string;
+  /** 文稿栏打开时 path 是文稿，这里是左侧工作台栏的页面 */
+  workPath?: string;
 };
 
 const PAGE_NAMES: Record<string, string> = {
   "/workbench": "工作台（下一步动作和 Todo）",
+  "/web": "文稿栏里的网页（用户在看的外部网页，页面标题是网页标题）",
   "/onboarding": "新用户引导问卷",
   "/profile": "我的档案（user.md 编辑页）",
   "/documents": "文书列表",
@@ -20,12 +23,14 @@ const PAGE_NAMES: Record<string, string> = {
 function pageName(page: PageContext) {
   if (PAGE_NAMES[page.path]) return PAGE_NAMES[page.path];
   if (page.path.startsWith("/documents/")) return "文书编辑器（页面内容是用户正在编辑的文书）";
+  if (page.path.startsWith("/professors/")) return `教授详情：${page.title ?? ""}`;
   return page.title ?? page.path;
 }
 
 export function buildSystemPrompt(opts: { userMd: string; page?: PageContext; today: string }) {
   const { userMd, page, today } = opts;
-  const currentPage = page ? pageName(page) : "未知";
+  const work = page?.workPath && page.workPath !== page.path ? `；左侧工作台栏：${pageName({ path: page.workPath })}` : "";
+  const currentPage = page ? `${pageName(page)}${work}` : "未知";
   return `你是 GradNavi（修考工作台）的 AI 助手，帮助中国学生申请日本大学院（研究生 / 修士 / 博士）。你是用户的协作者，不只是问答框：主动推进，把大目标拆成具体的下一步动作。
 
 ## 规则

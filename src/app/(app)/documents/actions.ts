@@ -12,6 +12,7 @@ import { getProfile } from "@/server/profile";
 import { getSavedProfessor, updateSavedProfessor } from "@/server/professors";
 
 // 文书页面上的用户操作。与 AI 工具调用同一套 src/server/documents 函数。
+// 编辑器在三栏外壳的文稿栏里（由 layout 渲染），改完要刷新整个外壳，所以 revalidate 根 layout。
 
 const kindSchema = z.enum(["plan", "letter", "intro", "other"]);
 const fieldSchema = z.enum(["humanities", "sciences"]);
@@ -36,7 +37,7 @@ export async function saveDocumentAction(id: string, markdown: string, baseVersi
 export async function renameDocumentAction(id: string, title: string) {
   const user = await requireUser();
   await updateDocument(user.id, id, { title: z.string().max(100).parse(title) });
-  revalidatePath(`/documents/${id}`);
+  revalidatePath("/", "layout");
 }
 
 const professorSchema = z.object({
@@ -50,7 +51,7 @@ export async function setTargetProfessorAction(id: string, input: z.infer<typeof
   const p = professorSchema.parse(input);
   const targetProfessor = p.name ? { name: p.name, affiliation: p.affiliation || undefined, research: p.research || undefined } : null;
   await updateDocument(user.id, id, { targetProfessor });
-  revalidatePath(`/documents/${id}`);
+  revalidatePath("/", "layout");
 }
 
 /** 从教授清单选目标教授 */
@@ -59,19 +60,19 @@ export async function linkProfessorAction(id: string, professorId: string) {
   const p = await getSavedProfessor(user.id, professorId);
   if (!p) throw new Error("教授清单里没有这位教授");
   await updateDocument(user.id, id, { targetProfessor: professorToTarget(p) });
-  revalidatePath(`/documents/${id}`);
+  revalidatePath("/", "layout");
 }
 
 /** 套磁信发出后，把关联教授标记为“已发套磁” */
 export async function markLetterSentAction(id: string, professorId: string) {
   const user = await requireUser();
   await updateSavedProfessor(user.id, professorId, { status: "contacted" });
-  revalidatePath(`/documents/${id}`);
+  revalidatePath("/", "layout");
   revalidatePath("/professors");
 }
 
 export async function deleteDocumentAction(id: string) {
   const user = await requireUser();
   await deleteDocument(user.id, id);
-  redirect("/documents");
+  revalidatePath("/", "layout");
 }

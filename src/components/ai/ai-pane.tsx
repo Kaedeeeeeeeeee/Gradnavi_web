@@ -4,38 +4,24 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from "ai";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useShell } from "@/components/shell/app-shell";
 import { TOOL_META } from "@/lib/ai/tool-meta";
 import { uuid } from "@/lib/browser";
+import { activeTab, type DocTab } from "@/lib/shell";
 import { usePageStore } from "./page-context";
 
-// 侧边栏开关记在 localStorage；不可用（隐私模式等）时退回内存
-const OPEN_KEY = "gradnavi.aiSidebarOpen";
-const openListeners = new Set<() => void>();
-let memoryOpen = true;
+// 三栏里的 AI 对话栏。顶部一行说明 AI 现在和你一起在做什么（文稿栏打开的文书 / 工作台当前页面）。
 
-function readOpen() {
-  try {
-    return (localStorage.getItem(OPEN_KEY) ?? (memoryOpen ? "1" : "0")) !== "0";
-  } catch {
-    return memoryOpen;
-  }
-}
-
-function writeOpen(next: boolean) {
-  memoryOpen = next;
-  try {
-    localStorage.setItem(OPEN_KEY, next ? "1" : "0");
-  } catch {}
-  openListeners.forEach((l) => l());
-}
-
-function subscribeOpen(listener: () => void) {
-  openListeners.add(listener);
-  return () => {
-    openListeners.delete(listener);
-  };
-}
+const WORK_PAGE_LABELS: [string, string][] = [
+  ["/workbench", "今天的待办"],
+  ["/schools", "目标研究科"],
+  ["/professors", "找教授"],
+  ["/documents", "文书列表"],
+  ["/calendar", "日历"],
+  ["/profile", "我的档案"],
+  ["/onboarding", "新用户引导"],
+];
 
 type Props = {
   initialConversationId: string | null;
@@ -44,8 +30,8 @@ type Props = {
   initialBalance: number;
 };
 
-export function AiSidebar({ initialConversationId, initialMessages, demo, initialBalance }: Props) {
-  const open = useSyncExternalStore(subscribeOpen, readOpen, () => true);
+export function AiPane({ initialConversationId, initialMessages, demo, initialBalance }: Props) {
+  const shell = useShell();
   const [conversationId, setConversationId] = useState(() => initialConversationId ?? uuid());
   const [input, setInput] = useState("");
   const [balance, setBalance] = useState(initialBalance);
@@ -53,12 +39,15 @@ export function AiSidebar({ initialConversationId, initialMessages, demo, initia
   const pathname = usePathname();
   const pageStore = usePageStore();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const visible = shell.isVisible("ai");
+  const { setBadge, expand } = shell;
 
+  // 栏收起时 AI 回复了：竖条 / 底部标签上亮一个点，看到后清掉
+  const visibleRef = useRef(visible);
   useEffect(() => {
-    pageStore.set({ path: pathname });
-  }, [pageStore, pathname]);
-
-  const toggle = writeOpen;
+    visibleRef.current = visible;
+    if (visible) setBadge("ai", false);
+  }, [visible, setBadge]);
 
   const transport = useMemo(
     () =>
@@ -89,6 +78,7 @@ export function AiSidebar({ initialConversationId, initialMessages, demo, initia
     onError: () => refreshBalance(),
     onFinish: ({ message }) => {
       refreshBalance();
+      if (!visibleRef.current) setBadge("ai", true);
       // AI 改了数据（user.md、Todo 等）后刷新页面，让用户马上看到
       const mutated = message.parts.some((p) => isToolUIPart(p) && TOOL_META[getToolName(p)]?.mutates);
       if (mutated) router.refresh();
@@ -119,10 +109,10 @@ export function AiSidebar({ initialConversationId, initialMessages, demo, initia
   useEffect(
     () =>
       pageStore.onAsk((text) => {
-        writeOpen(true);
+        expand("ai");
         void sendRef.current(text);
       }),
-    [pageStore],
+    [pageStore, expand],
   );
 
   function submit(e: React.FormEvent) {
@@ -133,44 +123,39 @@ export function AiSidebar({ initialConversationId, initialMessages, demo, initia
     setInput("");
   }
 
-  if (!open) {
-    return (
-      <button
-        onClick={() => toggle(true)}
-        className="fixed right-4 bottom-4 z-30 rounded-full bg-foreground px-4 py-2 text-sm text-background shadow-lg"
-      >
-        问 AI
-      </button>
-    );
-  }
+  const tab = activeTab(shell.tabs);
+  const docShown = tab && shell.isVisible("doc");
+  const workLabel = WORK_PAGE_LABELS.find(([p]) => pathname === p || pathname.startsWith(`${p}/`))?.[1];
 
   return (
-    <aside className="fixed inset-0 z-30 flex flex-col border-zinc-200 bg-background md:sticky md:top-0 md:inset-auto md:h-dvh md:w-96 md:shrink-0 md:border-l dark:border-zinc-800">
-      <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <span className="font-medium">
-          AI 助手{demo && <span className="ml-2 text-xs text-amber-600">演示模式</span>}
-          <Link href="/credits" className={`ml-2 text-xs font-normal tabular-nums ${balance <= 0 ? "text-red-600" : "text-zinc-500"}`}>
-            余额 {balance.toLocaleString()}
-          </Link>
+    <>
+      <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-2 text-xs dark:border-zinc-800">
+        <span className="min-w-0 flex-1 truncate text-zinc-500" title={docShown ? tab.title : undefined}>
+          {docShown ? (
+            <>
+              正在一起做：<span className="text-foreground">{tab.title || "（无标题）"}</span>
+            </>
+          ) : (
+            `当前：${workLabel ?? "工作台"}`
+          )}
+          {demo && <span className="ml-2 text-amber-600">演示模式</span>}
         </span>
-        <div className="flex gap-3 text-sm text-zinc-500">
-          <button
-            className="hover:text-foreground disabled:opacity-40"
-            disabled={busy || messages.length === 0}
-            onClick={() => setConversationId(uuid())}
-          >
-            新对话
-          </button>
-          <button className="hover:text-foreground" onClick={() => toggle(false)}>
-            收起
-          </button>
-        </div>
+        <Link href="/credits" className={`shrink-0 tabular-nums ${balance <= 0 ? "text-red-600" : "text-zinc-500"}`}>
+          余额 {balance.toLocaleString()}
+        </Link>
+        <button
+          className="shrink-0 text-zinc-500 hover:text-foreground disabled:opacity-40"
+          disabled={busy || messages.length === 0}
+          onClick={() => setConversationId(uuid())}
+        >
+          新对话
+        </button>
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 text-sm">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 text-sm">
         {messages.length === 0 && (
           <div className="space-y-2 text-zinc-500">
-            <p>我能看到你的档案（user.md）和当前页面，可以帮你记录信息、拆分任务、解答申请问题。</p>
+            <p>我能看到你的档案（user.md）、左边工作台的页面和中间打开的文稿，可以帮你记录信息、拆分任务、一起写文书。</p>
             <p>试试：「我下一步该做什么？」</p>
           </div>
         )}
@@ -205,7 +190,7 @@ export function AiSidebar({ initialConversationId, initialMessages, demo, initia
           )}
         </div>
       </form>
-    </aside>
+    </>
   );
 }
 
@@ -218,17 +203,41 @@ function Message({ message }: { message: UIMessage }) {
     <div className="space-y-2">
       {message.parts.map((part, i) => {
         if (part.type === "text") return <div key={i} className="whitespace-pre-wrap leading-relaxed">{part.text}</div>;
-        if (isToolUIPart(part)) return <ToolChip key={i} name={getToolName(part)} state={part.state} />;
+        if (isToolUIPart(part))
+          return <ToolChip key={i} name={getToolName(part)} state={part.state} input={part.input} output={part.state === "output-available" ? part.output : undefined} />;
         return null;
       })}
     </div>
   );
 }
 
-function ToolChip({ name, state }: { name: string; state: string }) {
+const DOC_WRITE_TOOLS = new Set(["create_document", "update_document_section", "replace_document_text", "update_document"]);
+
+const field = (v: unknown, key: string) => (v && typeof v === "object" && typeof (v as Record<string, unknown>)[key] === "string" ? ((v as Record<string, unknown>)[key] as string) : undefined);
+
+/** 动作记录对应的成果：在文稿栏打开（文书、教授、AI 读过的网页） */
+function chipTarget(name: string, input: unknown, output: unknown): DocTab | null {
+  if (DOC_WRITE_TOOLS.has(name)) {
+    const id = field(output, "id") ?? field(input, "id");
+    return id ? { kind: "doc", id, title: field(output, "title") ?? field(input, "title") ?? "文书" } : null;
+  }
+  if (name === "save_professor") {
+    const id = field(output, "id");
+    return id ? { kind: "professor", id, title: field(output, "name") ?? "教授" } : null;
+  }
+  if (name === "fetch_page") {
+    const url = field(input, "url");
+    return url ? { kind: "web", url, title: url.replace(/^https?:\/\//, "").slice(0, 40) } : null;
+  }
+  return null;
+}
+
+function ToolChip({ name, state, input, output }: { name: string; state: string; input: unknown; output: unknown }) {
+  const { openTab } = useShell();
   const label = TOOL_META[name]?.label ?? name;
   const failed = state === "output-error";
   const done = state === "output-available";
+  const target = done ? chipTarget(name, input, output) : null;
   return (
     <div className="inline-flex items-center gap-2 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-500 dark:border-zinc-700">
       <span>{failed ? "✗" : done ? "✓" : "…"}</span>
@@ -237,6 +246,11 @@ function ToolChip({ name, state }: { name: string; state: string }) {
         <Link href="/profile" className="underline">
           查看
         </Link>
+      )}
+      {target && (
+        <button onClick={() => openTab(target)} className="underline hover:text-foreground">
+          查看 →
+        </button>
       )}
     </div>
   );

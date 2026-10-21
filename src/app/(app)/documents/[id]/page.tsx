@@ -1,43 +1,28 @@
-import { notFound } from "next/navigation";
-import { detectPlanField } from "@/lib/documents";
-import { answerField, decideTrack } from "@/lib/onboarding";
+import { OpenTabOnMount } from "@/components/shell/app-shell";
 import { requireUser } from "@/lib/session";
 import { getDocument } from "@/server/documents";
-import { getProfile } from "@/server/profile";
-import { listSavedProfessors } from "@/server/professors";
-import { DocumentEditor } from "./editor";
+import DocumentsPage from "../page";
+import { QueueAutoAsk } from "./queue-auto-ask";
 
-export async function generateMetadata({ params }: PageProps<"/documents/[id]">) {
-  const user = await requireUser();
-  const doc = await getDocument(user.id, (await params).id);
-  return { title: `${doc?.title ?? "文书"} · GradNavi` };
-}
+export const metadata = { title: "文书 · GradNavi" };
 
+// 文书在中间的文稿栏打开；这个地址（新建文书、从别处链接进来）显示文书列表并打开对应标签
 export default async function DocumentPage({ params, searchParams }: PageProps<"/documents/[id]">) {
   const user = await requireUser();
   const { id } = await params;
-  const [doc, profile, professors] = await Promise.all([getDocument(user.id, id), getProfile(user.id), listSavedProfessors(user.id)]);
-  if (!doc) notFound();
-  const onboarding = profile?.onboarding;
-  const linked = professors.find((p) => p.id === doc.targetProfessor?.professorId);
+  const doc = await getDocument(user.id, id);
   // 从找教授页“写套磁信”进来时带 ?ai=letter，进入后让 AI 写初稿
-  const autoAsk = (await searchParams).ai === "letter" && doc.kind === "letter" ? "letter" : null;
+  const letter = (await searchParams).ai === "letter" && doc?.kind === "letter";
 
   return (
-    <DocumentEditor
-      doc={{
-        id: doc.id,
-        kind: doc.kind,
-        title: doc.title,
-        markdown: doc.markdown,
-        version: doc.version,
-        targetProfessor: doc.targetProfessor,
-      }}
-      planField={detectPlanField(doc.markdown, answerField(onboarding) ?? "humanities")}
-      track={onboarding ? decideTrack(onboarding) : null}
-      professors={professors.map((p) => ({ id: p.id, label: `${p.name}（${p.university}）` }))}
-      linkedStatus={linked?.status ?? null}
-      autoAsk={autoAsk}
-    />
+    <>
+      {doc && (
+        <>
+          {letter && <QueueAutoAsk docId={doc.id} />}
+          <OpenTabOnMount tab={{ kind: "doc", id: doc.id, title: doc.title }} replaceWith="/documents" />
+        </>
+      )}
+      <DocumentsPage />
+    </>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useAiPageContent, useAskAi } from "@/components/ai/page-context";
+import { OpenTabLink } from "@/components/shell/app-shell";
 import type { Field } from "@/lib/onboarding";
 import {
   describeProfessor,
@@ -175,9 +176,9 @@ function ProfessorInfo({ p }: { p: InfoProps }) {
       {p.sources.length > 0 && (
         <p className="flex flex-wrap gap-x-3 text-xs">
           {p.sources.map((s) => (
-            <a key={s.url} href={s.url} target="_blank" rel="noreferrer noopener" className="max-w-full truncate text-blue-600 hover:underline dark:text-blue-400">
+            <OpenTabLink key={s.url} tab={{ kind: "web", url: s.url, title: s.title }} href={s.url} className="max-w-full truncate text-blue-600 hover:underline dark:text-blue-400">
               {s.title}
-            </a>
+            </OpenTabLink>
           ))}
         </p>
       )}
@@ -259,6 +260,9 @@ function SavedCard({ professor: p }: { professor: Saved }) {
         <form action={createPlanAction.bind(null, p.id)}>
           <button className="rounded-md border border-zinc-300 px-3 py-1.5 dark:border-zinc-700">以这位教授为目标写计划书</button>
         </form>
+        <OpenTabLink tab={{ kind: "professor", id: p.id, title: p.name }} href="/professors" className="rounded-md border border-zinc-300 px-3 py-1.5 dark:border-zinc-700">
+          在文稿栏查看
+        </OpenTabLink>
         <button
           onClick={() => confirm(`从清单中删除 ${p.name}？`) && start(() => deleteProfessorAction(p.id))}
           className="ml-auto rounded-md px-3 py-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"

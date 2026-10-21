@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useAskAi } from "@/components/ai/page-context";
+import { OpenTabLink } from "@/components/shell/app-shell";
 import { checkNowAction, unwatchSchoolAction, watchSchoolAction } from "./actions";
 
 type School = {
@@ -108,9 +109,9 @@ function SchoolCard({ school: s }: { school: School }) {
         <p className="font-medium">
           {s.university} {s.name}
         </p>
-        <a href={s.url} target="_blank" rel="noreferrer" className="truncate text-xs text-zinc-500 underline">
+        <OpenTabLink tab={{ kind: "web", url: s.url, title: `${s.university} ${s.name}` }} href={s.url} className="truncate text-xs text-zinc-500 underline">
           要项页面
-        </a>
+        </OpenTabLink>
         <div className="ml-auto flex gap-3 text-xs">
           <button disabled={pending || s.pending} onClick={() => startTransition(() => checkNowAction(s.id))} className="text-zinc-500 hover:text-foreground disabled:opacity-50">
             {s.pending ? "等待检查…" : "立即检查"}
