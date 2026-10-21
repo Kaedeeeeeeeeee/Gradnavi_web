@@ -125,7 +125,8 @@ export function DocumentEditor(props: Props) {
     onUpdate: ({ editor }) => {
       const md = editor.getMarkdown();
       setMarkdown(md);
-      if (md === baseline.current) return;
+      // 载入时编辑器可能在 onCreate 之前先触发一次更新，那时还没有“已保存”基准，不算用户修改
+      if (baseline.current === null || md === baseline.current) return;
       setSaveState((s) => (s === "conflict" ? s : "dirty"));
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => void save(editor), AUTOSAVE_MS);
@@ -138,7 +139,11 @@ export function DocumentEditor(props: Props) {
       timer.current = null;
       if (saving.current) await saving.current;
       const md = ed.getMarkdown();
-      if (md === baseline.current) return;
+      if (md === baseline.current) {
+        // 改了又改回去：内容和已保存的一样
+        setSaveState((st) => (st === "dirty" ? "saved" : st));
+        return;
+      }
       const run = (async () => {
         setSaveState("saving");
         try {
