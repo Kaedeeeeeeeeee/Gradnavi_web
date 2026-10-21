@@ -9,6 +9,7 @@ import {
   EMPTY_TABS,
   expandPane,
   MAX_TABS,
+  withoutDoc,
   openTab,
   parseLayout,
   parseTabs,
@@ -20,20 +21,20 @@ import {
 const doc = (id: string): DocTab => ({ kind: "doc", id, title: `文书 ${id}` });
 
 test("布局预设", () => {
-  assert.equal(currentPreset(DEFAULT_LAYOUT), "three");
+  assert.equal(currentPreset(DEFAULT_LAYOUT, true), "three");
   const chat = applyPreset(DEFAULT_LAYOUT, "chatDoc", "work");
   assert.deepEqual(chat.collapsed, { work: true, doc: false, ai: false });
-  assert.equal(currentPreset(chat), "chatDoc");
+  assert.equal(currentPreset(chat, true), "chatDoc");
   const focus = applyPreset(DEFAULT_LAYOUT, "focus", "ai");
   assert.deepEqual(focus.collapsed, { work: true, doc: true, ai: false });
-  assert.equal(currentPreset(focus), "focus");
-  assert.equal(currentPreset(applyPreset(focus, "three", "work")), "three");
+  assert.equal(currentPreset(focus, true), "focus");
+  assert.equal(currentPreset(applyPreset(focus, "three", "work"), true), "three");
 });
 
 test("最后一栏不能收起；展开时窄屏切到这一栏", () => {
   const focus = applyPreset(DEFAULT_LAYOUT, "focus", "doc");
-  assert.equal(collapsePane(focus, "doc"), focus);
-  const two = collapsePane(DEFAULT_LAYOUT, "work");
+  assert.equal(collapsePane(focus, "doc", true), focus);
+  const two = collapsePane(DEFAULT_LAYOUT, "work", true);
   assert.equal(two.collapsed.work, true);
   const back = expandPane(two, "work");
   assert.equal(back.collapsed.work, false);
@@ -65,4 +66,18 @@ test("cookie 读写；坏数据退回默认", () => {
   assert.deepEqual(parseLayout(serializeLayout({ ...layout, collapsed: { work: true, doc: true, ai: true } })), DEFAULT_LAYOUT);
   assert.deepEqual(parseTabs(undefined), EMPTY_TABS);
   assert.equal(parseTabs(serializeTabs({ tabs: [doc("a")], active: "doc:zzz" })).active, null);
+});
+
+test("没有文稿时只有两栏", () => {
+  assert.equal(currentPreset(DEFAULT_LAYOUT, false), "three");
+  // 只剩 AI 展开 = 专注；工作台不能再收起
+  const aiOnly = collapsePane(DEFAULT_LAYOUT, "work", false);
+  assert.equal(currentPreset(aiOnly, false), "focus");
+  assert.equal(collapsePane(aiOnly, "ai", false), aiOnly);
+  // 专注在文稿上时关掉最后一个标签：回到两栏，窄屏回到工作台
+  const docFocus = applyPreset(DEFAULT_LAYOUT, "focus", "doc");
+  const after = withoutDoc(docFocus);
+  assert.deepEqual(after.collapsed, { work: false, doc: false, ai: false });
+  assert.equal(after.mobile, "work");
+  assert.deepEqual(parseLayout(serializeLayout(docFocus), false), after);
 });

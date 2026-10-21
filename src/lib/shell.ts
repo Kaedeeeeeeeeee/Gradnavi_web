@@ -1,5 +1,6 @@
 // 三栏外壳（工作台 | 文稿/浏览 | AI 对话）的布局与文稿栏标签状态（纯函数，服务器和浏览器共用）。
 // 两者都存在 cookie 里：服务器首屏就按用户上次的布局渲染，文稿栏当前标签的内容也由服务器渲染。
+// 文稿栏按需出现：没有打开任何标签时只有「工作台 | AI 对话」两栏（hasDoc = 有标签）。
 
 import { z } from "zod";
 
@@ -36,7 +37,18 @@ export const EMPTY_TABS: Tabs = { tabs: [], active: null };
 
 export type Preset = "three" | "chatDoc" | "focus";
 
-export const PRESET_LABELS: Record<Preset, string> = { three: "三栏", chatDoc: "聊天 + 文稿", focus: "专注" };
+export function presetLabel(preset: Preset, hasDoc: boolean) {
+  if (preset === "three") return hasDoc ? "三栏" : "两栏";
+  return preset === "chatDoc" ? "聊天 + 文稿" : "专注";
+}
+
+/** 没有文稿时没有「聊天 + 文稿」 */
+export const presetsFor = (hasDoc: boolean): Preset[] => (hasDoc ? ["three", "chatDoc", "focus"] : ["three", "focus"]);
+
+/** 现在显示着的栏（文稿栏没标签时不算） */
+export const shownPanes = (hasDoc: boolean): PaneId[] => (hasDoc ? [...PANES] : ["work", "ai"]);
+
+export const openPanes = (layout: Layout, hasDoc: boolean) => shownPanes(hasDoc).filter((p) => !layout.collapsed[p]);
 
 /** 套用预设。focus 放大 `pane`，其余收成竖条 */
 export function applyPreset(layout: Layout, preset: Preset, pane: PaneId): Layout {
@@ -45,19 +57,28 @@ export function applyPreset(layout: Layout, preset: Preset, pane: PaneId): Layou
   return { ...layout, collapsed: { work: pane !== "work", doc: pane !== "doc", ai: pane !== "ai" }, mobile: pane };
 }
 
-export function currentPreset(layout: Layout): Preset | null {
-  const open = PANES.filter((p) => !layout.collapsed[p]);
-  if (open.length === 3) return "three";
+export function currentPreset(layout: Layout, hasDoc: boolean): Preset | null {
+  const open = openPanes(layout, hasDoc);
+  if (open.length === shownPanes(hasDoc).length) return "three";
   if (open.length === 1) return "focus";
   if (layout.collapsed.work) return "chatDoc";
   return null;
 }
 
 /** 收起一栏；最后一栏不能收起 */
-export function collapsePane(layout: Layout, pane: PaneId): Layout {
-  const open = PANES.filter((p) => !layout.collapsed[p]);
-  if (open.length <= 1 && !layout.collapsed[pane]) return layout;
+export function collapsePane(layout: Layout, pane: PaneId, hasDoc: boolean): Layout {
+  if (openPanes(layout, hasDoc).length <= 1 && !layout.collapsed[pane]) return layout;
   return { ...layout, collapsed: { ...layout.collapsed, [pane]: true } };
+}
+
+/**
+ * 文稿栏刚消失（关掉了最后一个标签）后修正布局：剩下的两栏都收着（原来专注在文稿上）时回到两栏，窄屏停在文稿时回到工作台。
+ * 文稿栏的收起状态清掉，下次打开文稿时直接显示。
+ */
+export function withoutDoc(layout: Layout): Layout {
+  const collapsed = { ...layout.collapsed, doc: false };
+  if (collapsed.work && collapsed.ai) collapsed.work = collapsed.ai = false;
+  return { ...layout, collapsed, mobile: layout.mobile === "doc" ? "work" : layout.mobile };
 }
 
 export function expandPane(layout: Layout, pane: PaneId): Layout {
@@ -119,10 +140,11 @@ function parse<T>(schema: z.ZodType<T>, raw: string | undefined, fallback: T): T
   }
 }
 
-export function parseLayout(raw: string | undefined): Layout {
+export function parseLayout(raw: string | undefined, hasDoc = true): Layout {
   const layout = parse(layoutSchema, raw, DEFAULT_LAYOUT);
   // 全部收起是坏数据，退回默认
-  return PANES.every((p) => layout.collapsed[p]) ? DEFAULT_LAYOUT : layout;
+  if (PANES.every((p) => layout.collapsed[p])) return DEFAULT_LAYOUT;
+  return hasDoc ? layout : withoutDoc(layout);
 }
 
 export function parseTabs(raw: string | undefined): Tabs {

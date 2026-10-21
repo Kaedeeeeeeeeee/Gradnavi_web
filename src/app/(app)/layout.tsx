@@ -16,12 +16,12 @@ import { listTodos } from "@/server/todos";
 import { countAwaiting } from "@/lib/tasks";
 import { SignOutButton } from "./sign-out-button";
 
-// 登录后的所有页面共用三栏外壳：工作台（各页面）| 文稿/浏览（多标签）| AI 对话
+// 登录后的所有页面共用三栏外壳：工作台（各页面）| 文稿/浏览（多标签，打开时才出现）| AI 对话
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const jar = await cookies();
-  const layout = parseLayout(jar.get(LAYOUT_COOKIE)?.value);
   const tabs = parseTabs(jar.get(TABS_COOKIE)?.value);
+  const layout = parseLayout(jar.get(LAYOUT_COOKIE)?.value, tabs.tabs.length > 0);
   // 先按进度对账流程任务，工作台竖条上「待你确认」的数量才是最新的
   await syncNextSteps(user.id);
   const [conversation, balance, doc, todos, proposedEvents] = await Promise.all([

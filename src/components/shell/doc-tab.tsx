@@ -18,7 +18,8 @@ import { WebTab } from "./web-tab";
 // 文稿栏当前标签的内容（服务器渲染）。title 为 null 表示对应数据已不存在，外壳会关掉这个标签。
 
 export async function renderDocTab(userId: string, tab: DocTab | null): Promise<{ title: string | null; node: React.ReactNode }> {
-  if (!tab) return { title: null, node: <EmptyDocPane /> };
+  // 没有标签时文稿栏不显示
+  if (!tab) return { title: null, node: null };
   if (tab.kind === "web") return { title: tab.title, node: <WebTab key={tab.url} url={tab.url} title={tab.title} /> };
   if (tab.kind === "professor") return professorTab(userId, tab.id);
   if (tab.kind === "task") return taskTab(userId, tab.id);
@@ -119,12 +120,3 @@ async function taskTab(userId: string, id: string) {
   return { title: row.title, node: <TaskDetail key={row.id} task={task} links={links} started={!!conversation} aiText={aiText} /> };
 }
 
-function EmptyDocPane() {
-  return (
-    <div className="space-y-2 px-6 py-10 text-sm text-zinc-500">
-      <p className="font-medium text-foreground">文稿 / 浏览</p>
-      <p>计划书、套磁信、教授详情、研究室主页、募集要项原文都在这里打开，可以同时开好几个标签。</p>
-      <p>在左侧工作台点任意一份文书或教授，或者让 AI 帮你起草，结果会出现在这里。</p>
-    </div>
-  );
-}
