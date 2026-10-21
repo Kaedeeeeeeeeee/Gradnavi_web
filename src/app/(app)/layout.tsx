@@ -10,6 +10,10 @@ import { activeTab, LAYOUT_COOKIE, parseLayout, parseTabs, TABS_COOKIE } from "@
 import { isAdminEmail } from "@/server/beta";
 import { getLatestConversation, loadMessages } from "@/server/conversations";
 import { getBalance } from "@/server/credits";
+import { listProposedEvents } from "@/server/calendar";
+import { syncNextSteps } from "@/server/next-steps";
+import { listTodos } from "@/server/todos";
+import { countAwaiting } from "@/lib/tasks";
 import { SignOutButton } from "./sign-out-button";
 
 // 登录后的所有页面共用三栏外壳：工作台（各页面）| 文稿/浏览（多标签）| AI 对话
@@ -18,7 +22,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const jar = await cookies();
   const layout = parseLayout(jar.get(LAYOUT_COOKIE)?.value);
   const tabs = parseTabs(jar.get(TABS_COOKIE)?.value);
-  const [conversation, balance, doc] = await Promise.all([getLatestConversation(user.id), getBalance(user.id), renderDocTab(user.id, activeTab(tabs))]);
+  // 先按进度对账流程任务，工作台竖条上「待你确认」的数量才是最新的
+  await syncNextSteps(user.id);
+  const [conversation, balance, doc, todos, proposedEvents] = await Promise.all([
+    getLatestConversation(user.id),
+    getBalance(user.id),
+    renderDocTab(user.id, activeTab(tabs)),
+    listTodos(user.id),
+    listProposedEvents(user.id),
+  ]);
   const messages = conversation ? await loadMessages(conversation.id) : [];
 
   const link = "shrink-0 text-zinc-500 hover:text-foreground";
@@ -52,6 +64,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         docTitle={doc.title}
         doc={doc.node}
         topRight={topRight}
+        awaiting={countAwaiting(todos, proposedEvents.length)}
         ai={<AiPane initialConversationId={conversation?.id ?? null} initialMessages={messages} demo={isDemoMode()} initialBalance={balance} />}
       >
         {children}

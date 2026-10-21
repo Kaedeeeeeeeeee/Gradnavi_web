@@ -87,7 +87,7 @@ export async function listWatchedSchools(userId: string, today: string) {
   return schools.map(({ school }) => {
     const guide = guides.get(school.id) ?? null;
     const projected = guide
-      ? projectGuide({ schoolId: school.id, schoolName: `${school.university} ${school.name}`, admissionYear: guide.admissionYear, events: guide.events }, today)
+      ? projectGuide({ schoolId: school.id, schoolName: `${school.university} ${school.name}`, admissionYear: guide.admissionYear, events: guide.events, sourceUrl: guide.sourceUrl }, today)
       : { tentative: false, items: [] };
     return { school, guide, tentative: projected.tentative, calendar: projected.items };
   });

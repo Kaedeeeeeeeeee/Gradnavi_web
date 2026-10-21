@@ -14,9 +14,11 @@ import { buildSystemPrompt } from "@/lib/ai/prompt";
 import { buildTools } from "@/lib/ai/tools";
 import { auth } from "@/lib/auth";
 import { UsageMeter } from "@/lib/credits";
+import { describeTask } from "@/lib/tasks";
 import { getOrCreateConversation, loadMessages, saveMessages } from "@/server/conversations";
 import { getBalance, InsufficientCreditsError, recordUsageSafe } from "@/server/credits";
 import { getUserMd } from "@/server/profile";
+import { getTodo, taskLinks, toTaskView } from "@/server/todos";
 
 export const maxDuration = 60;
 
@@ -25,6 +27,8 @@ const HISTORY_LIMIT = 30;
 
 const bodySchema = z.object({
   conversationId: z.string().uuid(),
+  /** 新开任务对话时带上任务 ID（一个任务一段对话） */
+  taskId: z.string().max(64).optional(),
   message: z.custom<UIMessage>((v) => typeof v === "object" && v !== null && "parts" in v),
   page: z.object({ path: z.string().max(200), title: z.string().max(200).optional(), content: z.string().max(20000).optional(), workPath: z.string().max(200).optional() }).optional(),
 });
@@ -36,10 +40,19 @@ export async function POST(req: Request) {
 
   const parsed = bodySchema.safeParse(await req.json());
   if (!parsed.success) return new Response("请求格式错误", { status: 400 });
-  const { conversationId, message, page } = parsed.data;
+  const { conversationId, message, page, taskId } = parsed.data;
 
-  const conversation = await getOrCreateConversation(userId, conversationId);
+  // 任务已被删除（它的对话也随之删除）时，当作普通对话继续
+  const validTask = taskId && (await getTodo(userId, taskId)) ? taskId : null;
+  const conversation = await getOrCreateConversation(userId, conversationId, validTask);
   if (!conversation) return new Response("无权访问该对话", { status: 403 });
+  // 任务对话：把任务的最新情况（状态、子步骤、关联对象）放进系统提示
+  const taskRow = conversation.todoId ? await getTodo(userId, conversation.todoId) : null;
+  const task = taskRow
+    ? await taskLinks(userId, taskRow).then((l) =>
+        describeTask(toTaskView(taskRow), { professor: l.professor?.label, document: l.document?.title, school: l.school?.name }),
+      )
+    : undefined;
 
   if ((await getBalance(userId)) <= 0) return new Response(new InsufficientCreditsError().message, { status: 402 });
 
@@ -64,7 +77,7 @@ export async function POST(req: Request) {
   const today = new Intl.DateTimeFormat("zh-CN", { dateStyle: "full", timeZone: "Asia/Tokyo" }).format(new Date());
   const result = streamText({
     model: getChatModel(),
-    instructions: buildSystemPrompt({ userMd: await getUserMd(userId), page, today }),
+    instructions: buildSystemPrompt({ userMd: await getUserMd(userId), page, today, task }),
     messages: await convertToModelMessages(messages.slice(-HISTORY_LIMIT), { tools }),
     tools,
     stopWhen: isStepCount(6),

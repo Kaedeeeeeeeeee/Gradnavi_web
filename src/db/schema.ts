@@ -5,6 +5,7 @@ import type { Feature, LedgerKind } from "../lib/credits";
 import type { DocKind, TargetProfessor } from "../lib/documents";
 import type { ProfessorStatus, SourceLink } from "../lib/professors";
 import type { OnboardingAnswers } from "../lib/onboarding";
+import type { TaskChange, TaskStatus, TaskStep } from "../lib/tasks";
 
 // 以下四张表是 Better Auth 的核心表，字段名需与 Better Auth 保持一致。
 
@@ -83,7 +84,10 @@ export const userProfile = pgTable("user_profile", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** Todo：用户和 AI 共用。可挂在某位教授或某份文书下；有截止日期的会显示在日历上 */
+/**
+ * 任务（主页待办，表名沿用 todo）：用户、AI 和系统流程共用。任务 → 子步骤两层；可挂在某位教授、文书或研究科下；
+ * 有截止日期的显示在日历上。只有用户能标完成（AI 设「待你确认」）；AI 新建的任务和改的截止日先是提议，用户同意后才生效。
+ */
 export const todo = pgTable(
   "todo",
   {
@@ -93,12 +97,19 @@ export const todo = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     note: text("note"),
-    done: boolean("done").notNull().default(false),
+    status: text("status").$type<TaskStatus>().notNull().default("todo"),
     dueDate: date("due_date"),
+    /** 子步骤（任务内的小清单，AI 可帮忙拆） */
+    steps: jsonb("steps").$type<TaskStep[]>().notNull().default([]),
+    /** AI 新建、用户还没同意的任务 */
+    proposed: boolean("proposed").notNull().default(false),
+    /** AI 对截止日的修改提议，用户同意后写进 dueDate */
+    proposedChange: jsonb("proposed_change").$type<TaskChange>(),
     sortOrder: integer("sort_order").notNull().default(0),
     createdBy: text("created_by").$type<"user" | "ai" | "system">().notNull().default("user"),
     professorId: text("professor_id").references(() => savedProfessor.id, { onDelete: "set null" }),
     documentId: text("document_id").references(() => document.id, { onDelete: "set null" }),
+    schoolId: text("school_id").references(() => graduateSchool.id, { onDelete: "set null" }),
     /** 流程任务的 key（见 src/lib/next-steps.ts），系统按进度自动增删勾选；用户和 AI 加的为空 */
     stepKey: text("step_key"),
     /** 用户删掉的流程任务只做标记，免得下次对账又加回来 */
@@ -117,10 +128,12 @@ export const aiConversation = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     title: text("title"),
+    /** 一个任务一段对话（从任务卡「让 AI 开始」打开）；为空的是主页上的通用对话 */
+    todoId: text("todo_id").references(() => todo.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("ai_conversation_user_id_idx").on(t.userId, t.updatedAt)],
+  (t) => [index("ai_conversation_user_id_idx").on(t.userId, t.updatedAt), uniqueIndex("ai_conversation_todo_idx").on(t.todoId)],
 );
 
 /** 以 AI SDK 的 UIMessage 格式保存（parts 含文本和工具调用），方便原样回放 */
@@ -234,6 +247,10 @@ export const calendarEvent = pgTable(
     kind: text("kind").$type<CalendarKind>().notNull().default("other"),
     note: text("note"),
     createdBy: text("created_by").$type<"user" | "ai" | "system">().notNull().default("user"),
+    /** AI 写进日历的日程先是提议（虚线显示），用户同意后才变成正式日程 */
+    proposed: boolean("proposed").notNull().default(false),
+    /** AI 对已有日程改期的提议 */
+    proposedChange: jsonb("proposed_change").$type<{ date: string; endDate: string | null }>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

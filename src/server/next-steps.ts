@@ -20,7 +20,7 @@ export async function syncNextSteps(userId: string) {
       .orderBy(asc(savedProfessor.createdAt)),
     db.select({ id: document.id, kind: document.kind, target: document.targetProfessor }).from(document).where(eq(document.userId, userId)),
     db
-      .select({ id: todo.id, stepKey: todo.stepKey, done: todo.done, dismissedAt: todo.dismissedAt, note: todo.note, documentId: todo.documentId })
+      .select({ id: todo.id, stepKey: todo.stepKey, status: todo.status, dismissedAt: todo.dismissedAt, note: todo.note, documentId: todo.documentId })
       .from(todo)
       .where(and(eq(todo.userId, userId), isNotNull(todo.stepKey))),
   ]);
@@ -32,22 +32,23 @@ export async function syncNextSteps(userId: string) {
     schoolCount,
     professors,
     documents: documents.map((d) => ({ id: d.id, kind: d.kind, professorId: d.target?.professorId })),
-    doneKeys: new Set(existing.filter((t) => t.done).map((t) => t.stepKey!)),
+    doneKeys: new Set(existing.filter((t) => t.status === "done").map((t) => t.stepKey!)),
   });
 
+  // 条件达成（如已关注研究科、教授状态改成已发套磁）的任务改成「待你确认」，由用户点完成。只有用户能标完成
   const now = new Date();
-  const toComplete = plan.done.map((k) => byKey.get(k)).filter((t) => t && !t.done && !t.dismissedAt).map((t) => t!.id);
-  if (toComplete.length) await db.update(todo).set({ done: true, updatedAt: now }).where(inArray(todo.id, toComplete));
+  const toReview = plan.done.map((k) => byKey.get(k)).filter((t) => t && (t.status === "todo" || t.status === "doing") && !t.dismissedAt).map((t) => t!.id);
+  if (toReview.length) await db.update(todo).set({ status: "review", updatedAt: now }).where(inArray(todo.id, toReview));
 
   // 条件不再成立的未完成任务（如教授被删除或标成放弃）直接移除
   const wanted = new Set([...plan.open.map((t) => t.key), ...plan.done]);
-  const stale = existing.filter((t) => !t.done && !t.dismissedAt && !wanted.has(t.stepKey!)).map((t) => t.id);
+  const stale = existing.filter((t) => t.status !== "done" && !t.dismissedAt && !wanted.has(t.stepKey!)).map((t) => t.id);
   if (stale.length) await db.delete(todo).where(inArray(todo.id, stale));
 
   // 未完成的任务跟着最新信息更新跟进日和关联的套磁信；标题和其他备注不动，用户或 AI 可能改过
   for (const t of plan.open) {
     const row = byKey.get(t.key);
-    if (!row || row.done || row.dismissedAt) continue;
+    if (!row || row.status === "done" || row.dismissedAt) continue;
     const patch: Partial<typeof todo.$inferInsert> = {};
     if (t.key.endsWith(":followup") && (t.note ?? null) !== row.note) patch.note = t.note ?? null;
     if (t.documentId && t.documentId !== row.documentId) patch.documentId = t.documentId;

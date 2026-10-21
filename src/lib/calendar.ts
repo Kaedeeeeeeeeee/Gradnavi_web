@@ -26,6 +26,11 @@ export type CalendarItem = {
   note?: string | null;
   done?: boolean;
   href?: string;
+  /** 募集要项原文链接（官方日期附来源） */
+  sourceUrl?: string;
+  /** AI 提议、用户还没同意的日程（日历上虚线显示）；proposedChange 是 AI 对已有日程改期的提议 */
+  proposed?: boolean;
+  proposedChange?: { date: string; endDate: string | null } | null;
 };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -45,6 +50,11 @@ export function addDays(date: string, days: number) {
   const d = new Date(`${date}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+/** from 到 to 相隔几天（to 在前为负） */
+export function daysBetween(from: string, to: string) {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
 
 /** 往后挪 n 年；2/29 落到平年时用 2/28 */
@@ -106,7 +116,8 @@ export function itemsOn(items: CalendarItem[], date: string) {
 /** 给 AI 用的一行描述 */
 export function describeItem(it: CalendarItem) {
   const when = it.endDate && it.endDate !== it.date ? `${it.date}〜${it.endDate}` : it.date;
-  const flags = [it.tentative ? "仮" : "", it.done ? "已完成" : ""].filter(Boolean).join("，");
+  const flags = [it.tentative ? "仮" : "", it.done ? "已完成" : "", it.proposed ? "AI 提议，等用户同意" : ""].filter(Boolean).join("，");
   const id = it.source === "guide" ? "" : `；来源：${it.source}，ID：${it.sourceId}`;
-  return `${when} ${it.title}${flags ? `（${flags}）` : ""}${id}${it.note ? `；备注：${it.note.slice(0, 100)}` : ""}`;
+  const change = it.proposedChange ? `；AI 提议改到 ${it.proposedChange.date}${it.proposedChange.endDate ? `〜${it.proposedChange.endDate}` : ""}，等用户同意` : "";
+  return `${when} ${it.title}${flags ? `（${flags}）` : ""}${id}${change}${it.note ? `；备注：${it.note.slice(0, 100)}` : ""}`;
 }

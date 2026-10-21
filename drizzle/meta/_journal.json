@@ -50,6 +50,20 @@
       "when": 1792589806851,
       "tag": "0006_next-steps",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792593969393,
+      "tag": "0007_home-tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792593970392,
+      "tag": "0008_drop-todo-done",
+      "breakpoints": true
     }
   ]
 }

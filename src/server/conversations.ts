@@ -1,25 +1,40 @@
 import "server-only";
 import type { UIMessage } from "ai";
-import { asc, desc, eq, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, max, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { aiConversation, aiMessage } from "@/db/schema";
 
+/** 最近的通用对话（主页上的，不属于任何任务） */
 export async function getLatestConversation(userId: string) {
   const [row] = await db
     .select()
     .from(aiConversation)
-    .where(eq(aiConversation.userId, userId))
+    .where(and(eq(aiConversation.userId, userId), isNull(aiConversation.todoId)))
     .orderBy(desc(aiConversation.updatedAt))
     .limit(1);
   return row ?? null;
 }
 
-/** 取会话（校验归属）；不存在则按给定 id 新建 */
-export async function getOrCreateConversation(userId: string, id: string) {
+/** 任务专属的对话（一个任务一段），还没聊过时为空 */
+export async function getTaskConversation(userId: string, todoId: string) {
+  const [row] = await db
+    .select()
+    .from(aiConversation)
+    .where(and(eq(aiConversation.userId, userId), eq(aiConversation.todoId, todoId)));
+  return row ?? null;
+}
+
+/** 取会话（校验归属）；不存在则按给定 id 新建。todoId 是任务对话所属的任务（调用方先校验任务归属） */
+export async function getOrCreateConversation(userId: string, id: string, todoId?: string | null) {
   const [row] = await db.select().from(aiConversation).where(eq(aiConversation.id, id));
   if (row) return row.userId === userId ? row : null;
-  const [created] = await db.insert(aiConversation).values({ id, userId }).returning();
-  return created;
+  const [created] = await db
+    .insert(aiConversation)
+    .values({ id, userId, todoId: todoId ?? null })
+    .onConflictDoNothing()
+    .returning();
+  // 同一个任务已经有对话了（两个窗口同时开始）：不另开一段
+  return created ?? null;
 }
 
 export async function loadMessages(conversationId: string): Promise<UIMessage[]> {
@@ -52,4 +67,13 @@ export async function saveMessages(conversationId: string, messages: UIMessage[]
       .set({ updatedAt: new Date(), title: sql`coalesce(${aiConversation.title}, ${title || null})` })
       .where(eq(aiConversation.id, conversationId));
   });
+}
+
+/** 已经聊过的任务（任务卡上显示「继续和 AI 做」） */
+export async function listTaskConversationIds(userId: string) {
+  const rows = await db
+    .select({ todoId: aiConversation.todoId })
+    .from(aiConversation)
+    .where(and(eq(aiConversation.userId, userId), isNotNull(aiConversation.todoId)));
+  return new Set(rows.map((r) => r.todoId!));
 }
