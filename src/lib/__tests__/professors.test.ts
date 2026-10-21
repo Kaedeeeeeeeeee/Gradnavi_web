@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { demoReply } from "../ai/demo-model";
 import { describeDocument } from "../documents";
 import {
+  buildMoreQueries,
   buildPaperQueries,
   buildSearchQueries,
   candidateCount,
@@ -11,8 +12,10 @@ import {
   mergePaperReply,
   letterSkeleton,
   parseCandidates,
+  professorAffiliation,
   professorToTarget,
   splitSchools,
+  stripUniversity,
 } from "../professors";
 import { parseSearchResponse } from "../search";
 
@@ -153,4 +156,25 @@ test("论文检索结果合并进候选：只认检索到的链接，查不到�
   assert.deepEqual(b.papers, ["旧论文"]);
   assert.equal(b.fit, undefined);
   assert.equal(mergePaperReply("{oops", base, paperSources), base);
+});
+
+test("所属里重复的大学名去掉", () => {
+  assert.equal(stripUniversity("東京大学 大学院情報理工学系研究科 コンピュータ科学専攻", "東京大学"), "大学院情報理工学系研究科 コンピュータ科学専攻");
+  assert.equal(stripUniversity("大学院教育学研究科", "東京大学"), "大学院教育学研究科");
+  assert.equal(stripUniversity("東京大学", "東京大学"), undefined);
+  assert.equal(stripUniversity(null, "東京大学"), undefined);
+  assert.equal(professorAffiliation({ name: "x", university: "東京大学", department: "東京大学大学院情報理工学系研究科" }), "東京大学 大学院情報理工学系研究科");
+  const [c] = parseCandidates(
+    JSON.stringify({ candidates: [{ name: "宮尾祐介", university: "東京大学", department: "東京大学 大学院情報理工学系研究科", research: "x", sources: [sources[0].url] }] }),
+    sources,
+  );
+  assert.equal(c.department, "大学院情報理工学系研究科");
+});
+
+test("人数不够时的补充检索词和第一轮不同", () => {
+  const input = { keywords: "自然言語処理", schools: ["東京大学"] };
+  const first = buildSearchQueries(input);
+  const more = buildMoreQueries(input);
+  assert.ok(more.length > 0 && more.every((q) => !first.includes(q)));
+  assert.ok(buildMoreQueries({ keywords: "x", schools: [] }).length > 0);
 });

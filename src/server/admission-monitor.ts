@@ -27,6 +27,7 @@ import { UsageMeter } from "@/lib/credits";
 import { env } from "@/lib/env";
 import { sendMail } from "@/lib/mail";
 import { recordUsageSafe } from "./credits";
+import { pdfToText } from "./pdf-text";
 import { fetchPage } from "./search";
 import { addTodos } from "./todos";
 
@@ -40,11 +41,13 @@ export type CheckResult = { status: "unchanged" | "updated" | "new_year" | "base
 
 const FETCH_TIMEOUT_MS = 20_000;
 const MAX_BYTES = 3_000_000;
+/** 募集要项 PDF 常有几 MB */
+const MAX_PDF_BYTES = 20_000_000;
 const PROMPT_TEXT_LIMIT = 12_000;
 /** 募集要项全文（PDF 常有几十页，考试科目、事先联系的要求在中间）：读得多一些，只在页面有变化时读一次 */
 const GUIDE_TEXT_LIMIT = 45_000;
 
-type LoadedPage = { kind: "html"; text: string; links: PageLink[]; fingerprint: string } | { kind: "pdf"; fingerprint: string };
+type LoadedPage = { kind: "html"; text: string; links: PageLink[]; fingerprint: string } | { kind: "pdf"; data: Buffer; fingerprint: string };
 
 function charsetOf(contentType: string, head: string) {
   const fromHeader = /charset=([\w-]+)/i.exec(contentType)?.[1];
@@ -61,11 +64,12 @@ async function loadPage(url: string): Promise<LoadedPage> {
   });
   if (!res.ok) throw new Error(`页面打不开（HTTP ${res.status}）`);
   const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > MAX_BYTES) throw new Error("页面太大");
   const contentType = res.headers.get("content-type") ?? "";
   if (/pdf/i.test(contentType) || buf.subarray(0, 5).toString() === "%PDF-") {
-    return { kind: "pdf", fingerprint: createHash("sha256").update(buf).digest("hex") };
+    if (buf.length > MAX_PDF_BYTES) throw new Error("PDF 太大");
+    return { kind: "pdf", data: buf, fingerprint: createHash("sha256").update(buf).digest("hex") };
   }
+  if (buf.length > MAX_BYTES) throw new Error("页面太大");
   const head = buf.subarray(0, 2048).toString("latin1");
   let html: string;
   try {
@@ -114,20 +118,45 @@ async function askGuide(school: School, source: string, links: PageLink[], meter
 }
 
 /**
+ * 读募集要项全文：先直接下载（PDF 在本地取文字，网页去掉标签），读不到（扫描版 PDF、网站拒绝直接访问）
+ * 再用 DeepSeek 抓取服务。都失败时返回 null，由调用方沿用页面上抽到的结果。
+ */
+async function readGuideDocument(url: string, meter: UsageMeter, loaded?: LoadedPage): Promise<string | null> {
+  try {
+    const page = loaded ?? (await loadPage(url));
+    const text = page.kind === "pdf" ? await pdfToText(page.data) : page.text;
+    if (text.trim().length > 200) return text;
+  } catch (error) {
+    console.warn(`[monitor] 直接读取失败 ${url}`, error);
+  }
+  try {
+    return (await fetchPage(url, meter, GUIDE_TEXT_LIMIT)).content;
+  } catch (error) {
+    console.warn(`[monitor] 抓取服务读取失败 ${url}`, error);
+    return null;
+  }
+}
+
+/**
  * AI 抽取日程和入试要点。入试页面上通常只有日程和要项链接，考试科目、要不要先联系教授写在要项全文里：
- * 页面上缺日程或缺这些要点时，再读一次要项全文（PDF 或详细页面，DeepSeek 抓取服务）。
+ * 页面上缺日程或缺这些要点时，再读一次要项全文（PDF 或详细页面）。全文读不到就用页面上抽到的。
  */
 async function extractGuide(school: School, page: LoadedPage, meter: UsageMeter): Promise<ParsedGuide | null> {
   if (page.kind === "pdf") {
-    const { content } = await fetchPage(school.url, meter, GUIDE_TEXT_LIMIT);
+    const content = await readGuideDocument(school.url, meter, page);
+    if (!content) throw new Error("募集要项 PDF 读不出文字");
     return askGuide(school, content, [], meter, GUIDE_TEXT_LIMIT);
   }
   const first = await askGuide(school, page.text, page.links, meter);
   if (first?.events.length && !requirementsIncomplete(first.requirements)) return first;
   const docUrl = guideDocumentUrl(first?.pdfUrl ?? null, page.links);
   if (!docUrl || docUrl === school.url) return first;
-  const { content } = await fetchPage(docUrl, meter, GUIDE_TEXT_LIMIT);
-  const detail = await askGuide(school, content, [], meter, GUIDE_TEXT_LIMIT);
+  const content = await readGuideDocument(docUrl, meter);
+  if (!content) return first;
+  const detail = await askGuide(school, content, [], meter, GUIDE_TEXT_LIMIT).catch((error) => {
+    console.warn(`[monitor] 要项全文解析失败 ${docUrl}`, error);
+    return null;
+  });
   if (!detail) return first;
   // 日程以入试页面为准（页面上没有才用全文里的），入试要点以全文为准
   const schedule = first?.events.length ? first : detail.events.length ? { ...detail, pdfUrl: docUrl } : first;

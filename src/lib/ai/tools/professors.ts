@@ -40,10 +40,15 @@ export const searchProfessorsTool = defineTool({
     const profile = await getProfile(userId);
     const f = field ?? answerField(profile?.onboarding);
     const res = await runProfessorSearch(userId, { keywords, schools, preference, field: f, count, profile: profile?.markdown.slice(0, 2500) }, meter);
+    const n = res.candidates.length;
+    const want = count ?? DEFAULT_CANDIDATES;
     return {
       searchId: res.searchId,
       demo: res.demo,
-      shown: "候选卡片已显示在文稿栏",
+      // 回复只能说这一轮真有的卡片：人数、名字都以下面的 candidates 为准，上一轮的教授不在卡片里
+      shown: `这一轮文稿栏里有 ${n} 张候选卡片，就是下面这 ${n} 位。介绍时人数和名字只按这 ${n} 位说，不要把之前几轮的教授说成卡片里的。${
+        n < want ? `用户要 ${want} 位，只找到 ${n} 位：如实告诉用户，并提议怎么扩大范围（换关键词、加学校）。` : ""
+      }`,
       candidates: res.candidates.map((c) => ({
         name: c.name,
         university: c.university,

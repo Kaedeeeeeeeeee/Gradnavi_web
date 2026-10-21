@@ -110,6 +110,22 @@ export function cleanCopy(value: string | null | undefined): string | undefined 
   return out || undefined;
 }
 
+/** 第一轮人数不够时的补充检索：不限 researchmap，换成教员名单、研究室、KAKEN 的说法 */
+export function buildMoreQueries({ keywords, schools }: SearchInput): string[] {
+  const kw = keywords.trim();
+  if (!schools.length) return [`${kw} 准教授 研究室 大学院 指導`, `${kw} 大学院 教員一覧 研究室`];
+  return schools.flatMap((s) => [`${s} 大学院 ${kw} 教授 准教授`, `${s} ${kw} site:nrid.nii.ac.jp`]);
+}
+
+/** 「東京大学 大学院情報理工学系研究科」里重复的大学名去掉，避免显示成「東京大学 東京大学 …」 */
+export function stripUniversity(department: string | null | undefined, university: string): string | undefined {
+  const d = department?.trim();
+  if (!d) return undefined;
+  const u = university.trim();
+  const rest = u && d.startsWith(u) ? d.slice(u.length).replace(/^[\s　・,，、]+/, "") : d;
+  return rest || undefined;
+}
+
 const text = (max: number) => z.string().trim().max(max);
 
 const paperSchema = z.union([
@@ -167,7 +183,7 @@ export function parseCandidates(reply: string, sources: SourceLink[], limit = MA
     result.push({
       name: c.name,
       university: c.university,
-      department: c.department || undefined,
+      department: stripUniversity(c.department, c.university),
       lab: c.lab || undefined,
       research: cleanCopy(c.research) ?? "",
       fit: cleanCopy(c.fit),
@@ -239,7 +255,7 @@ type ProfessorInfo = {
 };
 
 export function professorAffiliation(p: ProfessorInfo) {
-  return [p.university, p.department, p.lab].filter(Boolean).join(" ");
+  return [p.university, stripUniversity(p.department, p.university), p.lab].filter(Boolean).join(" ");
 }
 
 /** 收藏的教授 → 文书的目标教授（计划书贴合、套磁信收件人） */
