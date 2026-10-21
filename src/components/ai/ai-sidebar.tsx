@@ -86,11 +86,35 @@ export function AiSidebar({ initialConversationId, initialMessages, demo }: Prop
 
   const busy = status === "submitted" || status === "streaming";
 
+  async function send(text: string) {
+    // 先让页面做准备（如编辑器保存未保存的修改），AI 才能读到最新内容
+    try {
+      await pageStore.runBeforeSend();
+    } catch (e) {
+      console.error("[ai-sidebar] beforeSend", e);
+    }
+    sendMessage({ text });
+  }
+
+  // 页面上的按钮（如“AI 改写选中内容”）通过 useAskAi 代用户发消息
+  const sendRef = useRef(send);
+  useEffect(() => {
+    sendRef.current = busy ? () => Promise.resolve() : send;
+  });
+  useEffect(
+    () =>
+      pageStore.onAsk((text) => {
+        writeOpen(true);
+        void sendRef.current(text);
+      }),
+    [pageStore],
+  );
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
     if (!text || busy) return;
-    sendMessage({ text });
+    void send(text);
     setInput("");
   }
 
