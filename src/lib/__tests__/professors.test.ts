@@ -94,3 +94,8 @@ test("演示模型：“找教授：xxx” 调用 search_professors", () => {
   const reply = demoReply([{ role: "user", content: [{ type: "text", text: "找教授：第二言語習得" }] }]);
   assert.deepEqual(reply, { toolName: "search_professors", input: { keywords: "第二言語習得", schools: [] } });
 });
+
+test("演示模型：“日程：日期 标题” 调用 add_calendar_event", () => {
+  const reply = demoReply([{ role: "user", content: [{ type: "text", text: "日程：2026-12-01 JLPT N1" }] }]);
+  assert.deepEqual(reply, { toolName: "add_calendar_event", input: { date: "2026-12-01", title: "JLPT N1", kind: "other" } });
+});

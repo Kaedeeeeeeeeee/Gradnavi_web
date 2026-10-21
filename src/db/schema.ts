@@ -1,4 +1,6 @@
-import { boolean, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import type { GuideEvent } from "../lib/admissions";
+import type { CalendarKind } from "../lib/calendar";
 import type { DocKind, TargetProfessor } from "../lib/documents";
 import type { ProfessorStatus, SourceLink } from "../lib/professors";
 import type { OnboardingAnswers } from "../lib/onboarding";
@@ -80,7 +82,7 @@ export const userProfile = pgTable("user_profile", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** Todo：用户和 AI 共用。日历、关联教授/文档等字段在第 5 步扩展 */
+/** Todo：用户和 AI 共用。可挂在某位教授或某份文书下；有截止日期的会显示在日历上 */
 export const todo = pgTable(
   "todo",
   {
@@ -94,6 +96,8 @@ export const todo = pgTable(
     dueDate: date("due_date"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdBy: text("created_by").$type<"user" | "ai" | "system">().notNull().default("user"),
+    professorId: text("professor_id").references(() => savedProfessor.id, { onDelete: "set null" }),
+    documentId: text("document_id").references(() => document.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -204,4 +208,84 @@ export const savedProfessor = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("saved_professor_user_name_univ_idx").on(t.userId, t.name, t.university)],
+);
+
+// ---------- 第 5 步：日历、募集要项监控 ----------
+
+/**
+ * 用户和 AI 手动添加的日程。日历页面还会合并显示：有截止日期的 Todo、教授跟进日、
+ * 关注研究科的募集要项日程（后三者不复制到这张表，改源数据日历就跟着变）。
+ */
+export const calendarEvent = pgTable(
+  "calendar_event",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    date: date("date").notNull(),
+    endDate: date("end_date"),
+    kind: text("kind").$type<CalendarKind>().notNull().default("other"),
+    note: text("note"),
+    createdBy: text("created_by").$type<"user" | "ai" | "system">().notNull().default("user"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("calendar_event_user_date_idx").on(t.userId, t.date)],
+);
+
+/** 研究科（跨用户共享）。募集要项按研究科每天检查一次，多个用户关注同一研究科只查一次 */
+export const graduateSchool = pgTable(
+  "graduate_school",
+  {
+    id: text("id").primaryKey(),
+    university: text("university").notNull(),
+    name: text("name").notNull(),
+    /** 募集要项 / 入试信息页面 */
+    url: text("url").notNull(),
+    /** 页面里和入试相关部分的指纹，变了才调用 AI 解析 */
+    contentHash: text("content_hash"),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    changedAt: timestamp("changed_at", { withTimezone: true }),
+    /** 用户点“立即检查”或刚关注时设置，worker 几分钟内处理 */
+    checkRequestedAt: timestamp("check_requested_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("graduate_school_univ_name_idx").on(t.university, t.name)],
+);
+
+/** AI 从募集要项页面解析出的日程，每个研究科每个入学年度一条 */
+export const admissionGuide = pgTable(
+  "admission_guide",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => graduateSchool.id, { onDelete: "cascade" }),
+    /** 入学年度（如 2027 = 2027 年 4 月入学的年度，10 月入学也算同一年度） */
+    admissionYear: integer("admission_year").notNull(),
+    title: text("title"),
+    events: jsonb("events").$type<GuideEvent[]>().notNull().default([]),
+    sourceUrl: text("source_url").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("admission_guide_school_year_idx").on(t.schoolId, t.admissionYear)],
+);
+
+/** 用户关注的研究科 */
+export const schoolWatch = pgTable(
+  "school_watch",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => graduateSchool.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.schoolId] }), index("school_watch_school_idx").on(t.schoolId)],
 );

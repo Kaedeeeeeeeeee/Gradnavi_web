@@ -15,6 +15,8 @@ npm run dev            # http://localhost:3000
 
 - 未配置 `SMTP_URL` 时，登录验证码会打印在 `npm run dev` 的终端里。
 - 未配置 `DEEPSEEK_API_KEY` 时，AI 侧边栏使用演示模型（固定回复，不花钱）：发送「记住：……」会写入 user.md，「待办：……」会添加 Todo，「找教授：关键词」会返回示例教授，用来测试工具调用链路；找教授页面也返回明确标注的示例数据。
+- 「日程：2026-12-01 标题」会添加一条日程。
+- 定时任务（募集要项监控）是单独的进程：另开终端运行 `npm run worker`（先打包成 `dist/worker.mjs` 再启动）。没有 key 时只做页面变化检测，不解析日程。
 - 服务启动时会自动执行数据库迁移。
 - 改了 `src/db/schema.ts` 之后运行 `npm run db:generate` 生成迁移文件并提交（CI 会检查）。
 
@@ -22,7 +24,7 @@ npm run dev            # http://localhost:3000
 
 ## 部署
 
-一台 2 核 4G 的东京/香港云服务器，跑 Caddy（自动 HTTPS）+ web + Postgres。
+一台 2 核 4G 的东京/香港云服务器，跑 Caddy（自动 HTTPS）+ web + worker（定时任务，同一镜像）+ Postgres。
 
 1. **CI**：每个 PR 跑 lint、类型检查、迁移检查和构建；合并到 `main` 后自动构建镜像推送到 `ghcr.io/kaedeeeeeeeeee/gradnavi_web`。
 2. **服务器首次准备**（买好服务器、域名解析到服务器 IP 之后）：
@@ -36,7 +38,14 @@ npm run dev            # http://localhost:3000
    ```
 3. **后续发布**：在 GitHub Actions 里手动运行 `Deploy` 工作流（需要仓库 Secrets：`DEPLOY_HOST`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`）。
 
-生产环境必须配置 `SMTP_URL`，否则无法发送验证码。
+生产环境必须配置 `SMTP_URL`，否则无法发送验证码和募集要项更新通知。
+
+## 募集要项监控
+
+- 用户在「目标研究科」页（或让 AI）关注研究科，填该研究科入试 / 募集要项页面的网址。研究科跨用户共享，同一研究科每天只查一次。
+- worker（`src/worker/index.ts`，pg-boss）每天 4:00（日本时间）检查全部被关注的研究科，另外每 5 分钟处理新关注和“立即检查”的。
+- 每次检查先直接抓页面，只对入试相关的行和链接算指纹（`src/lib/admissions.ts`）；没变化就结束，不花钱。变了才调用一次 AI 抽取日程（页面没日期时再读一次要项 PDF），日程有变化才邮件 + Todo 通知关注的用户。系统任务，不扣用户 credit。
+- 日历里：最新要项的日程都已过去时，整体顺延一年显示为“仮・基于 X 年度”；新年度要项解析出来后自动变成正式日程。
 
 ## AI 工具
 
@@ -54,7 +63,8 @@ src/app/api/chat/   AI 对话接口（流式输出 + 工具调用 + 对话持久
 src/components/ai/  AI 侧边栏
 src/lib/ai/         模型配置、系统提示、工具注册表（tools/）
 src/lib/            认证、邮件、环境变量、引导问卷与路线图规则
-src/server/         数据读写（user.md、Todo、对话），页面操作和 AI 工具共用
+src/server/         数据读写（user.md、Todo、日历、文书、教授、研究科），页面操作和 AI 工具共用
+src/worker/         定时任务进程（打包为 dist/worker.mjs）
 src/proxy.ts        未登录访问工作台时跳转登录页
 drizzle/            SQL 迁移文件
 deploy/             生产 docker compose 与 Caddyfile

@@ -30,6 +30,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <Link href="/documents" className="text-zinc-500 hover:text-foreground">
                 文书
               </Link>
+              <Link href="/calendar" className="text-zinc-500 hover:text-foreground">
+                日历
+              </Link>
+              <Link href="/schools" className="text-zinc-500 hover:text-foreground">
+                目标研究科
+              </Link>
               <Link href="/profile" className="text-zinc-500 hover:text-foreground">
                 我的档案
               </Link>

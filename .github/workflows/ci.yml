@@ -25,6 +25,7 @@ jobs:
         env:
           DATABASE_URL: postgres://unused@localhost/unused
       - run: npm run build
+      - run: npm run build:worker
 
   # main 分支：构建镜像并推送到 GitHub 容器仓库（ghcr.io）
   image:

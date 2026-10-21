@@ -3,7 +3,7 @@
 import { useOptimistic, useState, useTransition } from "react";
 import { addTodoAction, deleteTodoAction, toggleTodoAction } from "../actions";
 
-type Todo = { id: string; title: string; note: string | null; done: boolean; createdBy: string };
+type Todo = { id: string; title: string; note: string | null; done: boolean; dueDate: string | null; createdBy: string };
 
 export function TodoList({ todos }: { todos: Todo[] }) {
   const [optimistic, setOptimistic] = useOptimistic(todos, (state, { id, done }: { id: string; done: boolean }) =>
@@ -74,6 +74,7 @@ function Item({ todo, onToggle }: { todo: Todo; onToggle: (id: string, done: boo
       <div className="flex-1">
         <p className={`text-sm ${todo.done ? "text-zinc-400 line-through" : ""}`}>
           {todo.title}
+          {todo.dueDate && !todo.done && <span className="ml-2 text-xs text-red-600">截止 {todo.dueDate.slice(5)}</span>}
           {todo.createdBy === "ai" && <span className="ml-2 text-xs text-zinc-400">AI 添加</span>}
         </p>
         {todo.note && !todo.done && <p className="text-xs text-zinc-500">{todo.note}</p>}
