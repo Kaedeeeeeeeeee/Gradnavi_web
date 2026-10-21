@@ -136,3 +136,52 @@ export function planNextSteps(s: StepState): StepPlan {
 
   return { open, done };
 }
+
+/** 「让 AI 开始」：点按钮后代用户发给 AI 的开场消息；href 有值时改为跳转到对应页面（页面自己会让 AI 开工） */
+export type Kickoff = { prompt: string } | { href: string };
+
+export function kickoffFor(t: { stepKey: string | null; title: string; note: string | null; professorId: string | null; documentId: string | null }, professorName?: string): Kickoff {
+  const who = professorName ? `${professorName}教授` : "这位教授";
+  const pid = t.professorId ? `（教授清单 ID：${t.professorId}）` : "";
+  const step = t.stepKey?.startsWith("prof:") ? t.stepKey.split(":")[2] : t.stepKey;
+  switch (step) {
+    case "confirm_path":
+      return { prompt: "帮我确认申请路径：根据我的档案比较「先读研究生再考修士」「直考修士」「博士」哪条更适合我，说明理由。我确认后帮我更新 user.md。" };
+    case "pick_schools":
+      return {
+        prompt:
+          "帮我确定目标大学和研究科：先根据我的档案（研究方向、成绩、日语水平、偏好）问我两三个关键问题，再推荐 3–5 个合适的研究科并说明理由。我选定后，帮我找到它们官网的入试信息页面并关注。",
+      };
+    case "write_plan":
+      return { prompt: "帮我把现有研究计划整理成计划书初稿：新建一份研究计划书，然后按带写步骤从第 1 步开始问我。" };
+    case "find_professors":
+      return {
+        prompt: "帮我在已关注的研究科里找 3–5 位候选教授：先看我关注了哪些研究科，按我的研究方向检索，介绍每位教授和我方向的关联。我挑中的再收藏。",
+      };
+    case "japanese":
+      return { prompt: "帮我制定日语学习计划：根据我现在的日语水平和目标入学时间，排出到 N2 / N1 的阶段计划和考试日期，我确认后加进 Todo 和日历。" };
+    case "english":
+      return { prompt: "帮我准备英语成绩：根据我的目标研究科说明 TOEFL 和 TOEIC 该考哪个、要多少分，排出备考计划和考试日期，我确认后加进 Todo 和日历。" };
+    case "achievements":
+      return { prompt: "帮我整理已有研究成果（硕士论文、发表论文、学会报告）：先问我有哪些，再整理成申请博士时能用的清单，记进 user.md。" };
+    case "application":
+      return { prompt: "帮我准备出愿材料：查看我关注研究科的募集要项，列出需要的材料和截止日期，我确认后加进 Todo。" };
+    case "plan":
+      return {
+        prompt: `帮我结合${who}${pid}的研究方向写研究计划书草稿：先查教授近几年的论文，告诉我可以从哪些角度贴合；然后新建一份关联这位教授的研究计划书，按带写步骤从第 1 步开始问我。`,
+      };
+    case "letter":
+      if (t.documentId) return { href: `/documents/${t.documentId}?ai=letter` };
+      return { prompt: `帮我给${who}${pid}写套磁信：新建一份关联这位教授的套磁信，按我的档案、计划书和教授的研究方向写日文初稿。` };
+    case "followup":
+      return { prompt: `我给${who}${pid}发了套磁信，还没收到回复。帮我判断什么时候跟进合适，到时候写一封简短礼貌的日文跟进邮件，并把跟进日期记到教授清单里。` };
+    case "reply":
+      return { prompt: `${who}${pid}回复我了。我先把教授的回信贴给你，请帮我理解内容，再写日文回复、约面谈时间。` };
+    case "interview":
+      return { prompt: `帮我准备和${who}${pid}的面谈：整理教授近期研究、可能被问到的问题和我的回答要点，然后和我做一次模拟问答。` };
+    default:
+      return {
+        prompt: `我想开始做这件事：「${t.title}」${t.note ? `（${t.note}）` : ""}。帮我拆成具体步骤，能直接用工具帮我做的就直接做，需要我决定的先问我。`,
+      };
+  }
+}

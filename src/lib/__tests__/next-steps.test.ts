@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { planNextSteps, professorStepKey, type StepState } from "../next-steps";
+import { kickoffFor, planNextSteps, professorStepKey, type StepState } from "../next-steps";
 import type { OnboardingAnswers } from "../onboarding";
 
 const answers: OnboardingAnswers = {
@@ -84,4 +84,15 @@ test("放弃的教授不产生任务；收藏够 3 位勾掉找教授", () => {
   assert.ok(plan.done.includes("find_professors"));
   const dropped = planNextSteps(state({ schoolCount: 1, professors: [{ id: "x", name: "x", status: "dropped" }] }));
   assert.ok(![...dropped.open.map((t) => t.key), ...dropped.done].some((k) => k.startsWith("prof:x")));
+});
+
+test("「让 AI 开始」按任务类型给开场消息，已有套磁信直接去编辑器", () => {
+  const t = { stepKey: "pick_schools", title: "确定目标大学和研究科", note: null, professorId: null, documentId: null };
+  const prompt = (k: ReturnType<typeof kickoffFor>) => ("prompt" in k ? k.prompt : "");
+  assert.ok(prompt(kickoffFor(t)).includes("研究科"));
+  const letter = { ...t, stepKey: professorStepKey("p1", "letter"), professorId: "p1" };
+  assert.deepEqual(kickoffFor({ ...letter, documentId: "d1" }, "山田太郎"), { href: "/documents/d1?ai=letter" });
+  const k = prompt(kickoffFor(letter, "山田太郎"));
+  assert.ok(k.includes("山田太郎教授") && k.includes("p1"));
+  assert.ok(prompt(kickoffFor({ ...t, stepKey: null, title: "买机票" })).includes("「买机票」"));
 });

@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { addDays, todayJst } from "@/lib/calendar";
+import { kickoffFor } from "@/lib/next-steps";
 import { decideTrack, PATH_LABELS, suggestPath, TRACK_LABELS } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
 import { listCalendar } from "@/server/calendar";
 import { syncNextSteps } from "@/server/next-steps";
 import { getProfile } from "@/server/profile";
+import { listSavedProfessors } from "@/server/professors";
 import { listTodos } from "@/server/todos";
 import { TodoList } from "./todo-list";
 
@@ -19,7 +21,12 @@ export default async function WorkbenchPage() {
 
   const today = todayJst();
   await syncNextSteps(user.id);
-  const [todos, calendar] = await Promise.all([listTodos(user.id, { includeDone: true }), listCalendar(user.id, today, addDays(today, 13), today)]);
+  const [todos, calendar, professors] = await Promise.all([
+    listTodos(user.id, { includeDone: true }),
+    listCalendar(user.id, today, addDays(today, 13), today),
+    listSavedProfessors(user.id),
+  ]);
+  const professorName = new Map(professors.map((p) => [p.id, p.name]));
   const upcoming = calendar.filter((it) => !it.done).slice(0, 8);
   const path = answers.path === "unsure" ? `${PATH_LABELS[suggestPath(answers)]}（建议，待确认）` : PATH_LABELS[answers.path];
 
@@ -35,7 +42,15 @@ export default async function WorkbenchPage() {
       <section className="space-y-3">
         <h2 className="font-medium">下一步</h2>
         <TodoList
-          todos={todos.map((t) => ({ id: t.id, title: t.title, note: t.note, done: t.done, dueDate: t.dueDate, createdBy: t.createdBy }))}
+          todos={todos.map((t) => ({
+            id: t.id,
+            title: t.title,
+            note: t.note,
+            done: t.done,
+            dueDate: t.dueDate,
+            createdBy: t.createdBy,
+            kickoff: kickoffFor(t, t.professorId ? professorName.get(t.professorId) : undefined),
+          }))}
         />
       </section>
 
