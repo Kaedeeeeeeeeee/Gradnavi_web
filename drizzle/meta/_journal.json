@@ -15,6 +15,13 @@
       "when": 1792565253907,
       "tag": "0001_ai-sidebar-onboarding",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792566117387,
+      "tag": "0002_documents",
+      "breakpoints": true
     }
   ]
 }

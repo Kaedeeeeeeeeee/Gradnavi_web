@@ -1,4 +1,5 @@
 import { boolean, date, index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import type { DocKind, TargetProfessor } from "../lib/documents";
 import type { OnboardingAnswers } from "../lib/onboarding";
 
 // 以下四张表是 Better Auth 的核心表，字段名需与 Better Auth 保持一致。
@@ -144,4 +145,27 @@ export const aiToolCall = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("ai_tool_call_user_id_idx").on(t.userId, t.createdAt)],
+);
+
+// ---------- 第 3 步：文书（研究计划书、套磁信、自我介绍） ----------
+
+/** 文书正文以 Markdown 存储，用户在编辑器里改、AI 通过工具改，走同一套 src/server/documents */
+export const document = pgTable(
+  "document",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<DocKind>().notNull(),
+    title: text("title").notNull(),
+    markdown: text("markdown").notNull().default(""),
+    /** 计划书要贴合的教授（主线 A）。第 4 步从教授清单关联，现在可手填 */
+    targetProfessor: jsonb("target_professor").$type<TargetProfessor>(),
+    /** 每次保存 +1，用于发现编辑器和 AI 同时修改的冲突 */
+    version: integer("version").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("document_user_id_idx").on(t.userId, t.updatedAt)],
 );

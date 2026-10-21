@@ -5,4 +5,10 @@ export const TOOL_META: Record<string, { label: string; mutates: boolean }> = {
   list_todos: { label: "查看 Todo", mutates: false },
   add_todos: { label: "添加 Todo", mutates: true },
   update_todo: { label: "修改 Todo", mutates: true },
+  list_documents: { label: "查看文书列表", mutates: false },
+  read_document: { label: "读取文书", mutates: false },
+  create_document: { label: "新建文书", mutates: true },
+  update_document_section: { label: "写入文书", mutates: true },
+  replace_document_text: { label: "改写文书", mutates: true },
+  update_document: { label: "修改文书", mutates: true },
 };

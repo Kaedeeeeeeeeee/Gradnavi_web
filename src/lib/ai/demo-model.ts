@@ -3,6 +3,7 @@ import type { LanguageModelV4, LanguageModelV4Prompt, LanguageModelV4StreamPart 
 // 演示模型：没有配置 DEEPSEEK_API_KEY 时使用，不花钱、结果固定，方便本地开发和测试整条链路。
 //   “记住：xxx” → 调用 update_user_md 写进“偏好与备注”
 //   “待办：xxx” → 调用 add_todos
+//   “写入：xxx” → 在文书编辑器页面时，调用 update_document_section 追加到当前文书的“メモ”一节
 //   其他 → 固定回复
 
 const usage = {
@@ -32,12 +33,19 @@ export function demoReply(prompt: LanguageModelV4Prompt): Reply {
   }
   const todo = /^待办[:：]\s*([\s\S]+)$/.exec(text);
   if (todo) return { toolName: "add_todos", input: { items: [{ title: todo[1].slice(0, 100) }] } };
+  const write = /^写入[:：]\s*([\s\S]+)$/.exec(text);
+  if (write) {
+    const system = prompt.find((m) => m.role === "system")?.content ?? "";
+    const docId = /文档 ID：(\S+)/.exec(system)?.[1];
+    if (!docId) return { text: "（演示模式）请先打开一份文书，再发送「写入：……」。" };
+    return { toolName: "update_document_section", input: { id: docId, section: "メモ", content: write[1], mode: "append" } };
+  }
 
   return {
     text:
       "（演示模式：服务器还没有配置 DEEPSEEK_API_KEY，这是固定回复。）\n\n" +
       `收到：「${text.slice(0, 100)}」。\n\n` +
-      "可以发送「记住：……」测试写入 user.md，或「待办：……」测试添加 Todo。",
+      "可以发送「记住：……」测试写入 user.md，「待办：……」测试添加 Todo，在文书页面发送「写入：……」测试写入文书。",
   };
 }
 
