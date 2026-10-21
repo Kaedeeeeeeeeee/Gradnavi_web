@@ -80,3 +80,69 @@ body {
 @theme {
   --animate-pane-in: pane-in 180ms ease-out;
 }
+
+/* 文书编辑器：AI 修改建议 / 教授批注针对的原文 */
+.doc-mark {
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.doc-mark-suggestion {
+  background: rgb(16 185 129 / 0.12);
+  border-bottom-color: rgb(16 185 129 / 0.7);
+}
+.doc-mark-comment {
+  background: rgb(245 158 11 / 0.14);
+  border-bottom-color: rgb(245 158 11 / 0.7);
+}
+.doc-mark-active.doc-mark-suggestion {
+  background: rgb(16 185 129 / 0.32);
+}
+.doc-mark-active.doc-mark-comment {
+  background: rgb(245 158 11 / 0.36);
+}
+
+/* 中文对照：编辑器排成两栏，每段日文后面的中文格子落在右栏同一行 */
+.zh-on .doc-prose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 1.5rem;
+  row-gap: 0.75em;
+  align-items: start;
+}
+.zh-on .doc-prose > * {
+  grid-column: 1;
+  margin-top: 0 !important;
+}
+.zh-on .doc-prose > :is(h1, h2, h3, h4, h5, h6) {
+  grid-column: 1 / -1;
+}
+.zh-on .doc-prose > h2 {
+  padding-top: 0.75em;
+}
+.zh-on .doc-prose > .zh-cell {
+  grid-column: 2;
+  font-family: var(--font-sans), sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.85;
+  color: #52525b;
+  user-select: none;
+}
+.zh-cell .zh-stale {
+  color: #a1a1aa;
+}
+.zh-cell .zh-action {
+  font-size: 0.75rem;
+  color: #2563eb;
+  text-decoration: underline;
+}
+@media (prefers-color-scheme: dark) {
+  .zh-on .doc-prose > .zh-cell {
+    color: #a1a1aa;
+  }
+  .zh-cell .zh-stale {
+    color: #71717a;
+  }
+  .zh-cell .zh-action {
+    color: #60a5fa;
+  }
+}

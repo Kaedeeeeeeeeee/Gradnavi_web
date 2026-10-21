@@ -3,7 +3,8 @@ import type { LanguageModelV4, LanguageModelV4Prompt, LanguageModelV4StreamPart 
 // 演示模型：没有配置 DEEPSEEK_API_KEY 时使用，不花钱、结果固定，方便本地开发和测试整条链路。
 //   “记住：xxx” → 调用 update_user_md 写进“偏好与备注”
 //   “待办：xxx” → 调用 add_todos
-//   “写入：xxx” → 在文书编辑器页面时，调用 update_document_section 追加到当前文书的“メモ”一节
+//   “写入：xxx” → 在文书编辑器页面时，对当前文书的“メモ”一节提出修改建议（追加）
+//   “提纲” → 在文书编辑器页面时，给当前文书提出一份示例提纲
 //   “找教授：xxx” → 调用 search_professors（返回示例教授）
 //   “日程：2026-12-01 xxx” → 调用 add_calendar_event
 //   其他 → 固定回复
@@ -45,14 +46,34 @@ export function demoReply(prompt: LanguageModelV4Prompt): Reply {
     const system = prompt.find((m) => m.role === "system")?.content ?? "";
     const docId = /文档 ID：(\S+)/.exec(system)?.[1];
     if (!docId) return { text: "（演示模式）请先打开一份文书，再发送「写入：……」。" };
-    return { toolName: "update_document_section", input: { id: docId, section: "メモ", content: write[1], mode: "append" } };
+    return {
+      toolName: "update_document_section",
+      input: { id: docId, section: "メモ", content: write[1], mode: "append", zh: `（演示译文）${write[1].slice(0, 40)}`, summary: "在メモ里追加一段" },
+    };
+  }
+  if (/^提纲$/.test(text)) {
+    const system = prompt.find((m) => m.role === "system")?.content ?? "";
+    const docId = /文档 ID：(\S+)/.exec(system)?.[1];
+    if (!docId) return { text: "（演示模式）请先打开一份文书，再发送「提纲」。" };
+    return {
+      toolName: "propose_outline",
+      input: {
+        id: docId,
+        sections: [
+          { heading: "研究題目", points: ["（演示）暂定题目"] },
+          { heading: "研究背景と問題意識", points: ["（演示）为什么关心这个问题", "（演示）相关经历"] },
+          { heading: "研究方法", points: ["（演示）资料和分析方法"] },
+          { heading: "期待される成果", points: ["（演示）预期成果"] },
+        ],
+      },
+    };
   }
 
   return {
     text:
       "（演示模式：服务器还没有配置 DEEPSEEK_API_KEY，这是固定回复。）\n\n" +
       `收到：「${text.slice(0, 100)}」。\n\n` +
-      "可以发送「记住：……」测试写入 user.md，「待办：……」测试添加 Todo，「找教授：……」测试教授检索，「日程：2026-12-01 ……」测试添加日程，在文书页面发送「写入：……」测试写入文书。",
+      "可以发送「记住：……」测试写入 user.md，「待办：……」测试添加 Todo，「找教授：……」测试教授检索，「日程：2026-12-01 ……」测试添加日程，在文书页面发送「写入：……」测试修改建议、发送「提纲」测试提纲。",
   };
 }
 

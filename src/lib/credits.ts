@@ -2,13 +2,14 @@
 // 每次 AI 操作先用 UsageMeter 累计 token 和检索/抓取次数，结束时按价格表算出“我们的成本”（美元），
 // 再按 creditsPerUsd × markup 换算成要扣的 credit。成本和扣费都记进 ai_usage，方便真实 key 测试后调价。
 
-export const FEATURES = ["chat", "professor_search", "admission_monitor"] as const;
+export const FEATURES = ["chat", "professor_search", "admission_monitor", "doc_assist"] as const;
 export type Feature = (typeof FEATURES)[number];
 
 export const FEATURE_LABELS: Record<Feature, string> = {
   chat: "AI 对话",
   professor_search: "找教授检索",
   admission_monitor: "募集要项监控（系统）",
+  doc_assist: "文书 AI（改写、翻译、审阅）",
 };
 
 export const LEDGER_KINDS = ["signup_grant", "admin_grant", "usage", "topup", "refund"] as const;

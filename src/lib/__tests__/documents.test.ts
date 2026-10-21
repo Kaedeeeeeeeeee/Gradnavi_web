@@ -62,7 +62,7 @@ test("演示模式：在文书页面“写入：”会调用文书工具", () =>
   ]);
   assert.deepEqual(reply, {
     toolName: "update_document_section",
-    input: { id: "abc-123", section: "メモ", content: "テスト", mode: "append" },
+    input: { id: "abc-123", section: "メモ", content: "テスト", mode: "append", zh: "（演示译文）テスト", summary: "在メモ里追加一段" },
   });
   const noDoc = demoReply([{ role: "user", content: [{ type: "text", text: "写入：テスト" }] }]);
   assert.ok("text" in noDoc);

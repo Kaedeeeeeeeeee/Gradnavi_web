@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
-import { getDocument } from "@/server/documents";
+import { getDocument, snapshotVersion } from "@/server/documents";
 import { renderDocumentPdf } from "@/server/pdf";
 
 export const maxDuration = 60;
@@ -14,6 +14,8 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/documents/[id]/
 
   try {
     const pdf = await renderDocumentPdf(doc.title, doc.markdown);
+    // 导出给教授的就是一个值得留的版本
+    await snapshotVersion(session.user.id, doc.id, "export").catch((e) => console.error("[pdf] 存版失败", e));
     const filename = encodeURIComponent(`${doc.title}.pdf`);
     return new Response(pdf as BodyInit, {
       headers: {

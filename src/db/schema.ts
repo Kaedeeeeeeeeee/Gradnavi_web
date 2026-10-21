@@ -2,7 +2,11 @@ import { boolean, date, doublePrecision, index, integer, jsonb, pgTable, primary
 import type { GuideEvent } from "../lib/admissions";
 import type { CalendarKind } from "../lib/calendar";
 import type { Feature, LedgerKind } from "../lib/credits";
-import type { DocKind, TargetProfessor } from "../lib/documents";
+import type { DocKind, Outline, TargetProfessor, WriteMode, CommentCategory, CommentStatus } from "../lib/documents";
+import type { DocOp, SuggestionSource, SuggestionStatus } from "../lib/doc-ops";
+import type { VersionTrigger } from "../lib/doc-history";
+import type { ZhEntry } from "../lib/doc-zh";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { ProfessorStatus, SourceLink } from "../lib/professors";
 import type { OnboardingAnswers } from "../lib/onboarding";
 import type { TaskChange, TaskStatus, TaskStep } from "../lib/tasks";
@@ -187,10 +191,87 @@ export const document = pgTable(
     targetProfessor: jsonb("target_professor").$type<TargetProfessor>(),
     /** 每次保存 +1，用于发现编辑器和 AI 同时修改的冲突 */
     version: integer("version").notNull().default(1),
+    /** 中文对照：每段日文的指纹 → 中文（见 src/lib/doc-zh.ts） */
+    zh: jsonb("zh").$type<ZhEntry[]>().notNull().default([]),
+    outline: jsonb("outline").$type<Outline>(),
+    writeMode: text("write_mode").$type<WriteMode>(),
+    /** 定制版：复制自哪份文书的第几版 */
+    parentId: text("parent_id").references((): AnyPgColumn => document.id, { onDelete: "set null" }),
+    parentVersion: integer("parent_version"),
+    /** 套磁信附上的计划书 */
+    attachmentId: text("attachment_id").references((): AnyPgColumn => document.id, { onDelete: "set null" }),
+    /** 上次存版以来做过的修改（合成版本说明用） */
+    pendingChanges: jsonb("pending_changes").$type<string[]>().notNull().default([]),
+    /** 正文最后一次被修改的时间（判断“停手 30 分钟”） */
+    lastEditedAt: timestamp("last_edited_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("document_user_id_idx").on(t.userId, t.updatedAt)],
+  (t) => [index("document_user_id_idx").on(t.userId, t.updatedAt), index("document_parent_idx").on(t.parentId)],
+);
+
+/** 文书的版本：每版存全文（文书很小），对比时现算差异 */
+export const documentVersion = pgTable(
+  "document_version",
+  {
+    id: text("id").primaryKey(),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => document.id, { onDelete: "cascade" }),
+    /** 第几版，每份文书从 1 起 */
+    number: integer("number").notNull(),
+    markdown: text("markdown").notNull(),
+    zh: jsonb("zh").$type<ZhEntry[]>().notNull().default([]),
+    /** 自动生成的一句说明 */
+    summary: text("summary").notNull(),
+    /** 用户起的名字（如「发给佐藤教授的版本」） */
+    name: text("name"),
+    trigger: text("trigger").$type<VersionTrigger>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("document_version_doc_number_idx").on(t.documentId, t.number)],
+);
+
+/** AI 对文书的修改建议，用户接受后才写进正文 */
+export const documentSuggestion = pgTable(
+  "document_suggestion",
+  {
+    id: text("id").primaryKey(),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => document.id, { onDelete: "cascade" }),
+    op: jsonb("op").$type<DocOp>().notNull(),
+    /** 新写的日文对应的中文，按段落 */
+    zh: jsonb("zh").$type<string[]>().notNull().default([]),
+    /** 一句中文说明（如「改写研究背景，补充问题意识」） */
+    summary: text("summary").notNull(),
+    source: text("source").$type<SuggestionSource>().notNull(),
+    commentId: text("comment_id"),
+    status: text("status").$type<SuggestionStatus>().notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [index("document_suggestion_doc_idx").on(t.documentId, t.status)],
+);
+
+/** 「让 AI 当教授审一遍」留下的页边批注。只批注，不改原文 */
+export const documentComment = pgTable(
+  "document_comment",
+  {
+    id: text("id").primaryKey(),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => document.id, { onDelete: "cascade" }),
+    /** 第几轮审阅 */
+    round: integer("round").notNull(),
+    /** 批注针对的原文（逐字摘录，用来在正文里标出位置） */
+    quote: text("quote").notNull(),
+    body: text("body").notNull(),
+    category: text("category").$type<CommentCategory>().notNull(),
+    status: text("status").$type<CommentStatus>().notNull().default("open"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("document_comment_doc_idx").on(t.documentId, t.round)],
 );
 
 // ---------- 第 4 步：找教授（教授清单） ----------
