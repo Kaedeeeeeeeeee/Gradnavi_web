@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { AI_TASK_STATUSES, TASK_STATUS_LABELS } from "@/lib/tasks";
 import { syncNextSteps } from "@/server/next-steps";
 import { addTodos, deleteTodo, listTodos, updateTodo } from "@/server/todos";
 import { defineTool } from "./registry";
@@ -7,7 +8,13 @@ import { defineTool } from "./registry";
 const links = {
   professorId: z.string().optional().describe("挂在教授清单里的某位教授下（教授 ID）"),
   documentId: z.string().optional().describe("挂在某份文书下（文书 ID）"),
+  schoolId: z.string().optional().describe("挂在某个关注的研究科下（研究科 ID，用 list_watched_schools 查）"),
 };
+
+const stepsSchema = z
+  .array(z.object({ title: z.string().min(1).max(100), done: z.boolean().optional() }))
+  .max(20)
+  .describe("子步骤（任务内的小清单），整份写入；同名的子步骤保留原来的勾选状态");
 
 const dateSchema = z
   .string()
@@ -16,7 +23,8 @@ const dateSchema = z
 
 export const listTodosTool = defineTool({
   name: "list_todos",
-  description: "列出用户的 Todo。默认只列未完成的。auto 为 true 的是系统按进度自动管理的流程任务。",
+  description:
+    "列出用户的任务（Todo）。默认只列未完成的。status：todo 未开始 / doing 进行中 / review 待你确认 / done 完成。auto 为 true 的是系统按进度自动管理的流程任务；proposed 为 true 的是你提议、用户还没同意的任务。",
   inputSchema: z.object({ includeDone: z.boolean().default(false) }),
   execute: async ({ includeDone }, { userId }) => {
     await syncNextSteps(userId);
@@ -25,57 +33,77 @@ export const listTodosTool = defineTool({
       id: t.id,
       title: t.title,
       note: t.note,
-      done: t.done,
+      status: t.status,
       dueDate: t.dueDate,
+      proposedDueDate: t.proposedChange ? t.proposedChange.dueDate : undefined,
+      steps: t.steps.length ? t.steps.map((s) => `[${s.done ? "x" : " "}] ${s.title}`) : undefined,
       professorId: t.professorId,
       documentId: t.documentId,
+      schoolId: t.schoolId,
       auto: !!t.stepKey,
+      proposed: t.proposed || undefined,
     }));
   },
 });
 
 export const addTodosTool = defineTool({
   name: "add_todos",
-  description: "给用户添加一条或多条 Todo。把大任务拆成具体、可执行的下一步动作。有截止日期的 Todo 会显示在日历上。",
+  description:
+    "给用户添加一条或多条任务。添加的任务是提议：主页上虚线显示，用户同意后才正式加入。只加商量好的、接下来真要做的事；可以顺便带上子步骤。有截止日期的显示在日历上。",
   inputSchema: z.object({
     items: z
       .array(
-        z.object({ title: z.string().min(1).max(100), note: z.string().max(500).optional(), dueDate: dateSchema.optional(), ...links }),
+        z.object({
+          title: z.string().min(1).max(100),
+          note: z.string().max(500).optional(),
+          dueDate: dateSchema.optional(),
+          steps: stepsSchema.optional(),
+          ...links,
+        }),
       )
       .min(1)
       .max(10),
   }),
   execute: async ({ items }, { userId }) => {
     const rows = await addTodos(userId, items, "ai");
-    return rows.map((t) => ({ id: t.id, title: t.title }));
+    return { proposed: rows.map((t) => ({ id: t.id, title: t.title })), note: "已作为提议加到主页，等用户同意" };
   },
 });
 
 export const updateTodoTool = defineTool({
   name: "update_todo",
-  description: "修改一条 Todo：标记完成/未完成、改标题、备注或截止日期。id 先用 list_todos 查。",
+  description:
+    "修改一条任务：改状态、标题、备注、截止日期、子步骤。id 先用 list_todos 查。状态只能设 todo / doing / review：只有用户能标完成，你认为做完了就设 review（待你确认）。改已同意任务的截止日会变成提议，用户同意后才生效。",
   inputSchema: z.object({
     id: z.string(),
-    done: z.boolean().optional(),
+    status: z.enum(AI_TASK_STATUSES).optional(),
+    steps: stepsSchema.optional(),
     title: z.string().min(1).max(100).optional(),
     note: z.string().max(500).optional(),
     dueDate: dateSchema.nullable().optional(),
     professorId: z.string().nullable().optional(),
     documentId: z.string().nullable().optional(),
+    schoolId: z.string().nullable().optional(),
   }),
   execute: async ({ id, ...patch }, { userId }) => {
-    const row = await updateTodo(userId, id, patch);
-    if (!row) throw new Error("找不到这条 Todo");
-    return { id: row.id, title: row.title, done: row.done };
+    const row = await updateTodo(userId, id, patch, "ai");
+    if (!row) throw new Error("找不到这条任务");
+    return {
+      id: row.id,
+      title: row.title,
+      status: TASK_STATUS_LABELS[row.status],
+      dueDate: row.dueDate,
+      ...(row.proposedChange ? { proposedDueDate: row.proposedChange.dueDate, note: "截止日改动已作为提议，等用户同意" } : {}),
+    };
   },
 });
 
 export const deleteTodoTool = defineTool({
   name: "delete_todo",
-  description: "删除一条 Todo。只在用户明确要求、或这条 Todo 已经没有意义时使用；做完了的用 update_todo 标记完成。",
+  description: "删除一条任务。只在用户明确要求、或你自己提议的任务已经没有意义时使用；做完了的用 update_todo 改成 review，等用户确认。",
   inputSchema: z.object({ id: z.string() }),
   execute: async ({ id }, { userId }) => {
-    if (!(await deleteTodo(userId, id))) throw new Error("找不到这条 Todo");
+    if (!(await deleteTodo(userId, id))) throw new Error("找不到这条任务");
     return { deleted: id };
   },
 });

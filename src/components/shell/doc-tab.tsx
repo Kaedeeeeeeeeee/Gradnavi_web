@@ -7,6 +7,10 @@ import type { DocTab } from "@/lib/shell";
 import { getDocument } from "@/server/documents";
 import { getProfile } from "@/server/profile";
 import { getSavedProfessor, listSavedProfessors } from "@/server/professors";
+import { TaskDetail } from "@/components/tasks/task-detail";
+import { describeTask } from "@/lib/tasks";
+import { getTaskConversation } from "@/server/conversations";
+import { getTodo, taskLinks, toTaskView } from "@/server/todos";
 import { AiDocContent } from "./ai-doc-content";
 import { OpenTabLink } from "./app-shell";
 import { WebTab } from "./web-tab";
@@ -18,6 +22,7 @@ export async function renderDocTab(userId: string, tab: DocTab | null): Promise<
   if (!tab) return { title: null, node: null };
   if (tab.kind === "web") return { title: tab.title, node: <WebTab key={tab.url} url={tab.url} title={tab.title} /> };
   if (tab.kind === "professor") return professorTab(userId, tab.id);
+  if (tab.kind === "task") return taskTab(userId, tab.id);
   return documentTab(userId, tab.id);
 }
 
@@ -105,3 +110,13 @@ async function professorTab(userId: string, id: string) {
     ),
   };
 }
+
+async function taskTab(userId: string, id: string) {
+  const row = await getTodo(userId, id);
+  if (!row) return { title: null, node: null };
+  const [links, conversation] = await Promise.all([taskLinks(userId, row), getTaskConversation(userId, id)]);
+  const task = toTaskView(row);
+  const aiText = `任务详情（用户正在看）：\n${describeTask(task, { professor: links.professor?.label, document: links.document?.title, school: links.school?.name })}`;
+  return { title: row.title, node: <TaskDetail key={row.id} task={task} links={links} started={!!conversation} aiText={aiText} /> };
+}
+

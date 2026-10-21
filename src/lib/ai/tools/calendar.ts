@@ -10,7 +10,7 @@ const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 export const listCalendarTool = defineTool({
   name: "list_calendar",
   description:
-    "查看用户日历：手动日程、有截止日期的 Todo、教授跟进日、关注研究科的募集要项日程（标“仮”的是按往年要项推算的）。默认从今天起 60 天。",
+    "查看用户日历：手动日程、有截止日期的任务、教授跟进日、关注研究科的募集要项日程（标“仮”的是按往年要项推算的；标“AI 提议”的是你提议、用户还没同意的）。默认从今天起 60 天。",
   inputSchema: z.object({
     from: dateSchema.optional().describe("开始日期 YYYY-MM-DD，默认今天"),
     days: z.number().int().min(1).max(400).default(60),
@@ -25,7 +25,8 @@ export const listCalendarTool = defineTool({
 
 export const addCalendarEventTool = defineTool({
   name: "add_calendar_event",
-  description: "在用户日历里添加日程（截止日、考试/面谈、跟进等）。日期不确定时先和用户确认，不要编造。教授跟进日请用 update_saved_professor 的 followUpDate。",
+  description:
+    "在用户日历里提议一条日程（截止日、考试/面谈、跟进、某天做某事等）。添加的日程是提议：日历上虚线显示，用户同意后才变成正式日程。先和用户商量好日期再写，不要从截止日往回倒推，不要编造日期。教授跟进日请用 update_saved_professor 的 followUpDate。",
   inputSchema: z.object({
     title: z.string().min(1).max(100),
     date: dateSchema.describe("日期 YYYY-MM-DD"),
@@ -35,13 +36,14 @@ export const addCalendarEventTool = defineTool({
   }),
   execute: async (input, { userId }) => {
     const row = await addCalendarEvent(userId, input, "ai");
-    return { id: row.id, title: row.title, date: row.date };
+    return { id: row.id, title: row.title, date: row.date, note: "已作为提议加到日历，等用户同意" };
   },
 });
 
 export const updateCalendarEventTool = defineTool({
   name: "update_calendar_event",
-  description: "修改手动日程（list_calendar 里来源为 event 的项）。Todo 截止日用 update_todo 改，教授跟进日用 update_saved_professor 改。",
+  description:
+    "修改手动日程（list_calendar 里来源为 event 的项）。改已同意日程的日期会变成改期提议，用户同意后才生效。任务截止日用 update_todo 改，教授跟进日用 update_saved_professor 改。",
   inputSchema: z.object({
     id: z.string(),
     title: z.string().min(1).max(100).optional(),
@@ -51,14 +53,14 @@ export const updateCalendarEventTool = defineTool({
     note: z.string().max(500).nullable().optional(),
   }),
   execute: async ({ id, ...patch }, { userId }) => {
-    const row = await updateCalendarEvent(userId, id, patch);
-    return { id: row.id, title: row.title, date: row.date };
+    const row = await updateCalendarEvent(userId, id, patch, "ai");
+    return { id: row.id, title: row.title, date: row.date, ...(row.proposedChange ? { proposedDate: row.proposedChange.date, note: "改期已作为提议，等用户同意" } : {}) };
   },
 });
 
 export const deleteCalendarEventTool = defineTool({
   name: "delete_calendar_event",
-  description: "删除一条手动日程。只在用户明确要求时使用。",
+  description: "删除一条手动日程。只在用户明确要求、或撤回你自己的提议时使用。",
   inputSchema: z.object({ id: z.string() }),
   execute: async ({ id }, { userId }) => {
     if (!(await deleteCalendarEvent(userId, id))) throw new Error("找不到这条日程");

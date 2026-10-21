@@ -37,7 +37,7 @@ export function SchoolsView({ schools }: { schools: School[] }) {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold">目标研究科</h1>
         <p className="text-sm text-zinc-500">
-          关注想报考的研究科后，系统每天检查一次它的募集要项页面。新要项公开前，<Link href="/calendar" className="underline">日历</Link>
+          关注想报考的研究科后，系统每天检查一次它的募集要项页面。新要项公开前，<Link href="/workbench" className="underline">主页日历</Link>
           里按往年日程排“仮”计划；新要项一公开，自动更新日历并邮件通知你。监控不消耗 credit。
         </p>
       </div>

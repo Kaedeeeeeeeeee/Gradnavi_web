@@ -130,13 +130,13 @@ async function notifyWatchers(school: School, kind: "new_year" | "updated", admi
     formatGuideEvents(events),
     "",
     `来源：${school.url}`,
-    `查看日历：${env.APP_URL}/calendar`,
+    `查看日历：${env.APP_URL}/workbench`,
     "",
     "日程由 AI 从官网页面整理，出愿前请务必以募集要项原文为准。",
     "—— GradNavi（修考工作台）",
   ].join("\n");
   for (const w of watchers) {
-    await addTodos(w.id, [{ title: `查看「${label}」${headline}`, note: `核对出愿日程和材料要求：${school.url}` }], "system");
+    await addTodos(w.id, [{ title: `查看「${label}」${headline}`, note: `核对出愿日程和材料要求：${school.url}`, schoolId: school.id }], "system");
     try {
       await sendMail(w.email, `【GradNavi】${label} ${headline}`, body);
     } catch (error) {

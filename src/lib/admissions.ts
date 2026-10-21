@@ -151,7 +151,7 @@ export function formatGuideEvents(events: GuideEvent[]) {
   return events.map((e) => `- ${e.date}${e.endDate ? `〜${e.endDate}` : ""} ${e.label}`).join("\n");
 }
 
-export type GuideInfo = { schoolId: string; schoolName: string; admissionYear: number; events: GuideEvent[] };
+export type GuideInfo = { schoolId: string; schoolName: string; admissionYear: number; events: GuideEvent[]; sourceUrl?: string };
 
 /**
  * 研究科的最新募集要项 → 日历项。
@@ -173,6 +173,7 @@ export function projectGuide(guide: GuideInfo, today: string): { tentative: bool
     tentative,
     note: tentative ? `仮・基于 ${guide.admissionYear} 年度募集要项推算，以新要项为准` : `${guide.admissionYear} 年度募集要项`,
     href: "/schools",
+    sourceUrl: guide.sourceUrl,
   }));
   return { tentative, items };
 }

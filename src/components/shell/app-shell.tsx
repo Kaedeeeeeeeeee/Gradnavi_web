@@ -84,6 +84,7 @@ export function useShell() {
 function tabPath(tab: DocTab) {
   if (tab.kind === "doc") return `/documents/${tab.id}`;
   if (tab.kind === "professor") return `/professors/${tab.id}`;
+  if (tab.kind === "task") return `/tasks/${tab.id}`;
   return "/web";
 }
 
@@ -97,10 +98,12 @@ type Props = {
   doc: React.ReactNode;
   ai: React.ReactNode;
   topRight: React.ReactNode;
+  /** 待你确认的任务 + AI 的提议数量，显示在工作台竖条 / 底部标签上 */
+  awaiting: number;
   children: React.ReactNode;
 };
 
-export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai, topRight, children }: Props) {
+export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai, topRight, awaiting, children }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const pageStore = usePageStore();
@@ -217,7 +220,11 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
   const focusPane = shown.includes(lastPane) ? lastPane : "work";
   const choosePreset = (p: Preset) => setLayout((l) => applyPreset(l, p, p === "focus" ? focusPane : l.mobile));
 
-  const badgeOf = (pane: PaneId): Badge => (pane === "doc" && !badges.doc ? tabs.tabs.length || false : badges[pane]);
+  const badgeOf = (pane: PaneId): Badge => {
+    if (pane === "doc" && !badges.doc) return tabs.tabs.length || false;
+    if (pane === "work" && !badges.work) return awaiting || false;
+    return badges[pane];
+  };
 
   const header: Record<PaneId, React.ReactNode> = {
     work: <WorkTabs pathname={pathname} />,
@@ -361,12 +368,12 @@ function BadgeDot({ badge, className = "" }: { badge: Badge; className?: string 
   return <span className={`inline-block size-2 rounded-full bg-blue-600 ${className}`} aria-label="有新内容" />;
 }
 
+// 日历并进了主页，不再单独一个标签
 const WORK_TABS = [
-  { href: "/workbench", label: "今天" },
+  { href: "/workbench", label: "主页" },
   { href: "/schools", label: "研究科" },
   { href: "/professors", label: "教授" },
   { href: "/documents", label: "文书" },
-  { href: "/calendar", label: "日历" },
 ];
 
 function WorkTabs({ pathname }: { pathname: string }) {
@@ -388,7 +395,7 @@ function WorkTabs({ pathname }: { pathname: string }) {
   );
 }
 
-const TAB_ICONS: Record<DocTab["kind"], string> = { doc: "文", professor: "教", web: "网" };
+const TAB_ICONS: Record<DocTab["kind"], string> = { doc: "文", professor: "教", task: "任", web: "网" };
 
 function DocTabBar({ tabs, onActivate, onClose }: { tabs: Tabs; onActivate: (key: string) => void; onClose: (key: string) => void }) {
   if (!tabs.tabs.length) return <span className="px-1 text-sm font-medium">文稿 / 浏览</span>;

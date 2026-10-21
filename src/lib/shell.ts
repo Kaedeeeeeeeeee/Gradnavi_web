@@ -20,6 +20,7 @@ export type Layout = {
 export type DocTab =
   | { kind: "doc"; id: string; title: string }
   | { kind: "professor"; id: string; title: string }
+  | { kind: "task"; id: string; title: string }
   | { kind: "web"; url: string; title: string };
 
 export type Tabs = { tabs: DocTab[]; active: string | null };
@@ -123,6 +124,7 @@ const layoutSchema = z.object({
 const tabSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("doc"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("professor"), id: z.string().max(64), title: z.string().max(100) }),
+  z.object({ kind: z.literal("task"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("web"), url: z.string().max(500), title: z.string().max(100) }),
 ]);
 

@@ -6,7 +6,6 @@ import { z } from "zod";
 import { buildUserMd, type OnboardingAnswers } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
 import { completeOnboarding, saveUserMd } from "@/server/profile";
-import { addTodos, deleteTodo, updateTodo } from "@/server/todos";
 
 // 用户在页面上的操作。与 AI 工具调用同一套 src/server 函数。
 
@@ -32,7 +31,7 @@ export async function submitOnboarding(answers: OnboardingAnswers) {
   const data = answersSchema.parse(answers);
   if (data.field === "other" && !data.fieldDetail?.trim()) throw new Error("请填写具体领域");
   await completeOnboarding(user.id, data, buildUserMd(data));
-  // 「下一步」流程任务在工作台加载时按进度生成（src/server/next-steps.ts）
+  // 主页上的流程任务在加载时按进度生成（src/server/next-steps.ts）
   redirect("/workbench");
 }
 
@@ -40,24 +39,4 @@ export async function saveProfileMarkdown(markdown: string) {
   const user = await requireUser();
   await saveUserMd(user.id, markdown);
   revalidatePath("/profile");
-}
-
-export async function addTodoAction(title: string) {
-  const user = await requireUser();
-  const t = title.trim();
-  if (!t) return;
-  await addTodos(user.id, [{ title: t.slice(0, 100) }], "user");
-  revalidatePath("/workbench");
-}
-
-export async function toggleTodoAction(id: string, done: boolean) {
-  const user = await requireUser();
-  await updateTodo(user.id, id, { done });
-  revalidatePath("/workbench");
-}
-
-export async function deleteTodoAction(id: string) {
-  const user = await requireUser();
-  await deleteTodo(user.id, id);
-  revalidatePath("/workbench");
 }

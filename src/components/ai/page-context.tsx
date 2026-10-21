@@ -8,6 +8,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 // 页面还可以：
 //   - 用 useAskAi() 让侧边栏代用户发一条消息（如“改写选中段落”按钮）
 //   - 用 useAiBeforeSend(fn) 在消息发出前先做一件事（如编辑器先保存，AI 才能读到最新内容）
+//   - 用 useStartTask() 切到某个任务的专属对话（点任务卡），或者顺便让 AI 开始（「让 AI 开始」）
 
 type PageInfo = { path: string; title?: string; content?: string; workPath?: string };
 type Slot = "work" | "doc";
@@ -17,14 +18,18 @@ type DocInfo = { path: string; title: string } | null;
 // 接口限制 20000 字
 const CONTENT_LIMIT = 19000;
 type AskListener = (text: string) => void;
+type StartTaskListener = (taskId: string, start: boolean) => void;
 type BeforeSend = () => Promise<void>;
 
 function createPageStore() {
   let workPath = "/";
   let doc: DocInfo = null;
+  /** AI 栏当前对话所属的任务（一个任务一段对话） */
+  let task: string | null = null;
   const content: Record<Slot, string | undefined> = { work: undefined, doc: undefined };
   let beforeSend: BeforeSend | undefined;
   const askListeners = new Set<AskListener>();
+  const startListeners = new Set<StartTaskListener>();
   return {
     get: (): PageInfo => {
       const title = typeof document === "undefined" ? undefined : document.title;
@@ -37,6 +42,10 @@ function createPageStore() {
     },
     setDoc: (next: DocInfo) => {
       doc = next;
+    },
+    getTask: () => task,
+    setTask: (id: string | null) => {
+      task = id;
     },
     setContent: (slot: Slot, text: string | undefined) => {
       content[slot] = text;
@@ -52,6 +61,14 @@ function createPageStore() {
       askListeners.add(listener);
       return () => {
         askListeners.delete(listener);
+      };
+    },
+    /** 切到任务的对话；start = 用户点了「让 AI 开始」 */
+    startTask: (taskId: string, start = true) => startListeners.forEach((l) => l(taskId, start)),
+    onStartTask: (listener: StartTaskListener) => {
+      startListeners.add(listener);
+      return () => {
+        startListeners.delete(listener);
       };
     },
   };
@@ -90,4 +107,8 @@ export function useAiBeforeSend(fn: BeforeSend) {
 
 export function useAskAi() {
   return usePageStore().ask;
+}
+
+export function useStartTask() {
+  return usePageStore().startTask;
 }
