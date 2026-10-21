@@ -5,6 +5,7 @@ import type { LanguageModelV4, LanguageModelV4Prompt, LanguageModelV4StreamPart 
 //   “待办：xxx” → 调用 add_todos
 //   “写入：xxx” → 在文书编辑器页面时，调用 update_document_section 追加到当前文书的“メモ”一节
 //   “找教授：xxx” → 调用 search_professors（返回示例教授）
+//   “日程：2026-12-01 xxx” → 调用 add_calendar_event
 //   其他 → 固定回复
 
 const usage = {
@@ -34,6 +35,8 @@ export function demoReply(prompt: LanguageModelV4Prompt): Reply {
   }
   const todo = /^待办[:：]\s*([\s\S]+)$/.exec(text);
   if (todo) return { toolName: "add_todos", input: { items: [{ title: todo[1].slice(0, 100) }] } };
+  const schedule = /^日程[:：]\s*(\d{4}-\d{2}-\d{2})\s+([\s\S]+)$/.exec(text);
+  if (schedule) return { toolName: "add_calendar_event", input: { date: schedule[1], title: schedule[2].slice(0, 100), kind: "other" } };
   const find = /^找教授[:：]\s*([\s\S]+)$/.exec(text);
   if (find) return { toolName: "search_professors", input: { keywords: find[1].slice(0, 200), schools: [] } };
   const write = /^写入[:：]\s*([\s\S]+)$/.exec(text);
@@ -48,7 +51,7 @@ export function demoReply(prompt: LanguageModelV4Prompt): Reply {
     text:
       "（演示模式：服务器还没有配置 DEEPSEEK_API_KEY，这是固定回复。）\n\n" +
       `收到：「${text.slice(0, 100)}」。\n\n` +
-      "可以发送「记住：……」测试写入 user.md，「待办：……」测试添加 Todo，「找教授：……」测试教授检索，在文书页面发送「写入：……」测试写入文书。",
+      "可以发送「记住：……」测试写入 user.md，「待办：……」测试添加 Todo，「找教授：……」测试教授检索，「日程：2026-12-01 ……」测试添加日程，在文书页面发送「写入：……」测试写入文书。",
   };
 }
 

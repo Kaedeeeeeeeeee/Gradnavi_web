@@ -1,6 +1,9 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { addDays, todayJst } from "@/lib/calendar";
 import { decideTrack, PATH_LABELS, suggestPath, TRACK_LABELS } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
+import { listCalendar } from "@/server/calendar";
 import { getProfile } from "@/server/profile";
 import { listTodos } from "@/server/todos";
 import { TodoList } from "./todo-list";
@@ -13,7 +16,9 @@ export default async function WorkbenchPage() {
   const answers = profile?.onboarding;
   if (!profile?.onboardedAt || !answers) redirect("/onboarding");
 
-  const todos = await listTodos(user.id, { includeDone: true });
+  const today = todayJst();
+  const [todos, calendar] = await Promise.all([listTodos(user.id, { includeDone: true }), listCalendar(user.id, today, addDays(today, 13), today)]);
+  const upcoming = calendar.filter((it) => !it.done).slice(0, 8);
   const path = answers.path === "unsure" ? `${PATH_LABELS[suggestPath(answers)]}（建议，待确认）` : PATH_LABELS[answers.path];
 
   return (
@@ -27,7 +32,36 @@ export default async function WorkbenchPage() {
 
       <section className="space-y-3">
         <h2 className="font-medium">下一步</h2>
-        <TodoList todos={todos.map((t) => ({ id: t.id, title: t.title, note: t.note, done: t.done, createdBy: t.createdBy }))} />
+        <TodoList
+          todos={todos.map((t) => ({ id: t.id, title: t.title, note: t.note, done: t.done, dueDate: t.dueDate, createdBy: t.createdBy }))}
+        />
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-baseline gap-3">
+          <h2 className="font-medium">近两周日程</h2>
+          <Link href="/calendar" className="text-sm text-zinc-500 hover:text-foreground">
+            查看日历
+          </Link>
+        </div>
+        {upcoming.length === 0 ? (
+          <p className="text-sm text-zinc-500">近两周没有日程。</p>
+        ) : (
+          <ul className="space-y-1 text-sm">
+            {upcoming.map((it) => (
+              <li key={it.key} className="flex gap-3">
+                <span className="w-24 shrink-0 tabular-nums text-zinc-500">
+                  {it.date.slice(5)}
+                  {it.endDate && it.endDate !== it.date && `〜${it.endDate.slice(5)}`}
+                </span>
+                <span>
+                  {it.tentative && <span className="mr-1 text-xs text-amber-700">仮</span>}
+                  {it.title}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

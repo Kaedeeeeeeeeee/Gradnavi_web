@@ -2,9 +2,24 @@ import "server-only";
 import { and, asc, eq, max } from "drizzle-orm";
 import { db } from "@/db";
 import { todo } from "@/db/schema";
+import { getDocument } from "./documents";
+import { getSavedProfessor } from "./professors";
 
-export type TodoInput = { title: string; note?: string | null; dueDate?: string | null };
+export type TodoInput = {
+  title: string;
+  note?: string | null;
+  dueDate?: string | null;
+  /** 挂在某位教授（教授清单 id）或某份文书下 */
+  professorId?: string | null;
+  documentId?: string | null;
+};
 type Creator = "user" | "ai" | "system";
+
+/** 关联的教授 / 文书必须是这个用户自己的 */
+async function checkLinks(userId: string, links: { professorId?: string | null; documentId?: string | null }) {
+  if (links.professorId && !(await getSavedProfessor(userId, links.professorId))) throw new Error("教授清单里没有这位教授");
+  if (links.documentId && !(await getDocument(userId, links.documentId))) throw new Error("找不到这份文书");
+}
 
 export async function listTodos(userId: string, opts: { includeDone?: boolean } = {}) {
   const where = opts.includeDone ? eq(todo.userId, userId) : and(eq(todo.userId, userId), eq(todo.done, false));
@@ -13,6 +28,7 @@ export async function listTodos(userId: string, opts: { includeDone?: boolean } 
 
 export async function addTodos(userId: string, items: TodoInput[], createdBy: Creator) {
   if (!items.length) return [];
+  for (const item of items) await checkLinks(userId, item);
   const [{ last }] = await db.select({ last: max(todo.sortOrder) }).from(todo).where(eq(todo.userId, userId));
   const start = (last ?? -1) + 1;
   return db
@@ -24,6 +40,8 @@ export async function addTodos(userId: string, items: TodoInput[], createdBy: Cr
         title: item.title.trim(),
         note: item.note?.trim() || null,
         dueDate: item.dueDate || null,
+        professorId: item.professorId || null,
+        documentId: item.documentId || null,
         sortOrder: start + i,
         createdBy,
       })),
@@ -34,8 +52,16 @@ export async function addTodos(userId: string, items: TodoInput[], createdBy: Cr
 export async function updateTodo(
   userId: string,
   id: string,
-  patch: Partial<{ title: string; note: string | null; done: boolean; dueDate: string | null }>,
+  patch: Partial<{
+    title: string;
+    note: string | null;
+    done: boolean;
+    dueDate: string | null;
+    professorId: string | null;
+    documentId: string | null;
+  }>,
 ) {
+  await checkLinks(userId, patch);
   const [row] = await db
     .update(todo)
     .set({ ...patch, updatedAt: new Date() })

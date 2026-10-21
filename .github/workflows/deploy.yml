@@ -22,6 +22,6 @@ jobs:
             set -e
             cd ~/gradnavi
             export WEB_IMAGE=ghcr.io/kaedeeeeeeeeee/gradnavi_web:${{ inputs.tag }}
-            docker compose pull web
+            docker compose pull web worker
             docker compose up -d
             docker image prune -f

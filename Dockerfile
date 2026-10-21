@@ -10,7 +10,7 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN npm run build && npm run build:worker
 
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -25,6 +25,8 @@ COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.next/static ./.next/static
 COPY --from=build --chown=app:app /app/public ./public
 COPY --from=build --chown=app:app /app/drizzle ./drizzle
+# 定时任务 worker（同一镜像，compose 里用 node worker.mjs 启动）
+COPY --from=build --chown=app:app /app/dist/worker.mjs /app/dist/worker.mjs.map ./
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

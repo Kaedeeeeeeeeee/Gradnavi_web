@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useAiBeforeSend, useAiPageContent, useAskAi } from "@/components/ai/page-context";
+import { copyText } from "@/lib/browser";
 import { describeDocument, DOC_KIND_LABELS, planProgress, type DocKind, type TargetProfessor } from "@/lib/documents";
 import type { Field, Track } from "@/lib/onboarding";
 import { PROFESSOR_STATUS_LABELS, type ProfessorStatus } from "@/lib/professors";
@@ -441,7 +442,10 @@ function LetterPanel({
 
   async function copy() {
     if (!editor) return;
-    await navigator.clipboard.writeText(editor.getText({ blockSeparator: "\n" }));
+    if (!(await copyText(editor.getText({ blockSeparator: "\n" })))) {
+      alert("复制失败，请在编辑器里全选（Ctrl/⌘+A）后手动复制");
+      return;
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }

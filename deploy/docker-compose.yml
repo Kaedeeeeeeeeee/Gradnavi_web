@@ -1,5 +1,5 @@
-# 生产部署：一台服务器跑 Caddy（自动 HTTPS）+ web + Postgres。
-# 用法见根目录 README「部署」一节。定时任务 worker 在第 5 步加入。
+# 生产部署：一台服务器跑 Caddy（自动 HTTPS）+ web + worker（定时任务）+ Postgres。
+# 用法见根目录 README「部署」一节。
 services:
   web:
     image: ${WEB_IMAGE:-ghcr.io/kaedeeeeeeeeee/gradnavi_web:latest}
@@ -9,6 +9,20 @@ services:
       DATABASE_URL: postgres://gradnavi:${POSTGRES_PASSWORD}@db:5432/gradnavi
     depends_on:
       db:
+        condition: service_healthy
+
+  # 定时任务（募集要项每日检查）。同一个镜像，web 跑完数据库迁移、健康后再启动
+  worker:
+    image: ${WEB_IMAGE:-ghcr.io/kaedeeeeeeeeee/gradnavi_web:latest}
+    restart: unless-stopped
+    command: ["node", "--enable-source-maps", "worker.mjs"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://gradnavi:${POSTGRES_PASSWORD}@db:5432/gradnavi
+    healthcheck:
+      disable: true
+    depends_on:
+      web:
         condition: service_healthy
 
   db:

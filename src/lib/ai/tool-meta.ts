@@ -17,4 +17,12 @@ export const TOOL_META: Record<string, { label: string; mutates: boolean }> = {
   update_saved_professor: { label: "修改教授清单", mutates: true },
   web_search: { label: "联网检索", mutates: false },
   fetch_page: { label: "读取网页", mutates: false },
+  delete_todo: { label: "删除 Todo", mutates: true },
+  list_calendar: { label: "查看日历", mutates: false },
+  add_calendar_event: { label: "添加日程", mutates: true },
+  update_calendar_event: { label: "修改日程", mutates: true },
+  delete_calendar_event: { label: "删除日程", mutates: true },
+  list_watched_schools: { label: "查看关注的研究科", mutates: false },
+  watch_school: { label: "关注研究科", mutates: true },
+  unwatch_school: { label: "取消关注研究科", mutates: true },
 };

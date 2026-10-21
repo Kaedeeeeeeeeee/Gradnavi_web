@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // worker 打包产物
+    "dist/**",
   ]),
 ]);
 

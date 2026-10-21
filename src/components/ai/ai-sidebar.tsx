@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { TOOL_META } from "@/lib/ai/tool-meta";
+import { uuid } from "@/lib/browser";
 import { usePageStore } from "./page-context";
 
 // 侧边栏开关记在 localStorage；不可用（隐私模式等）时退回内存
@@ -44,7 +45,7 @@ type Props = {
 
 export function AiSidebar({ initialConversationId, initialMessages, demo }: Props) {
   const open = useSyncExternalStore(subscribeOpen, readOpen, () => true);
-  const [conversationId, setConversationId] = useState(() => initialConversationId ?? crypto.randomUUID());
+  const [conversationId, setConversationId] = useState(() => initialConversationId ?? uuid());
   const [input, setInput] = useState("");
   const router = useRouter();
   const pathname = usePathname();
@@ -137,7 +138,7 @@ export function AiSidebar({ initialConversationId, initialMessages, demo }: Prop
           <button
             className="hover:text-foreground disabled:opacity-40"
             disabled={busy || messages.length === 0}
-            onClick={() => setConversationId(crypto.randomUUID())}
+            onClick={() => setConversationId(uuid())}
           >
             新对话
           </button>
