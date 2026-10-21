@@ -38,13 +38,13 @@ export async function webSearch(query: string, count = 8, meter?: UsageMeter): P
 
 const FETCH_LIMIT = 15_000;
 
-/** 抓取网页正文（Markdown），截断以控制 token */
-export async function fetchPage(url: string, meter?: UsageMeter): Promise<{ url: string; content: string }> {
+/** 抓取网页正文（Markdown），截断以控制 token（读募集要项全文时调用方给更大的 limit） */
+export async function fetchPage(url: string, meter?: UsageMeter, limit = FETCH_LIMIT): Promise<{ url: string; content: string }> {
   if (!/^https?:\/\//.test(url)) throw new Error("只支持 http(s) 链接");
   const json = (await call("fetch", { url })) as Record<string, unknown>;
   meter?.addFetch();
   const data = (json.data && typeof json.data === "object" ? json.data : json) as Record<string, unknown>;
   const content = [data.content, data.markdown, data.text].find((v): v is string => typeof v === "string" && v.length > 0);
   if (!content) throw new Error("没有抓到页面内容");
-  return { url, content: content.length > FETCH_LIMIT ? `${content.slice(0, FETCH_LIMIT)}\n\n（后文省略）` : content };
+  return { url, content: content.length > limit ? `${content.slice(0, limit)}\n\n（后文省略）` : content };
 }

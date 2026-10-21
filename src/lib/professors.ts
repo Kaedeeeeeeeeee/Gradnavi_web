@@ -34,6 +34,8 @@ export type SearchInput = {
   preference?: string;
   /** user.md 摘要：让 AI 说明「为什么适合你」，并避开用户说过不合适的教授 */
   profile?: string;
+  /** 用户要几位（「找两三位」= 3）；没说时 DEFAULT_CANDIDATES */
+  count?: number;
 };
 
 /** 检索候选（还没收藏） */
@@ -54,6 +56,13 @@ export type ProfessorCandidate = {
 
 export const MAX_SCHOOLS = 5;
 export const MAX_CANDIDATES = 8;
+export const DEFAULT_CANDIDATES = 5;
+
+/** 这一轮要几位候选 */
+export function candidateCount(input: Pick<SearchInput, "count">) {
+  const n = Math.round(input.count ?? DEFAULT_CANDIDATES);
+  return Math.min(Math.max(Number.isFinite(n) ? n : DEFAULT_CANDIDATES, 1), MAX_CANDIDATES);
+}
 
 /** 把用户填的“目标校”拆成列表：逗号、顿号、空格、换行都算分隔 */
 export function splitSchools(text: string): string[] {
@@ -72,6 +81,33 @@ export function buildSearchQueries({ keywords, schools }: SearchInput): string[]
   const kw = keywords.trim();
   if (!schools.length) return [`${kw} 教授 site:researchmap.jp`, `${kw} 研究室 大学院 教員`, `${kw} 研究者 site:nrid.nii.ac.jp`];
   return schools.flatMap((s) => [`${s} ${kw} site:researchmap.jp`, `${s} ${kw} 研究室 教員`]);
+}
+
+/**
+ * 每位候选再单独搜一次论文：教员名单和个人页上通常没有论文，researchmap 的业绩页、CiNii、KAKEN 才有。
+ * 姓名加引号精确匹配，带上大学避免同名。
+ */
+export function buildPaperQueries(c: Pick<ProfessorCandidate, "name" | "university">): string[] {
+  const name = c.name.replace(/[\s　]/g, "");
+  return [`"${name}" ${c.university} 論文`, `${name} 論文 業績 site:researchmap.jp`];
+}
+
+// 模型偶尔把 JSON 字段名、「null」写进给用户看的文字（如「papers为空」）。含这些词的半句整句去掉
+const INTERNAL_WORDS = /\b(?:papers?|paperRefs|sources|acceptsInternational|candidates|json|null|undefined)\b|字段|为空|為空/i;
+
+/** 给用户看的文字：去掉提到内部字段名的半句 */
+export function cleanCopy(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const parts = value.split(/(?<=[。；！？!?;])/);
+  const kept = parts.flatMap((part) => {
+    if (!INTERNAL_WORDS.test(part)) return [part];
+    // 开头就在说字段（「papers为空，无法引用论文。」）整句去掉；否则只去掉提到字段名的小句
+    const clauses = part.split(/(?<=[，,])/);
+    if (INTERNAL_WORDS.test(clauses[0])) return [];
+    return [clauses.filter((c) => !INTERNAL_WORDS.test(c)).join("").replace(/[，,]$/, "。")];
+  });
+  const out = kept.join("").trim();
+  return out || undefined;
 }
 
 const text = (max: number) => z.string().trim().max(max);
@@ -111,7 +147,7 @@ function extractJson(reply: string): unknown {
  * 解析 AI 整理出的教授候选。只保留检索结果里真实出现过的来源链接，
  * 没有任何有效来源的候选直接丢掉——宁可少，不要编造的教授。
  */
-export function parseCandidates(reply: string, sources: SourceLink[]): ProfessorCandidate[] {
+export function parseCandidates(reply: string, sources: SourceLink[], limit = MAX_CANDIDATES): ProfessorCandidate[] {
   const json = extractJson(reply);
   const raw = Array.isArray(json) ? json : json && typeof json === "object" && "candidates" in json ? (json as { candidates: unknown }).candidates : null;
   if (!Array.isArray(raw)) return [];
@@ -127,25 +163,61 @@ export function parseCandidates(reply: string, sources: SourceLink[]): Professor
     if (!links.length || seen.has(key)) continue;
     seen.add(key);
     // 论文链接同样只认检索结果里的 URL，编造的链接去掉、标题保留
-    const paperRefs = c.papers
-      .filter((p) => p.title)
-      .slice(0, 3)
-      .map((p) => ({ title: p.title, ...(p.year ? { year: p.year } : {}), ...(p.url && byUrl.has(p.url) ? { url: p.url } : {}) }));
+    const paperRefs = toPaperRefs(c.papers, byUrl);
     result.push({
       name: c.name,
       university: c.university,
       department: c.department || undefined,
       lab: c.lab || undefined,
-      research: c.research,
-      fit: c.fit || undefined,
+      research: cleanCopy(c.research) ?? "",
+      fit: cleanCopy(c.fit),
       papers: paperRefs.map(paperLabel),
       paperRefs,
-      acceptsInternational: c.acceptsInternational || undefined,
+      acceptsInternational: cleanCopy(c.acceptsInternational),
       sources: links,
     });
-    if (result.length >= MAX_CANDIDATES) break;
+    if (result.length >= limit) break;
   }
   return result;
+}
+
+function toPaperRefs(papers: z.infer<typeof paperSchema>[], byUrl: Map<string, SourceLink>): PaperRef[] {
+  return papers
+    .filter((p) => p.title)
+    .slice(0, 3)
+    .map((p) => ({ title: p.title, ...(p.year ? { year: p.year } : {}), ...(p.url && byUrl.has(p.url) ? { url: p.url } : {}) }));
+}
+
+const paperReplySchema = z.object({
+  index: z.coerce.number().int(),
+  papers: z.array(paperSchema).max(5).default([]),
+  fit: text(1000).nullish(),
+});
+
+/**
+ * 第二轮（按教授单独搜论文）的结果合并进候选：查到论文就换上（链接同样只认检索结果里的 URL），
+ * fit 换成引用这些论文的说法。index 从 1 开始，对应传给 AI 的候选顺序。
+ */
+export function mergePaperReply(reply: string, candidates: ProfessorCandidate[], sources: SourceLink[]): ProfessorCandidate[] {
+  const json = extractJson(reply);
+  const raw = Array.isArray(json) ? json : json && typeof json === "object" && "candidates" in json ? (json as { candidates: unknown }).candidates : null;
+  if (!Array.isArray(raw)) return candidates;
+  const byUrl = new Map(sources.map((s) => [s.url, s]));
+  const out = [...candidates];
+  for (const item of raw) {
+    const parsed = paperReplySchema.safeParse(item);
+    if (!parsed.success) continue;
+    const i = parsed.data.index - 1;
+    if (!out[i]) continue;
+    const paperRefs = toPaperRefs(parsed.data.papers, byUrl);
+    const fit = cleanCopy(parsed.data.fit);
+    out[i] = {
+      ...out[i],
+      ...(paperRefs.length ? { paperRefs, papers: paperRefs.map(paperLabel) } : {}),
+      ...(fit ? { fit } : {}),
+    };
+  }
+  return out;
 }
 
 /** 同一位教授的判定：去掉姓名里的空格 + 大学 */

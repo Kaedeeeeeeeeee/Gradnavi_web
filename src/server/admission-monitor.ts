@@ -11,9 +11,12 @@ import {
   extractLinks,
   fingerprintSource,
   formatGuideEvents,
+  guideDocumentUrl,
   htmlToText,
+  mergeRequirements,
   parseGuideReply,
   relevantLinks,
+  requirementsIncomplete,
   type AdmissionRequirements,
   type GuideEvent,
   type PageLink,
@@ -38,6 +41,8 @@ export type CheckResult = { status: "unchanged" | "updated" | "new_year" | "base
 const FETCH_TIMEOUT_MS = 20_000;
 const MAX_BYTES = 3_000_000;
 const PROMPT_TEXT_LIMIT = 12_000;
+/** 募集要项全文（PDF 常有几十页，考试科目、事先联系的要求在中间）：读得多一些，只在页面有变化时读一次 */
+const GUIDE_TEXT_LIMIT = 45_000;
 
 type LoadedPage = { kind: "html"; text: string; links: PageLink[]; fingerprint: string } | { kind: "pdf"; fingerprint: string };
 
@@ -73,7 +78,7 @@ async function loadPage(url: string): Promise<LoadedPage> {
   return { kind: "html", text, links, fingerprint: createHash("sha256").update(fingerprintSource(text, links)).digest("hex") };
 }
 
-function extractionPrompt(school: School, source: string, links: PageLink[]) {
+function extractionPrompt(school: School, source: string, links: PageLink[], limit: number) {
   const linkList = relevantLinks(links)
     .slice(0, 40)
     .map((l) => `- ${l.text || "(无文字)"} ${l.url}`)
@@ -87,10 +92,10 @@ function extractionPrompt(school: School, source: string, links: PageLink[]) {
 - label 用日文原文的简短说法，如「出願期間（一般選抜・夏季）」。
 - kind：出愿截止/提交材料类为 "deadline"，考试/面接为 "exam"，其他为 "other"。
 - admissionYear：这份要项对应的入学年度（标题里的「20XX年度」；只写了入学年月时用 4 月入学的年份）。
-- 页面上没有日程、但有募集要项 PDF 链接时，events 留空，pdfUrl 填最可能是最新募集要项的链接（必须逐字来自下面的链接列表）。
+- pdfUrl：有链接列表时，填最可能是最新募集要项全文（PDF 或详细的募集要项页面）的链接，必须逐字来自链接列表；页面上已有日程也要填。没有就 null。
 - requirements：修士课程（一般选抜、外国人留学生选抜）的入试要点，没写的字段填 null / 空数组：
-  - contact：出愿前是否要联系指导予定教员。明确要求（「事前に連絡を取ること」「内諾が必要」）为 "required"，建议为 "recommended"，明确不需要为 "not_required"，没提到为 null；contactNote 用中文简述原文说法。
-  - subjects：考试科目，中文简写，如「专业笔试」「外语（TOEFL 代替）」「口试・面接」「小论文」「研究计划书审查」。
+  - contact：出愿前是否要联系指导予定教员。看「出願資格」「出願前の事前相談」「指導教員」「志望指導教員との連絡」「出願資格審査」等处。明确要求（「事前に連絡を取ること」「内諾を得ること」「事前相談が必要」）为 "required"，建议（「望ましい」「推奨」）为 "recommended"，明确不需要为 "not_required"，没提到为 null；contactNote 用中文简述原文说法。
+  - subjects：考试科目，看「試験科目」「選抜方法」「学力検査」「選考方法」等处（専門科目、外国語、小論文、口述試験、面接、書類審査都算），中文简写，如「专业笔试」「外语（TOEFL 代替）」「口试・面接」「小论文」「研究计划书审查」。
   - english / japanese：语言要求的中文简述（如「TOEFL iBT 成绩代替英语笔试」「JLPT N1 或同等」）。toefl / toeic / ielts / jlpt：只在写明最低分时填数字（jlpt 填级别数字，N1 = 1）。
   - notes：其他重要的要求（如出愿资格审查、需提前申请），中文一句，没有为 null。
 
@@ -98,28 +103,41 @@ function extractionPrompt(school: School, source: string, links: PageLink[]) {
 {"admissionYear":2027,"title":"","events":[{"label":"","date":"","endDate":null,"kind":"deadline"}],"pdfUrl":null,"requirements":{"contact":null,"contactNote":null,"subjects":[],"english":null,"japanese":null,"toefl":null,"toeic":null,"ielts":null,"jlpt":null,"notes":null}}
 
 页面内容：
-${source.slice(0, PROMPT_TEXT_LIMIT)}
+${source.slice(0, limit)}
 ${linkList ? `\n链接：\n${linkList}` : ""}`;
 }
 
-async function askGuide(school: School, source: string, links: PageLink[], meter: UsageMeter): Promise<ParsedGuide | null> {
-  const { text, totalUsage } = await generateText({ model: getChatModel(), prompt: extractionPrompt(school, source, links) });
+async function askGuide(school: School, source: string, links: PageLink[], meter: UsageMeter, limit = PROMPT_TEXT_LIMIT): Promise<ParsedGuide | null> {
+  const { text, totalUsage } = await generateText({ model: getChatModel(), prompt: extractionPrompt(school, source, links, limit) });
   meter.addTokens(totalUsage);
   return parseGuideReply(text);
 }
 
-/** AI 抽取日程。页面上没有日期时，再读一次要项 PDF（DeepSeek 抓取服务） */
+/**
+ * AI 抽取日程和入试要点。入试页面上通常只有日程和要项链接，考试科目、要不要先联系教授写在要项全文里：
+ * 页面上缺日程或缺这些要点时，再读一次要项全文（PDF 或详细页面，DeepSeek 抓取服务）。
+ */
 async function extractGuide(school: School, page: LoadedPage, meter: UsageMeter): Promise<ParsedGuide | null> {
   if (page.kind === "pdf") {
-    const { content } = await fetchPage(school.url, meter);
-    return askGuide(school, content, [], meter);
+    const { content } = await fetchPage(school.url, meter, GUIDE_TEXT_LIMIT);
+    return askGuide(school, content, [], meter, GUIDE_TEXT_LIMIT);
   }
   const first = await askGuide(school, page.text, page.links, meter);
-  if (first?.events.length || !first?.pdfUrl) return first;
-  if (!page.links.some((l) => l.url === first.pdfUrl)) return first;
-  const { content } = await fetchPage(first.pdfUrl, meter);
-  const second = await askGuide(school, content, [], meter);
-  return second && second.events.length ? { ...second, pdfUrl: first.pdfUrl, requirements: second.requirements ?? first.requirements } : first;
+  if (first?.events.length && !requirementsIncomplete(first.requirements)) return first;
+  const docUrl = guideDocumentUrl(first?.pdfUrl ?? null, page.links);
+  if (!docUrl || docUrl === school.url) return first;
+  const { content } = await fetchPage(docUrl, meter, GUIDE_TEXT_LIMIT);
+  const detail = await askGuide(school, content, [], meter, GUIDE_TEXT_LIMIT);
+  if (!detail) return first;
+  // 日程以入试页面为准（页面上没有才用全文里的），入试要点以全文为准
+  const schedule = first?.events.length ? first : detail.events.length ? { ...detail, pdfUrl: docUrl } : first;
+  return {
+    admissionYear: schedule?.admissionYear ?? null,
+    title: schedule?.title ?? null,
+    events: schedule?.events ?? [],
+    pdfUrl: schedule?.pdfUrl ?? docUrl,
+    requirements: mergeRequirements(first?.requirements ?? null, detail.requirements),
+  };
 }
 
 async function notifyWatchers(school: School, kind: "new_year" | "updated", admissionYear: number, events: GuideEvent[]) {

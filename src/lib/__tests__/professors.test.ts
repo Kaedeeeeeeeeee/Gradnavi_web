@@ -3,8 +3,12 @@ import { test } from "node:test";
 import { demoReply } from "../ai/demo-model";
 import { describeDocument } from "../documents";
 import {
+  buildPaperQueries,
   buildSearchQueries,
+  candidateCount,
+  cleanCopy,
   demoCandidates,
+  mergePaperReply,
   letterSkeleton,
   parseCandidates,
   professorToTarget,
@@ -98,4 +102,55 @@ test("演示模型：“找教授：xxx” 调用 search_professors", () => {
 test("演示模型：“日程：日期 标题” 调用 add_calendar_event", () => {
   const reply = demoReply([{ role: "user", content: [{ type: "text", text: "日程：2026-12-01 JLPT N1" }] }]);
   assert.deepEqual(reply, { toolName: "add_calendar_event", input: { date: "2026-12-01", title: "JLPT N1", kind: "other" } });
+});
+
+test("用户要几位就给几位：count 限制候选数，默认 5，最多 8", () => {
+  assert.equal(candidateCount({}), 5);
+  assert.equal(candidateCount({ count: 3 }), 3);
+  assert.equal(candidateCount({ count: 20 }), 8);
+  assert.equal(candidateCount({ count: 0 }), 1);
+  const many = JSON.stringify({
+    candidates: ["一", "二", "三", "四"].map((n) => ({ name: `山田${n}`, university: "例大学", research: "x", sources: [sources[0].url] })),
+  });
+  assert.equal(parseCandidates(many, sources, 3).length, 3);
+});
+
+test("给用户看的文字里不出现内部字段名", () => {
+  assert.equal(cleanCopy("papers为空，无法引用论文。研究方向和你的二语习得课题很接近。"), "研究方向和你的二语习得课题很接近。");
+  assert.equal(cleanCopy("偏实证，papers 字段为空，和你的方向接近。"), "偏实证，和你的方向接近。");
+  assert.equal(cleanCopy("近两年做学习者语料库研究，和你的方向一致。"), "近两年做学习者语料库研究，和你的方向一致。");
+  assert.equal(cleanCopy("null"), undefined);
+  const [c] = parseCandidates(
+    JSON.stringify({ candidates: [{ name: "山田太郎", university: "例大学", research: "语料库", fit: "papers为空。方向接近。", acceptsInternational: "null", sources: [sources[0].url] }] }),
+    sources,
+  );
+  assert.equal(c.fit, "方向接近。");
+  assert.equal(c.acceptsInternational, undefined);
+});
+
+test("每位候选单独搜论文：姓名精确匹配 + 大学，另搜 researchmap 业绩", () => {
+  const qs = buildPaperQueries({ name: "山田 太郎", university: "東京大学" });
+  assert.deepEqual(qs, ['"山田太郎" 東京大学 論文', "山田太郎 論文 業績 site:researchmap.jp"]);
+});
+
+test("论文检索结果合并进候选：只认检索到的链接，查不到的保留原样", () => {
+  const base = [
+    { name: "山田太郎", university: "例大学", research: "语料库", fit: "旧说法", papers: [], paperRefs: [], sources: [sources[0]] },
+    { name: "佐藤花子", university: "例大学", research: "习得", papers: ["旧论文"], paperRefs: [{ title: "旧论文" }], sources: [sources[0]] },
+  ];
+  const paperSources = [{ title: "論文A - CiNii", url: "https://cir.nii.ac.jp/a" }];
+  const reply = JSON.stringify({
+    candidates: [
+      { index: 1, papers: [{ title: "論文A", year: 2025, url: "https://cir.nii.ac.jp/a" }, { title: "論文B", year: 2024, url: "https://fake.example/b" }], fit: "2025 年的论文A做语料库分析，和你的方向一致。" },
+      { index: 2, papers: [], fit: "papers为空。" },
+      { index: 9, papers: [{ title: "幽霊" }] },
+    ],
+  });
+  const [a, b] = mergePaperReply(reply, base, paperSources);
+  assert.deepEqual(a.paperRefs, [{ title: "論文A", year: 2025, url: "https://cir.nii.ac.jp/a" }, { title: "論文B", year: 2024 }]);
+  assert.deepEqual(a.papers, ["論文A（2025）", "論文B（2024）"]);
+  assert.equal(a.fit, "2025 年的论文A做语料库分析，和你的方向一致。");
+  assert.deepEqual(b.papers, ["旧论文"]);
+  assert.equal(b.fit, undefined);
+  assert.equal(mergePaperReply("{oops", base, paperSources), base);
 });
