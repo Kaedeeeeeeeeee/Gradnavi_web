@@ -5,7 +5,9 @@ import { z } from "zod";
 import { requireUser } from "@/lib/session";
 import { requestSchoolCheck, unwatchSchool, watchSchool } from "@/server/schools";
 
-// 目标研究科页面上的用户操作。与 AI 工具调用同一套 src/server 函数。
+// 志愿里研究科的用户操作（从研究科开始的志愿、立即检查、取消关注）。与 AI 工具调用同一套 src/server 函数。
+
+const refresh = () => revalidatePath("/", "layout");
 
 const watchSchema = z.object({
   university: z.string().trim().min(1, "请填写大学").max(100),
@@ -22,18 +24,18 @@ export async function watchSchoolAction(input: z.input<typeof watchSchema>): Pro
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "关注失败" };
   }
-  revalidatePath("/schools");
+  refresh();
   return { ok: true };
 }
 
 export async function unwatchSchoolAction(schoolId: string) {
   const user = await requireUser();
   await unwatchSchool(user.id, schoolId);
-  revalidatePath("/schools");
+  refresh();
 }
 
 export async function checkNowAction(schoolId: string) {
   const user = await requireUser();
   await requestSchoolCheck(user.id, schoolId);
-  revalidatePath("/schools");
+  refresh();
 }

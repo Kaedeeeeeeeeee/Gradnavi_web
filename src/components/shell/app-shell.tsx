@@ -85,6 +85,7 @@ function tabPath(tab: DocTab) {
   if (tab.kind === "doc") return `/documents/${tab.id}`;
   if (tab.kind === "professor") return `/professors/${tab.id}`;
   if (tab.kind === "task") return `/tasks/${tab.id}`;
+  if (tab.kind === "search") return `/search/${tab.id}`;
   return "/web";
 }
 
@@ -369,10 +370,10 @@ function BadgeDot({ badge, className = "" }: { badge: Badge; className?: string 
 }
 
 // 日历并进了主页，不再单独一个标签
+// 研究科和教授合并成「志愿」（每条 = 教授 + 教授所在的研究科）
 const WORK_TABS = [
   { href: "/workbench", label: "主页" },
-  { href: "/schools", label: "研究科" },
-  { href: "/professors", label: "教授" },
+  { href: "/aspirations", label: "志愿" },
   { href: "/documents", label: "文书" },
 ];
 
@@ -395,7 +396,7 @@ function WorkTabs({ pathname }: { pathname: string }) {
   );
 }
 
-const TAB_ICONS: Record<DocTab["kind"], string> = { doc: "文", professor: "教", task: "任", web: "网" };
+const TAB_ICONS: Record<DocTab["kind"], string> = { doc: "文", professor: "志", task: "任", search: "找", web: "网" };
 
 function DocTabBar({ tabs, onActivate, onClose }: { tabs: Tabs; onActivate: (key: string) => void; onClose: (key: string) => void }) {
   if (!tabs.tabs.length) return <span className="px-1 text-sm font-medium">文稿 / 浏览</span>;

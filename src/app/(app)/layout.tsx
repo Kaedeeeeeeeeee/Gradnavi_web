@@ -12,6 +12,7 @@ import { getLatestConversation, loadMessages } from "@/server/conversations";
 import { getBalance } from "@/server/credits";
 import { listProposedEvents } from "@/server/calendar";
 import { syncNextSteps } from "@/server/next-steps";
+import { listFollowUpProposals } from "@/server/professors";
 import { listTodos } from "@/server/todos";
 import { countAwaiting } from "@/lib/tasks";
 import { SignOutButton } from "./sign-out-button";
@@ -24,12 +25,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const layout = parseLayout(jar.get(LAYOUT_COOKIE)?.value, tabs.tabs.length > 0);
   // 先按进度对账流程任务，工作台竖条上「待你确认」的数量才是最新的
   await syncNextSteps(user.id);
-  const [conversation, balance, doc, todos, proposedEvents] = await Promise.all([
+  const [conversation, balance, doc, todos, proposedEvents, followUps] = await Promise.all([
     getLatestConversation(user.id),
     getBalance(user.id),
     renderDocTab(user.id, activeTab(tabs)),
     listTodos(user.id),
     listProposedEvents(user.id),
+    listFollowUpProposals(user.id),
   ]);
   const messages = conversation ? await loadMessages(conversation.id) : [];
 
@@ -64,7 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         docTitle={doc.title}
         doc={doc.node}
         topRight={topRight}
-        awaiting={countAwaiting(todos, proposedEvents.length)}
+        awaiting={countAwaiting(todos, proposedEvents.length + followUps.length)}
         ai={<AiPane initialConversationId={conversation?.id ?? null} initialMessages={messages} demo={isDemoMode()} initialBalance={balance} />}
       >
         {children}

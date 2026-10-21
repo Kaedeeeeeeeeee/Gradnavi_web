@@ -83,12 +83,11 @@ export async function linkProfessorAction(id: string, professorId: string) {
   revalidatePath("/", "layout");
 }
 
-/** 套磁信发出后，把关联教授标记为“已发套磁” */
+/** 套磁信发出后，把关联教授的联系状态改成“已发信” */
 export async function markLetterSentAction(id: string, professorId: string) {
   const user = await requireUser();
   await updateSavedProfessor(user.id, professorId, { status: "contacted" });
   revalidatePath("/", "layout");
-  revalidatePath("/professors");
 }
 
 export async function deleteDocumentAction(id: string) {

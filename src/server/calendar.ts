@@ -127,14 +127,7 @@ export async function listCalendar(userId: string, from: string, to: string, tod
     db
       .select()
       .from(savedProfessor)
-      .where(
-        and(
-          eq(savedProfessor.userId, userId),
-          isNotNull(savedProfessor.followUpDate),
-          gte(savedProfessor.followUpDate, from),
-          lte(savedProfessor.followUpDate, to),
-        ),
-      ),
+      .where(and(eq(savedProfessor.userId, userId), or(isNotNull(savedProfessor.followUpDate), isNotNull(savedProfessor.proposedFollowUp)))),
     listWatchedSchools(userId, today),
   ]);
 
@@ -165,18 +158,29 @@ export async function listCalendar(userId: string, from: string, to: string, tod
       proposed: t.proposed,
       proposedChange: t.proposedChange?.dueDate ? { date: t.proposedChange.dueDate, endDate: null } : null,
     })),
-    ...professors
-      .filter((p) => p.status !== "dropped")
-      .map((p) => ({
-        key: `prof:${p.id}`,
-        source: "professor" as const,
-        sourceId: p.id,
-        title: `跟进 ${p.name}（${p.university}）`,
-        date: p.followUpDate!,
-        kind: "followup" as const,
-        note: p.note,
-        href: "/professors",
-      })),
+    ...professors.flatMap((p): CalendarItem[] => {
+      if (p.status === "dropped") return [];
+      // AI 提议的跟进日（虚线）：原来没有跟进日的是新日程，有的是改期
+      const proposed = p.proposedFollowUp?.date ?? null;
+      const date = p.followUpDate ?? proposed;
+      if (!date) return [];
+      const inRange = overlaps(date, null, from, to) || (!!proposed && overlaps(proposed, null, from, to));
+      if (!inRange) return [];
+      return [
+        {
+          key: `prof:${p.id}`,
+          source: "professor",
+          sourceId: p.id,
+          title: `跟进 ${p.name}（${p.university}）`,
+          date,
+          kind: "followup",
+          note: p.note,
+          href: "/aspirations",
+          proposed: !p.followUpDate,
+          proposedChange: p.followUpDate && proposed ? { date: proposed, endDate: null } : null,
+        },
+      ];
+    }),
     ...schools.flatMap((s) => s.calendar.filter((it) => overlaps(it.date, it.endDate, from, to))),
   ];
   return sortItems(items);

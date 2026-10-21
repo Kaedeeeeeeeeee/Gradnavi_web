@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { addDays, CALENDAR_KINDS, describeItem, todayJst } from "@/lib/calendar";
 import { addCalendarEvent, deleteCalendarEvent, listCalendar, updateCalendarEvent } from "@/server/calendar";
+import { describeRequirements } from "@/lib/aspirations";
 import { listWatchedSchools, unwatchSchool, watchSchool } from "@/server/schools";
 import { defineTool } from "./registry";
 
@@ -70,7 +71,7 @@ export const deleteCalendarEventTool = defineTool({
 
 export const listWatchedSchoolsTool = defineTool({
   name: "list_watched_schools",
-  description: "查看用户关注的研究科（募集要项监控）：最近检查时间、最新要项年度和日程、是否为仮日程。",
+  description: "查看用户关注的研究科（志愿的研究科这边，募集要项监控）：入试要点、最近检查时间、最新要项年度和日程、是否为仮日程。",
   inputSchema: z.object({}),
   execute: async (_input, { userId }) => {
     const rows = await listWatchedSchools(userId, todayJst());
@@ -81,6 +82,7 @@ export const listWatchedSchoolsTool = defineTool({
       url: school.url,
       checkedAt: school.checkedAt?.toISOString() ?? "等待首次检查（几分钟内）",
       problem: school.lastError,
+      requirements: describeRequirements(school.requirements),
       guide: guide ? `${guide.admissionYear} 年度${tentative ? "（已过期，日历里是顺延一年的仮日程）" : ""}` : "还没有解析出要项",
       schedule: calendar.map(describeItem),
     }));
@@ -90,15 +92,23 @@ export const listWatchedSchoolsTool = defineTool({
 export const watchSchoolTool = defineTool({
   name: "watch_school",
   description:
-    "关注一个研究科：系统每天检查它的募集要项页面，新要项公开前按往年日程在日历里排仮日程，公开后自动更新并邮件通知。url 必须是该研究科入试/募集要项页面的官网地址：不确定时先用 web_search 查到官网页面再关注，不要编造网址。",
+    "关注一个研究科（加进志愿的研究科这边）：系统每天检查它的募集要项页面，解析日程和入试要点，新要项公开前按往年日程在日历里排仮日程，公开后自动更新并邮件通知。" +
+    "是志愿里某位教授所在的研究科时，填 professorId 把两者关联成一条志愿。url 必须是该研究科入试/募集要项页面的官网地址：不确定时先用 web_search 查到官网页面再关注，不要编造网址。",
   inputSchema: z.object({
     university: z.string().min(1).max(100).describe("大学名，如 東京大学"),
     name: z.string().min(1).max(100).describe("研究科名，如 教育学研究科"),
     url: z.string().url().max(500).describe("入试信息 / 募集要项页面的网址"),
+    professorId: z.string().max(64).optional().describe("志愿里教授的 ID（list_aspirations 查），这个研究科是教授所在的研究科时填"),
   }),
-  execute: async (input, { userId }) => {
-    const school = await watchSchool(userId, input);
-    return { id: school.id, name: `${school.university} ${school.name}`, url: school.url, note: "已关注，几分钟内完成首次检查" };
+  execute: async ({ professorId, ...input }, { userId }) => {
+    const school = await watchSchool(userId, input, professorId);
+    return {
+      id: school.id,
+      name: `${school.university} ${school.name}`,
+      url: school.url,
+      requirements: describeRequirements(school.requirements),
+      note: `已关注${professorId ? "并关联到教授" : ""}，几分钟内完成首次检查。入试要点还没有时，可以把查到的要点用 update_school_requirements 先记下来`,
+    };
   },
 });
 

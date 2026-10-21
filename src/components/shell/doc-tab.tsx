@@ -1,17 +1,25 @@
+import { inArray } from "drizzle-orm";
 import { DocumentEditor } from "@/app/(app)/documents/[id]/editor";
-import { createLetterAction, createPlanAction } from "@/app/(app)/professors/actions";
+import { AspirationDetail } from "@/components/aspirations/aspiration-detail";
+import { SearchResults, type CandidateView } from "@/components/aspirations/search-results";
+import { db } from "@/db";
+import { graduateSchool } from "@/db/schema";
+import { projectGuide } from "@/lib/admissions";
+import { contactLabel, describeAspiration, languageLabel, matchSchool, nextDeadline } from "@/lib/aspirations";
+import { todayJst } from "@/lib/calendar";
 import { decideTrack } from "@/lib/onboarding";
-import { describeProfessor, PROFESSOR_STATUS_LABELS, professorAffiliation } from "@/lib/professors";
+import { candidateKey, describeProfessor } from "@/lib/professors";
 import type { DocTab } from "@/lib/shell";
+import { getAspiration } from "@/server/aspirations";
 import { getDocumentBundle, listDocuments } from "@/server/documents";
 import { getProfile } from "@/server/profile";
-import { getSavedProfessor, listSavedProfessors } from "@/server/professors";
+import { getProfessorSearch } from "@/server/professor-search";
+import { listSavedProfessors, savedKeys } from "@/server/professors";
+import { latestGuides } from "@/server/schools";
 import { TaskDetail } from "@/components/tasks/task-detail";
 import { describeTask } from "@/lib/tasks";
 import { getTaskConversation } from "@/server/conversations";
 import { getTodo, taskLinks, toTaskView } from "@/server/todos";
-import { AiDocContent } from "./ai-doc-content";
-import { OpenTabLink } from "./app-shell";
 import { WebTab } from "./web-tab";
 
 // 文稿栏当前标签的内容（服务器渲染）。title 为 null 表示对应数据已不存在，外壳会关掉这个标签。
@@ -22,6 +30,7 @@ export async function renderDocTab(userId: string, tab: DocTab | null): Promise<
   if (tab.kind === "web") return { title: tab.title, node: <WebTab key={tab.url} url={tab.url} title={tab.title} /> };
   if (tab.kind === "professor") return professorTab(userId, tab.id);
   if (tab.kind === "task") return taskTab(userId, tab.id);
+  if (tab.kind === "search") return searchTab(userId, tab.id);
   return documentTab(userId, tab.id);
 }
 
@@ -67,57 +76,69 @@ async function documentTab(userId: string, id: string) {
 }
 
 async function professorTab(userId: string, id: string) {
-  const p = await getSavedProfessor(userId, id);
-  if (!p) return { title: null, node: null };
-  const btn = "rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:border-zinc-500 dark:border-zinc-700";
+  const [a, documents] = await Promise.all([getAspiration(userId, id, todayJst()), listDocuments(userId)]);
+  if (!a?.professor) return { title: null, node: null };
+  // 关联这位教授的文书（定制版计划书、套磁信）
+  const related = documents.filter((d) => d.targetProfessor?.professorId === id).map((d) => ({ id: d.id, title: d.title }));
   return {
-    title: p.name,
+    title: a.professor.name,
+    node: <AspirationDetail key={id} a={{ ...a, professor: a.professor }} documents={related} aiText={`志愿详情（用户正在看）：\n${describeAspiration(a)}`} />,
+  };
+}
+
+async function searchTab(userId: string, id: string) {
+  const search = await getProfessorSearch(userId, id);
+  if (!search) return { title: null, node: null };
+  const [saved, schools] = await Promise.all([
+    savedKeys(userId, search.candidates),
+    search.candidates.length
+      ? db
+          .select()
+          .from(graduateSchool)
+          .where(inArray(graduateSchool.university, [...new Set(search.candidates.map((c) => c.university.trim()))]))
+      : [],
+  ]);
+  const savedBy = new Map(saved.map((p) => [candidateKey(p), p]));
+  const guides = await latestGuides(schools.map((s) => s.id));
+  const today = todayJst();
+  const candidates: CandidateView[] = search.candidates.map((c) => {
+    const key = candidateKey(c);
+    const p = savedBy.get(key);
+    const school = matchSchool(c, schools);
+    const guide = school ? guides.get(school.id) : undefined;
+    const items = school && guide ? projectGuide({ schoolId: school.id, schoolName: school.name, admissionYear: guide.admissionYear, events: guide.events }, today).items : [];
+    const deadline = nextDeadline(items, today);
+    return {
+      key,
+      candidate: c,
+      saved: p ? { id: p.id, status: p.status } : null,
+      rejected: key in search.rejected ? search.rejected[key] : null,
+      school: school
+        ? {
+            name: school.name,
+            contact: contactLabel(school.requirements),
+            language: languageLabel(school.requirements),
+            deadline: deadline ? { date: deadline.date, tentative: deadline.tentative } : null,
+          }
+        : null,
+    };
+  });
+  const aiText = [
+    `找教授的候选卡片（用户正在看，第 ${search.id.slice(0, 8)} 轮）：关键词「${search.keywords}」，学校：${search.schools.join("、") || "不限"}${search.preference ? `，要求：${search.preference}` : ""}`,
+    ...candidates.map(
+      (c) =>
+        `- ${describeProfessor(c.candidate)}${c.saved ? `【已加入志愿，教授 ID：${c.saved.id}】` : ""}${c.rejected !== null ? `【用户标了不合适：${c.rejected || "没说原因"}】` : ""}`,
+    ),
+  ].join("\n");
+  return {
+    title: `找教授：${search.keywords}`.slice(0, 40),
     node: (
-      <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
-        <AiDocContent text={`教授详情（教授清单）：\n${describeProfessor(p)}`} />
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold">{p.name}</h1>
-          <p className="text-sm text-zinc-500">
-            {professorAffiliation(p)} · {PROFESSOR_STATUS_LABELS[p.status]}
-            {p.followUpDate && ` · 跟进 ${p.followUpDate}`}
-          </p>
-        </div>
-        {p.research && <p className="text-sm leading-relaxed">{p.research}</p>}
-        {p.papers.length > 0 && (
-          <section className="space-y-1">
-            <h2 className="text-sm font-medium">代表论文</h2>
-            <ul className="list-disc pl-5 text-sm text-zinc-600 dark:text-zinc-400" lang="ja">
-              {p.papers.map((t) => (
-                <li key={t}>{t}</li>
-              ))}
-            </ul>
-          </section>
-        )}
-        {p.acceptsInternational && <p className="text-sm text-zinc-600 dark:text-zinc-400">留学生：{p.acceptsInternational}</p>}
-        {p.note && <p className="rounded-md bg-zinc-50 px-3 py-2 text-sm whitespace-pre-wrap dark:bg-zinc-900">备注：{p.note}</p>}
-        {p.sources.length > 0 && (
-          <section className="space-y-1">
-            <h2 className="text-sm font-medium">来源（在文稿栏打开）</h2>
-            <ul className="space-y-1 text-sm">
-              {p.sources.map((s) => (
-                <li key={s.url}>
-                  <OpenTabLink tab={{ kind: "web", url: s.url, title: s.title }} href={s.url} className="text-blue-600 hover:underline dark:text-blue-400">
-                    {s.title}
-                  </OpenTabLink>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <form action={createLetterAction.bind(null, p.id)}>
-            <button className={btn}>写套磁信</button>
-          </form>
-          <form action={createPlanAction.bind(null, p.id)}>
-            <button className={btn}>以这位教授为目标写计划书</button>
-          </form>
-        </div>
-      </div>
+      <SearchResults
+        key={search.id}
+        search={{ id: search.id, keywords: search.keywords, schools: search.schools, preference: search.preference, demo: search.demo, createdAt: search.createdAt.toISOString() }}
+        candidates={candidates}
+        aiText={aiText}
+      />
     ),
   };
 }

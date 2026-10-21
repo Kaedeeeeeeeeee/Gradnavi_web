@@ -7,7 +7,8 @@ import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { btn, CompleteButton, formatDay, ProposalButtons, StartButton, StatusChip } from "@/components/tasks/task-ui";
 import { CALENDAR_KIND_LABELS, CALENDAR_KINDS, itemsOn, monthGrid, shiftMonth, type CalendarItem, type CalendarKind } from "@/lib/calendar";
 import type { Countdown, TaskView } from "@/lib/tasks";
-import { acceptAllProposalsAction, addEventAction, addTaskAction, deleteEventAction } from "./actions";
+import type { GuideChange } from "@/lib/admissions";
+import { acceptAllProposalsAction, addEventAction, addTaskAction, deleteEventAction, setTaskStatusAction } from "./actions";
 
 export type HomeTask = TaskView & {
   /** 这个任务已经有对话（按钮显示「继续和 AI 做」） */
@@ -17,6 +18,18 @@ export type HomeTask = TaskView & {
 };
 
 type ProposedEvent = { id: string; title: string; date: string; endDate: string | null; change: { date: string; endDate: string | null } | null; isNew: boolean };
+/** AI 对志愿里教授跟进日的提议 */
+type ProposedFollowUp = { id: string; name: string; date: string | null; proposed: string | null };
+
+type GuideAlert = {
+  schoolId: string;
+  school: string;
+  admissionYear: number;
+  sourceUrl: string;
+  changes: GuideChange[];
+  /** 监控同时加的「查看新要项」任务 */
+  task: { id: string; title: string; started: boolean } | null;
+};
 
 type Props = {
   today: string;
@@ -24,7 +37,8 @@ type Props = {
   profileLine: string;
   briefing: string[];
   countdown: Countdown[];
-  proposals: { tasks: HomeTask[]; changes: HomeTask[]; events: ProposedEvent[] };
+  alerts: GuideAlert[];
+  proposals: { tasks: HomeTask[]; changes: HomeTask[]; events: ProposedEvent[]; followUps: ProposedFollowUp[] };
   week: HomeTask[];
   later: HomeTask[];
   done: HomeTask[];
@@ -41,10 +55,13 @@ function formatToday(date: string) {
 }
 
 export function Home(p: Props) {
-  const proposalCount = p.proposals.tasks.length + p.proposals.changes.length + p.proposals.events.length;
+  const proposalCount = p.proposals.tasks.length + p.proposals.changes.length + p.proposals.events.length + p.proposals.followUps.length;
   return (
     <div className="@container mx-auto max-w-5xl space-y-6">
       <Briefing today={p.today} lines={p.briefing} countdown={p.countdown} profileLine={p.profileLine} />
+      {p.alerts.map((a) => (
+        <GuideAlertCard key={`${a.schoolId}:${a.admissionYear}`} alert={a} />
+      ))}
       {proposalCount > 0 && <Proposals {...p.proposals} count={proposalCount} />}
 
       <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
@@ -100,7 +117,7 @@ function Briefing({ today, lines, countdown, profileLine }: { today: string; lin
       <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400">
         {countdown.length === 0 ? (
           <>
-            还没有关键日期：在<Link href="/schools" className="underline">研究科</Link>里关注目标研究科后，这里会显示出愿截止和考试倒计时。
+            还没有关键日期：<Link href="/aspirations" className="underline">志愿</Link>里有了研究科后，这里会显示出愿截止和考试倒计时。
           </>
         ) : (
           countdown.map((c) => (
@@ -125,7 +142,50 @@ function SourceLink({ url }: { url: string }) {
   );
 }
 
-function Proposals({ tasks, changes, events, count }: Props["proposals"] & { count: number }) {
+/** 新募集要项公布：对照之前的仮日程，让 AI 提议调整自己的安排（提议要用户同意） */
+function GuideAlertCard({ alert: a }: { alert: GuideAlert }) {
+  const { openTab } = useShell();
+  const startTask = useStartTask();
+  const [pending, startTransition] = useTransition();
+  return (
+    <section className="space-y-2 rounded-lg border border-sky-300 bg-sky-50/50 px-4 py-3 dark:border-sky-800 dark:bg-sky-950/30">
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <h2 className="font-medium">
+          {a.school} {a.admissionYear} 年度募集要项已公布
+        </h2>
+        <SourceLink url={a.sourceUrl} />
+      </div>
+      <ul className="space-y-0.5 text-sm">
+        {a.changes.map((e) => (
+          <li key={`${e.label}:${e.date}`} className="flex flex-wrap gap-x-2">
+            <span className="tabular-nums">{formatRange(e.date, e.endDate)}</span>
+            <span>{e.label}</span>
+            {e.before && <span className="text-xs text-zinc-500">（之前是 {formatRange(e.before.date, e.before.endDate)}）</span>}
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-zinc-500">日历已经换成正式日程。你自己的任务和日程要不要跟着调，可以让 AI 对照一下，它会提议改动，你同意后才生效。</p>
+      {a.task && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => {
+              startTask(a.task!.id);
+              openTab({ kind: "task", id: a.task!.id, title: a.task!.title });
+            }}
+            className="rounded-md bg-foreground px-2.5 py-1 text-xs text-background"
+          >
+            {a.task.started ? "继续和 AI 看" : "让 AI 提议调整日程"}
+          </button>
+          <button disabled={pending} onClick={() => startTransition(() => setTaskStatusAction(a.task!.id, "done"))} className={btn}>
+            知道了
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Proposals({ tasks, changes, events, followUps, count }: Props["proposals"] & { count: number }) {
   const [pending, startTransition] = useTransition();
   return (
     <section className="space-y-2 rounded-lg border border-dashed border-zinc-400 px-4 py-3 dark:border-zinc-600">
@@ -163,6 +223,16 @@ function Proposals({ tasks, changes, events, count }: Props["proposals"] & { cou
               {e.isNew ? formatRange(e.date, e.endDate) : `${formatRange(e.date, e.endDate)} → ${formatRange(e.change!.date, e.change!.endDate)}`}
             </span>
             <ProposalButtons kind="event" id={e.id} date={e.change?.date ?? e.date} />
+          </li>
+        ))}
+        {followUps.map((f) => (
+          <li key={f.id} className="flex flex-wrap items-center gap-2 py-2">
+            <span className="text-xs text-zinc-500">跟进日</span>
+            <span className="min-w-0 flex-1">跟进 {f.name}</span>
+            <span className="text-xs text-zinc-500 tabular-nums">
+              {f.date ? formatDay(f.date) : "未定"} → {f.proposed ? formatDay(f.proposed) : "取消跟进日"}
+            </span>
+            <ProposalButtons kind="professor" id={f.id} date={f.proposed} editable={!!f.proposed} />
           </li>
         ))}
       </ul>
@@ -424,7 +494,7 @@ function MonthCalendar({ today, month, items, upcoming }: { today: string; month
 function EventRow({ item: it }: { item: CalendarItem }) {
   const { openTab } = useShell();
   const [pending, startTransition] = useTransition();
-  const proposalKind = it.source === "todo" ? "task" : it.source === "event" ? "event" : null;
+  const proposalKind = it.source === "todo" ? "task" : it.source === "event" ? "event" : it.source === "professor" ? "professor" : null;
   const isProposal = it.proposed || it.proposedChange;
   return (
     <li className={`group space-y-0.5 rounded-md px-2 py-1.5 ${isProposal ? "border border-dashed border-zinc-400 dark:border-zinc-600" : ""}`}>

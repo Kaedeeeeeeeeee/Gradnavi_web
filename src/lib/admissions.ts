@@ -8,6 +8,41 @@ export type GuideEvent = { label: string; date: string; endDate?: string | null;
 
 export type PageLink = { text: string; url: string };
 
+/** 要不要出愿前先联系指导教员 */
+export const CONTACT_RULES = ["required", "recommended", "not_required"] as const;
+export type ContactRule = (typeof CONTACT_RULES)[number];
+
+export const CONTACT_RULE_LABELS: Record<ContactRule, string> = {
+  required: "必须先联系教授",
+  recommended: "建议先联系教授",
+  not_required: "不需要事先联系",
+};
+
+/**
+ * 研究科的入试要点（志愿列表里「研究科这边」的信息），跨用户共享。
+ * 募集要项监控解析出来的 source = monitor；监控还没解析到时，AI 在对话里查到的先填上（source = ai），之后被监控结果覆盖。
+ */
+export type AdmissionRequirements = {
+  contact: ContactRule | null;
+  /** 原文里关于事先联系的说法（简短） */
+  contactNote: string | null;
+  /** 考试科目（笔试、口试、面接、小论文……） */
+  subjects: string[];
+  /** 语言要求原文简述 */
+  english: string | null;
+  japanese: string | null;
+  /** 数字化的最低分（只在要项写明时填），用于和用户成绩对照 */
+  toefl: number | null;
+  toeic: number | null;
+  ielts: number | null;
+  /** JLPT 级别：1 = N1 */
+  jlpt: number | null;
+  notes: string | null;
+  sourceUrl: string | null;
+  source: "monitor" | "ai";
+  updatedAt: string;
+};
+
 /** 只允许公网网址：worker 会去抓这个链接，不能让它访问服务器内网（数据库、云厂商元数据等） */
 export function assertPublicUrl(url: string) {
   let u: URL;
@@ -104,9 +139,53 @@ const guideSchema = z.object({
   title: z.string().trim().max(200).nullish(),
   events: z.array(z.unknown()).default([]),
   pdfUrl: z.string().nullish(),
+  requirements: z.unknown().optional(),
 });
 
-export type ParsedGuide = { admissionYear: number | null; title: string | null; events: GuideEvent[]; pdfUrl: string | null };
+export type ParsedGuide = {
+  admissionYear: number | null;
+  title: string | null;
+  events: GuideEvent[];
+  pdfUrl: string | null;
+  requirements: Omit<AdmissionRequirements, "source" | "updatedAt" | "sourceUrl"> | null;
+};
+
+const opt = (max: number) => z.string().trim().max(max).nullish().catch(null);
+const score = (min: number, max: number) => z.coerce.number().min(min).max(max).nullish().catch(null);
+
+export const requirementsSchema = z.object({
+  contact: z.enum(CONTACT_RULES).nullish().catch(null),
+  contactNote: opt(300),
+  subjects: z.array(z.string().trim().min(1).max(100)).max(12).default([]).catch([]),
+  english: opt(300),
+  japanese: opt(300),
+  toefl: score(1, 120),
+  toeic: score(10, 990),
+  ielts: score(1, 9),
+  jlpt: z.coerce.number().int().min(1).max(5).nullish().catch(null),
+  notes: opt(500),
+});
+
+/** 校验 AI 抽出的入试要点；什么都没有时返回 null */
+export function parseRequirements(raw: unknown): ParsedGuide["requirements"] {
+  const parsed = requirementsSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const r = parsed.data;
+  const req = {
+    contact: r.contact ?? null,
+    contactNote: r.contactNote || null,
+    subjects: r.subjects,
+    english: r.english || null,
+    japanese: r.japanese || null,
+    toefl: r.toefl ?? null,
+    toeic: r.toeic ?? null,
+    ielts: r.ielts ?? null,
+    jlpt: r.jlpt ?? null,
+    notes: r.notes || null,
+  };
+  const empty = !req.contact && !req.contactNote && !req.subjects.length && !req.english && !req.japanese && !req.notes && req.toefl === null && req.jlpt === null;
+  return empty ? null : req;
+}
 
 function extractJson(reply: string): unknown {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(reply)?.[1];
@@ -134,7 +213,13 @@ export function parseGuideReply(reply: string): ParsedGuide | null {
   }
   events.sort((a, b) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label));
   const pdfUrl = parsed.data.pdfUrl && /^https?:\/\//.test(parsed.data.pdfUrl) ? parsed.data.pdfUrl : null;
-  return { admissionYear: parsed.data.admissionYear ?? null, title: parsed.data.title || null, events: events.slice(0, 30), pdfUrl };
+  return {
+    admissionYear: parsed.data.admissionYear ?? null,
+    title: parsed.data.title || null,
+    events: events.slice(0, 30),
+    pdfUrl,
+    requirements: parseRequirements(parsed.data.requirements),
+  };
 }
 
 /** 两份日程是否不同（顺序无关） */
@@ -172,8 +257,20 @@ export function projectGuide(guide: GuideInfo, today: string): { tentative: bool
     kind: e.kind,
     tentative,
     note: tentative ? `仮・基于 ${guide.admissionYear} 年度募集要项推算，以新要项为准` : `${guide.admissionYear} 年度募集要项`,
-    href: "/schools",
+    href: "/aspirations",
     sourceUrl: guide.sourceUrl,
   }));
   return { tentative, items };
+}
+
+export type GuideChange = GuideEvent & { before: { date: string; endDate: string | null } | null };
+
+/** 新要项和之前日历上的日程（仮）对照：同名的日程标出原来的日期，没变的 before 为空 */
+export function diffGuideEvents(previous: GuideEvent[], next: GuideEvent[]): GuideChange[] {
+  const byLabel = new Map(previous.map((e) => [e.label, e]));
+  return next.map((e) => {
+    const old = byLabel.get(e.label);
+    const changed = old && (old.date !== e.date || (old.endDate ?? null) !== (e.endDate ?? null));
+    return { ...e, before: changed ? { date: old.date, endDate: old.endDate ?? null } : null };
+  });
 }

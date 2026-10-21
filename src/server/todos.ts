@@ -25,7 +25,7 @@ type Creator = "user" | "ai" | "system";
 
 /** 关联的教授 / 文书 / 研究科必须是这个用户自己的 */
 async function checkLinks(userId: string, links: { professorId?: string | null; documentId?: string | null; schoolId?: string | null }) {
-  if (links.professorId && !(await getSavedProfessor(userId, links.professorId))) throw new Error("教授清单里没有这位教授");
+  if (links.professorId && !(await getSavedProfessor(userId, links.professorId))) throw new Error("志愿里没有这位教授");
   if (links.documentId && !(await getDocument(userId, links.documentId))) throw new Error("找不到这份文书");
   if (links.schoolId && !(await db.$count(schoolWatch, and(eq(schoolWatch.userId, userId), eq(schoolWatch.schoolId, links.schoolId)))))
     throw new Error("没有关注这个研究科");

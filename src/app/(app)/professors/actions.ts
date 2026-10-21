@@ -3,61 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { UsageMeter } from "@/lib/credits";
 import { docTemplate } from "@/lib/documents";
-import { letterSkeleton, MAX_SCHOOLS, PROFESSOR_STATUSES, professorToTarget, type ProfessorCandidate } from "@/lib/professors";
+import { letterSkeleton, PROFESSOR_STATUSES, professorToTarget } from "@/lib/professors";
 import { requireUser } from "@/lib/session";
-import { assertCanSpend, recordUsageSafe } from "@/server/credits";
 import { createDocument, listDocuments } from "@/server/documents";
 import { answerField } from "@/lib/onboarding";
 import { getProfile } from "@/server/profile";
-import { searchProfessors, type ProfessorSearchResult } from "@/server/professor-search";
-import { deleteSavedProfessor, getSavedProfessor, saveProfessor, updateSavedProfessor } from "@/server/professors";
+import { deleteSavedProfessor, getSavedProfessor, updateSavedProfessor } from "@/server/professors";
 
-// 找教授页面上的用户操作。与 AI 工具调用同一套 src/server 函数。
+// 志愿里教授的用户操作（志愿列表、志愿详情）。与 AI 工具调用同一套 src/server 函数。
+// 志愿详情在文稿栏、跟进日在主页日历上，都由 layout 渲染，所以改完刷新整个 layout。
 
-const searchSchema = z.object({
-  keywords: z.string().trim().min(1, "请填写研究方向").max(200),
-  schools: z.array(z.string().trim().min(1).max(50)).max(MAX_SCHOOLS),
-  field: z.enum(["humanities", "sciences"]),
-});
-
-export async function searchProfessorsAction(
-  input: z.infer<typeof searchSchema>,
-): Promise<({ ok: true } & ProfessorSearchResult) | { ok: false; error: string }> {
-  const user = await requireUser();
-  const parsed = searchSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "输入有误" };
-  const meter = new UsageMeter();
-  try {
-    await assertCanSpend(user.id);
-    return { ok: true, ...(await searchProfessors(parsed.data, meter)) };
-  } catch (error) {
-    console.error("[professor-search]", error);
-    return { ok: false, error: error instanceof Error ? error.message : "检索失败，请稍后再试" };
-  } finally {
-    // 检索失败也要结算已经成功的检索调用
-    await recordUsageSafe({ userId: user.id, feature: "professor_search", meter, note: parsed.data.keywords.slice(0, 100) });
-  }
-}
-
-const candidateSchema = z.object({
-  name: z.string().trim().min(1).max(100),
-  university: z.string().trim().min(1).max(100),
-  department: z.string().max(200).optional(),
-  lab: z.string().max(200).optional(),
-  research: z.string().max(1000),
-  papers: z.array(z.string().max(300)).max(5),
-  acceptsInternational: z.string().max(200).optional(),
-  sources: z.array(z.object({ title: z.string().max(300), url: z.string().url().max(500) })).max(10),
-}) satisfies z.ZodType<ProfessorCandidate>;
-
-export async function saveProfessorAction(candidate: ProfessorCandidate) {
-  const user = await requireUser();
-  const row = await saveProfessor(user.id, candidateSchema.parse(candidate));
-  revalidatePath("/professors");
-  return row.id;
-}
+const refresh = () => revalidatePath("/", "layout");
 
 const patchSchema = z.object({
   status: z.enum(PROFESSOR_STATUSES).optional(),
@@ -67,24 +24,25 @@ const patchSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .nullable()
     .optional(),
+  schoolId: z.string().max(64).nullable().optional(),
 });
 
 export async function updateProfessorAction(id: string, patch: z.infer<typeof patchSchema>) {
   const user = await requireUser();
   const p = patchSchema.parse(patch);
   await updateSavedProfessor(user.id, id, { ...p, ...(p.note !== undefined ? { note: p.note || null } : {}) });
-  revalidatePath("/professors");
+  refresh();
 }
 
 export async function deleteProfessorAction(id: string) {
   const user = await requireUser();
   await deleteSavedProfessor(user.id, id);
-  revalidatePath("/professors");
+  refresh();
 }
 
 async function professorOrThrow(userId: string, id: string) {
   const p = await getSavedProfessor(userId, id);
-  if (!p) throw new Error("教授清单里没有这位教授");
+  if (!p) throw new Error("志愿里没有这位教授");
   return p;
 }
 

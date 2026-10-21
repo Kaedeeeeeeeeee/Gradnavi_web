@@ -9,11 +9,15 @@ import { listDocuments } from "@/server/documents";
 import { syncNextSteps } from "@/server/next-steps";
 import { getProfile } from "@/server/profile";
 import { listSavedProfessors } from "@/server/professors";
-import { listWatchedSchools } from "@/server/schools";
+import { listGuideAlerts, listWatchedSchools } from "@/server/schools";
+import { diffGuideEvents } from "@/lib/admissions";
 import { listTodos, toTaskView } from "@/server/todos";
 import { Home, type HomeTask } from "./home";
 
 export const metadata = { title: "主页 · GradNavi" };
+
+/** 新募集要项公布后在主页提醒多少天 */
+const ALERT_DAYS = 30;
 
 // 主页：今日简报（含关键日期倒计时）| 本周 / 之后的任务 + 月历。AI 的提议在最上面，同意后才生效。
 export default async function WorkbenchPage({ searchParams }: PageProps<"/workbench">) {
@@ -32,7 +36,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
   const horizon = addDays(today, 365);
 
   await syncNextSteps(user.id);
-  const [rows, calendar, proposedEvents, started, professors, documents, schools] = await Promise.all([
+  const [rows, calendar, proposedEvents, started, professors, documents, schools, guideAlerts] = await Promise.all([
     listTodos(user.id, { includeDone: true }),
     listCalendar(user.id, gridFrom < today ? gridFrom : today, gridTo > horizon ? gridTo : horizon, today),
     listProposedEvents(user.id),
@@ -40,6 +44,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
     listSavedProfessors(user.id),
     listDocuments(user.id),
     listWatchedSchools(user.id, today),
+    listGuideAlerts(user.id, ALERT_DAYS),
   ]);
 
   const professorName = new Map(professors.map((p) => [p.id, p.name]));
@@ -58,6 +63,13 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
           : null,
   });
   const groups = groupTasks(tasks, today);
+  const followUps = professors.filter((p) => p.proposedFollowUp);
+  // 新要项提醒：监控同时加了一个「查看新要项」任务，任务完成后提醒就收起
+  const alerts = guideAlerts.flatMap((al) => {
+    const t = rows.find((r) => r.createdBy === "system" && !r.stepKey && r.schoolId === al.schoolId && r.title.includes("募集要项"));
+    if (t?.status === "done") return [];
+    return [{ ...al, changes: diffGuideEvents(al.previous, al.events), task: t ? { id: t.id, title: t.title, started: started.has(t.id) } : null }];
+  });
   const path = answers.path === "unsure" ? `${PATH_LABELS[suggestPath(answers)]}（建议，待确认）` : PATH_LABELS[answers.path];
   const end = weekEnd(today);
 
@@ -66,12 +78,14 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
       today={today}
       month={month}
       profileLine={`路径：${path} · 目标入学：${answers.targetEntry} · 路线：${TRACK_LABELS[decideTrack(answers)]}`}
-      briefing={briefing(tasks, proposedEvents.length, today)}
+      briefing={briefing(tasks, proposedEvents.length + followUps.length, today)}
+      alerts={alerts}
       countdown={keyDates(calendar, today)}
       proposals={{
         tasks: groups.proposals.map(toHome),
         changes: tasks.filter((t) => !t.proposed && t.proposedChange).map(toHome),
         events: proposedEvents.map((e) => ({ id: e.id, title: e.title, date: e.date, endDate: e.endDate, change: e.proposedChange, isNew: e.proposed })),
+        followUps: followUps.map((p) => ({ id: p.id, name: p.name, date: p.followUpDate, proposed: p.proposedFollowUp!.date })),
       }}
       week={groups.week.map(toHome)}
       later={groups.later.map(toHome)}

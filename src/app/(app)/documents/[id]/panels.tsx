@@ -75,7 +75,7 @@ export function TailoredCopies({
       ) : (
         <p className="text-zinc-500">
           志愿里还没有教授，先去
-          <Link href="/professors" className="underline">
+          <Link href="/aspirations" className="underline">
             找教授
           </Link>
           。
@@ -129,7 +129,7 @@ export function LetterPanel({
         {professorId &&
           (linkedStatus === "to_contact" ? (
             <button disabled={pending} onClick={() => startTransition(() => markLetterSentAction(docId, professorId))} className={btn}>
-              我已发送，标记为“已发套磁”
+              我已发送，标记为“已发信”
             </button>
           ) : (
             linkedStatus && <span className="text-zinc-500">教授状态：{PROFESSOR_STATUS_LABELS[linkedStatus]}</span>
@@ -173,8 +173,8 @@ function ProfessorPicker({ docId, professor, professors }: { docId: string; prof
   if (!professors.length) {
     return (
       <p className="text-zinc-500">
-        教授清单还是空的，可以先去
-        <Link href="/professors" className="underline">
+        志愿还是空的，可以先去
+        <Link href="/aspirations" className="underline">
           找教授
         </Link>
         并收藏，或在下面手动填写。
@@ -183,7 +183,7 @@ function ProfessorPicker({ docId, professor, professors }: { docId: string; prof
   }
   return (
     <label className="flex flex-wrap items-center gap-2">
-      <span className="text-zinc-500">从教授清单选择</span>
+      <span className="text-zinc-500">从志愿选择</span>
       <select
         value={professor?.professorId ?? ""}
         disabled={pending}

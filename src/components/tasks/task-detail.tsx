@@ -97,7 +97,7 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
             {links.professor && (
               <li>
                 教授：
-                <OpenTabLink tab={{ kind: "professor", id: links.professor.id, title: links.professor.name }} href="/professors" className="text-blue-600 hover:underline dark:text-blue-400">
+                <OpenTabLink tab={{ kind: "professor", id: links.professor.id, title: links.professor.name }} href="/aspirations" className="text-blue-600 hover:underline dark:text-blue-400">
                   {links.professor.label}
                 </OpenTabLink>
               </li>

@@ -29,19 +29,17 @@ const state = (patch: Partial<StepState> = {}): StepState => ({
 });
 const openKeys = (s: StepState) => planNextSteps(s).open.map((t) => t.key);
 
-test("一开始只有「确定目标大学和研究科」", () => {
-  assert.deepEqual(openKeys(state()), ["pick_schools"]);
-  assert.deepEqual(openKeys(state({ answers: { ...answers, path: "unsure" } })), ["confirm_path", "pick_schools"]);
-  assert.deepEqual(openKeys(state({ answers: { ...answers, planStatus: "clear" } })), ["pick_schools", "write_plan"]);
+test("教授优先：一开始就是和 AI 一起找教授", () => {
+  assert.deepEqual(openKeys(state()), ["find_professors"]);
+  assert.deepEqual(openKeys(state({ answers: { ...answers, path: "unsure" } })), ["confirm_path", "find_professors"]);
+  // 已有明确计划的先写计划书
+  assert.deepEqual(openKeys(state({ answers: { ...answers, planStatus: "clear" } })), ["write_plan"]);
 });
 
-test("关注研究科后：勾掉选校，出现找教授和语言准备", () => {
-  const s = state({ schoolCount: 1, answers: { ...answers, field: "sciences", japanese: "N2 备考中" } });
-  const plan = planNextSteps(s);
-  assert.ok(plan.done.includes("pick_schools"));
-  assert.deepEqual(plan.open.map((t) => t.key), ["find_professors", "japanese", "english"]);
-  // 用户手动勾掉选校也往下走
-  assert.ok(openKeys(state({ doneKeys: new Set(["pick_schools"]) })).includes("find_professors"));
+test("有了志愿（教授或研究科）才出现语言准备", () => {
+  const a = { ...answers, field: "sciences" as const, japanese: "N2 备考中" };
+  assert.deepEqual(openKeys(state({ answers: a })), ["find_professors"]);
+  assert.deepEqual(openKeys(state({ answers: a, schoolCount: 1 })), ["find_professors", "japanese", "english"]);
 });
 
 test("计划书优先：计划书初稿有了才找教授", () => {
@@ -56,9 +54,12 @@ test("收藏教授后按状态推进：计划书 → 套磁信 → 跟进 → �
   const prof = { id: "p1", name: "山田太郎", status: "to_contact" as const };
   const key = (k: string) => professorStepKey("p1", k);
 
-  let s = state({ schoolCount: 1, professors: [prof] });
-  assert.deepEqual(openKeys(s), ["find_professors", key("plan")]);
-  assert.equal(planNextSteps(s).open[1].title, "结合山田太郎教授的研究方向写计划书草稿");
+  let s = state({ professors: [prof] });
+  assert.deepEqual(openKeys(s), ["find_professors", key("school"), key("plan")]);
+  assert.equal(planNextSteps(s).open[1].title, "查清山田太郎教授所在研究科怎么考");
+  assert.equal(planNextSteps(s).open[2].title, "结合山田太郎教授的研究方向写计划书草稿");
+  // 关联了研究科：这一步达成
+  assert.ok(planNextSteps(state({ professors: [{ ...prof, schoolId: "s1" }] })).done.includes(key("school")));
 
   s = state({ schoolCount: 1, professors: [prof], documents: [{ id: "d1", kind: "plan", professorId: "p1" }, { id: "l1", kind: "letter", professorId: "p1" }] });
   let plan = planNextSteps(s);
@@ -71,11 +72,15 @@ test("收藏教授后按状态推进：计划书 → 套磁信 → 跟进 → �
   assert.ok(plan.done.includes(key("plan")) && plan.done.includes(key("letter")));
   assert.equal(plan.open.find((t) => t.key === key("followup"))?.note, "跟进日：2026-11-05");
 
-  plan = planNextSteps(state({ professors: [{ ...prof, status: "replied" }] }));
+  plan = planNextSteps(state({ professors: [{ ...prof, status: "replied", schoolId: "s1" }] }));
   assert.ok(plan.done.includes(key("followup")));
-  assert.deepEqual(plan.open.map((t) => t.key), ["pick_schools", key("reply"), "application"]);
+  assert.deepEqual(plan.open.map((t) => t.key), ["find_professors", key("reply"), "application"]);
 
   assert.ok(openKeys(state({ professors: [{ ...prof, status: "interview" }] })).includes(key("interview")));
+  // 同意接收：面谈这一步也算做完，进入出愿准备
+  plan = planNextSteps(state({ professors: [{ ...prof, status: "accepted", schoolId: "s1" }] }));
+  assert.ok(plan.done.includes(key("interview")));
+  assert.ok(plan.open.some((t) => t.key === "application"));
 });
 
 test("放弃的教授不产生任务；收藏够 3 位勾掉找教授", () => {

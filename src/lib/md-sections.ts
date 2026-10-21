@@ -37,3 +37,10 @@ export function upsertSection(md: string, heading: string, content: string, mode
   const tail = lines.slice(found.end);
   return [...lines.slice(0, found.start + 1), ...next, ...(tail.length ? ["", ...tail] : [])].join("\n") + "\n";
 }
+
+/** 某一节的正文（不含标题行），没有这一节时返回空字符串 */
+export function getSection(md: string, heading: string): string {
+  const lines = md.split("\n");
+  const found = findSection(lines, heading);
+  return found ? lines.slice(found.start + 1, found.end).join("\n").trim() : "";
+}

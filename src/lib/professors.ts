@@ -4,21 +4,37 @@ import { z } from "zod";
 import type { TargetProfessor } from "./documents";
 import type { Field } from "./onboarding";
 
-export const PROFESSOR_STATUSES = ["to_contact", "contacted", "replied", "interview", "dropped"] as const;
+/** 联系状态：未联系 → 已发信 → 已回复 → 面谈过 → 同意接收；dropped = 不再考虑（排在志愿列表最后） */
+export const PROFESSOR_STATUSES = ["to_contact", "contacted", "replied", "interview", "accepted", "dropped"] as const;
 
 export type ProfessorStatus = (typeof PROFESSOR_STATUSES)[number];
 
 export const PROFESSOR_STATUS_LABELS: Record<ProfessorStatus, string> = {
-  to_contact: "待联系",
-  contacted: "已发套磁",
+  to_contact: "未联系",
+  contacted: "已发信",
   replied: "已回复",
-  interview: "面谈",
+  interview: "面谈过",
+  accepted: "同意接收",
   dropped: "放弃",
 };
 
+/** 志愿卡片上的联系进度条（不含放弃） */
+export const CONTACT_FLOW = PROFESSOR_STATUSES.filter((s) => s !== "dropped");
+
 export type SourceLink = { title: string; url: string };
 
-export type SearchInput = { keywords: string; schools: string[]; field?: Field };
+/** 教授近期论文：链接必须来自检索结果，查不到就只有标题 */
+export type PaperRef = { title: string; year?: number; url?: string };
+
+export type SearchInput = {
+  keywords: string;
+  schools: string[];
+  field?: Field;
+  /** 用户在对话里追加的要求（如「更偏应用」「只要关东的」） */
+  preference?: string;
+  /** user.md 摘要：让 AI 说明「为什么适合你」，并避开用户说过不合适的教授 */
+  profile?: string;
+};
 
 /** 检索候选（还没收藏） */
 export type ProfessorCandidate = {
@@ -27,13 +43,17 @@ export type ProfessorCandidate = {
   department?: string;
   lab?: string;
   research: string;
+  /** 为什么适合这位用户（引用论文说明） */
+  fit?: string;
   papers: string[];
+  /** 近两三年的 2–3 篇论文，带链接 */
+  paperRefs?: PaperRef[];
   acceptsInternational?: string;
   sources: SourceLink[];
 };
 
 export const MAX_SCHOOLS = 5;
-export const MAX_CANDIDATES = 12;
+export const MAX_CANDIDATES = 8;
 
 /** 把用户填的“目标校”拆成列表：逗号、顿号、空格、换行都算分隔 */
 export function splitSchools(text: string): string[] {
@@ -56,13 +76,19 @@ export function buildSearchQueries({ keywords, schools }: SearchInput): string[]
 
 const text = (max: number) => z.string().trim().max(max);
 
+const paperSchema = z.union([
+  text(300).transform((title) => ({ title, year: null, url: null })),
+  z.object({ title: text(300), year: z.coerce.number().int().min(1950).max(2100).nullish().catch(null), url: z.string().nullish() }),
+]);
+
 const candidateSchema = z.object({
   name: text(100).min(1),
   university: text(100).min(1),
   department: text(200).nullish(),
   lab: text(200).nullish(),
   research: text(1000).default(""),
-  papers: z.array(text(300)).max(5).default([]),
+  fit: text(1000).nullish(),
+  papers: z.array(paperSchema).max(5).default([]),
   acceptsInternational: text(200).nullish(),
   sources: z.array(z.string()).default([]),
 });
@@ -97,22 +123,38 @@ export function parseCandidates(reply: string, sources: SourceLink[]): Professor
     if (!parsed.success) continue;
     const c = parsed.data;
     const links = [...new Set(c.sources)].flatMap((u) => (byUrl.has(u) ? [byUrl.get(u)!] : []));
-    const key = `${c.name.replace(/\s/g, "")}@${c.university}`;
+    const key = candidateKey(c);
     if (!links.length || seen.has(key)) continue;
     seen.add(key);
+    // 论文链接同样只认检索结果里的 URL，编造的链接去掉、标题保留
+    const paperRefs = c.papers
+      .filter((p) => p.title)
+      .slice(0, 3)
+      .map((p) => ({ title: p.title, ...(p.year ? { year: p.year } : {}), ...(p.url && byUrl.has(p.url) ? { url: p.url } : {}) }));
     result.push({
       name: c.name,
       university: c.university,
       department: c.department || undefined,
       lab: c.lab || undefined,
       research: c.research,
-      papers: c.papers.filter(Boolean),
+      fit: c.fit || undefined,
+      papers: paperRefs.map(paperLabel),
+      paperRefs,
       acceptsInternational: c.acceptsInternational || undefined,
       sources: links,
     });
     if (result.length >= MAX_CANDIDATES) break;
   }
   return result;
+}
+
+/** 同一位教授的判定：去掉姓名里的空格 + 大学 */
+export function candidateKey(p: { name: string; university: string }) {
+  return `${p.name.replace(/[\s　]/g, "")}@${p.university.trim()}`;
+}
+
+export function paperLabel(p: PaperRef) {
+  return p.year && !p.title.includes(String(p.year)) ? `${p.title}（${p.year}）` : p.title;
 }
 
 type ProfessorInfo = {
@@ -158,12 +200,15 @@ export function letterSkeleton(p: ProfessorInfo) {
 }
 
 /** 给 AI 和页面用的一行摘要 */
-export function describeProfessor(p: ProfessorInfo & { id?: string; status?: ProfessorStatus; note?: string | null; followUpDate?: string | null }) {
+export function describeProfessor(
+  p: ProfessorInfo & { id?: string; status?: ProfessorStatus; note?: string | null; followUpDate?: string | null; fit?: string | null },
+) {
   const parts = [`${p.name}（${professorAffiliation(p)}）`];
   if (p.id) parts.push(`ID：${p.id}`);
-  if (p.status) parts.push(`状态：${PROFESSOR_STATUS_LABELS[p.status]}`);
+  if (p.status) parts.push(`联系状态：${PROFESSOR_STATUS_LABELS[p.status]}`);
   if (p.followUpDate) parts.push(`跟进：${p.followUpDate}`);
   if (p.research) parts.push(`研究：${p.research.slice(0, 200)}`);
+  if (p.fit) parts.push(`为什么适合：${p.fit.slice(0, 200)}`);
   if (p.note) parts.push(`备注：${p.note.slice(0, 100)}`);
   return parts.join("；");
 }
@@ -179,8 +224,13 @@ export function demoCandidates({ keywords, schools }: SearchInput): ProfessorCan
       department: "大学院〇〇研究科",
       lab: "山田研究室",
       research: `（演示数据，非真实教授）主要研究「${kw}」相关课题，近年关注方法论与跨学科应用。`,
+      fit: `（演示）近两年的论文都在做「${kw}」的实证研究，和你的方向最接近。`,
       papers: [`${kw}に関する実証的研究（2025）`, `${kw}の新たな展開（2024）`],
-      acceptsInternational: "研究室主页写明接收留学生（演示）",
+      paperRefs: [
+        { title: `${kw}に関する実証的研究`, year: 2025, url: "https://researchmap.jp/" },
+        { title: `${kw}の新たな展開`, year: 2024 },
+      ],
+      acceptsInternational: "研究室主页写明接收留学生，有研究生制度（演示）",
       sources: [{ title: "示例来源（演示模式）", url: "https://researchmap.jp/" }],
     },
     {
@@ -188,7 +238,9 @@ export function demoCandidates({ keywords, schools }: SearchInput): ProfessorCan
       university: u,
       department: "大学院〇〇学府",
       research: `（演示数据，非真实教授）研究「${kw}」的理论与实践，指导过多名中国留学生。`,
+      fit: "（演示）偏理论，适合想先打基础、再找具体课题的你。",
       papers: [`${kw}をめぐる比較分析（2025）`],
+      paperRefs: [{ title: `${kw}をめぐる比較分析`, year: 2025, url: "https://nrid.nii.ac.jp/" }],
       sources: [{ title: "示例来源（演示模式）", url: "https://nrid.nii.ac.jp/" }],
     },
   ]);

@@ -78,8 +78,8 @@ export function groupTasks(tasks: TaskView[], today: string) {
 }
 
 /** 需要用户处理的数量：待你确认的任务 + AI 的提议（主页竖条上的标记） */
-export function countAwaiting(tasks: Pick<TaskView, "status" | "proposed" | "proposedChange">[], proposedEvents: number) {
-  return tasks.filter((t) => t.proposed || t.proposedChange || t.status === "review").length + proposedEvents;
+export function countAwaiting(tasks: Pick<TaskView, "status" | "proposed" | "proposedChange">[], otherProposals: number) {
+  return tasks.filter((t) => t.proposed || t.proposedChange || t.status === "review").length + otherProposals;
 }
 
 /** 关键日期倒计时：最近的出愿截止和考试日（来自募集要项，含仮日程） */
@@ -163,6 +163,9 @@ export function kickoffPrompt(t: Pick<TaskView, "stepKey" | "title" | "note" | "
   const who = professorName ? `${professorName}教授` : "这位教授";
   const pid = t.professorId ? `（教授 ID：${t.professorId}）` : "";
   const step = t.stepKey?.startsWith("prof:") ? t.stepKey.split(":")[2] : t.stepKey;
+  // 监控发现新募集要项时系统加的任务（见 admission-monitor）
+  if (!step && /^查看「.+」.*募集要项/.test(t.title))
+    return `${t.title.replace(/^查看/, "")}。帮我对照新要项的日程和之前的仮日程，看看我的任务、日程和截止日要不要调整；需要调整的直接用工具提议（我在主页同意），再告诉我出愿材料有没有变化。`;
   switch (step) {
     case "confirm_path":
       return "帮我确认申请路径：根据我的档案比较「先读研究生再考修士」「直考修士」「博士」哪条更适合我，说明理由。我确认后帮我更新 user.md。";
@@ -171,7 +174,9 @@ export function kickoffPrompt(t: Pick<TaskView, "stepKey" | "title" | "note" | "
     case "write_plan":
       return "帮我把现有研究计划整理成计划书初稿：新建一份研究计划书，然后按带写步骤从第 1 步开始问我。";
     case "find_professors":
-      return "帮我在已关注的研究科里找 3–5 位候选教授：先看我关注了哪些研究科，按我的研究方向检索，介绍每位教授和我方向的关联。我挑中的再收藏。";
+      return "帮我找 3–5 位合适的教授：先根据我的档案问我一两个关键问题（研究兴趣、想去的地区或学校），再检索。候选会显示在中间，我点「加入志愿」或「不合适」，之后按我的反馈再调整。";
+    case "school":
+      return `帮我查清${who}${pid}所在研究科怎么考：找到官网的入试信息 / 募集要项页面并关注（关联到这位教授），记下要不要先联系教授、考试科目、语言要求，再对照我的档案说说差距。`;
     case "japanese":
       return "帮我制定日语学习计划：根据我现在的日语水平和目标入学时间，和我商量到 N2 / N1 的安排和考试日期。商量好后把子步骤和日程写进来，我在主页确认。";
     case "english":
@@ -189,7 +194,7 @@ export function kickoffPrompt(t: Pick<TaskView, "stepKey" | "title" | "note" | "
     case "followup":
       return `我给${who}${pid}发了套磁信，还没收到回复。帮我判断什么时候跟进合适，和我商量好跟进日期，再写一封简短礼貌的日文跟进邮件。`;
     case "reply":
-      return `${who}${pid}回复我了。我先把教授的回信贴给你，请帮我理解内容，再写日文回复、约面谈时间。`;
+      return `${who}${pid}回复我了。我先把教授的回信贴给你，请帮我理解内容、更新联系状态，再写日文回复、约面谈时间（时间定了提议写进日历）。`;
     case "interview":
       return `帮我准备和${who}${pid}的面谈：整理教授近期研究、可能被问到的问题和我的回答要点，然后和我做一次模拟问答。`;
     default:

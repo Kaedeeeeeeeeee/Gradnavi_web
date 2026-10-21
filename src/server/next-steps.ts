@@ -5,7 +5,7 @@ import { document, savedProfessor, schoolWatch, todo, userProfile } from "@/db/s
 import { planNextSteps } from "@/lib/next-steps";
 
 /**
- * 按用户当前进度对账流程任务（工作台「下一步」）。纯规则、几条查询，不调用 AI，
+ * 按用户当前进度对账流程任务（主页的流程任务）。纯规则、几条查询，不调用 AI，
  * 所以在工作台加载和 AI 查看 Todo 前直接调用，不用在每个改动点埋钩子。
  * 只动带 stepKey 的任务；用户和 AI 自己加的 Todo 不碰。
  */
@@ -14,7 +14,7 @@ export async function syncNextSteps(userId: string) {
     db.select({ answers: userProfile.onboarding }).from(userProfile).where(eq(userProfile.userId, userId)),
     db.$count(schoolWatch, eq(schoolWatch.userId, userId)),
     db
-      .select({ id: savedProfessor.id, name: savedProfessor.name, status: savedProfessor.status, followUpDate: savedProfessor.followUpDate })
+      .select({ id: savedProfessor.id, name: savedProfessor.name, status: savedProfessor.status, followUpDate: savedProfessor.followUpDate, schoolId: savedProfessor.schoolId })
       .from(savedProfessor)
       .where(eq(savedProfessor.userId, userId))
       .orderBy(asc(savedProfessor.createdAt)),

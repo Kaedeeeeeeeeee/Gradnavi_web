@@ -14,11 +14,12 @@ import {
   htmlToText,
   parseGuideReply,
   relevantLinks,
+  type AdmissionRequirements,
   type GuideEvent,
   type PageLink,
   type ParsedGuide,
 } from "@/lib/admissions";
-import { todayJst } from "@/lib/calendar";
+import { shiftYears, todayJst } from "@/lib/calendar";
 import { UsageMeter } from "@/lib/credits";
 import { env } from "@/lib/env";
 import { sendMail } from "@/lib/mail";
@@ -87,9 +88,14 @@ function extractionPrompt(school: School, source: string, links: PageLink[]) {
 - kind：出愿截止/提交材料类为 "deadline"，考试/面接为 "exam"，其他为 "other"。
 - admissionYear：这份要项对应的入学年度（标题里的「20XX年度」；只写了入学年月时用 4 月入学的年份）。
 - 页面上没有日程、但有募集要项 PDF 链接时，events 留空，pdfUrl 填最可能是最新募集要项的链接（必须逐字来自下面的链接列表）。
+- requirements：修士课程（一般选抜、外国人留学生选抜）的入试要点，没写的字段填 null / 空数组：
+  - contact：出愿前是否要联系指导予定教员。明确要求（「事前に連絡を取ること」「内諾が必要」）为 "required"，建议为 "recommended"，明确不需要为 "not_required"，没提到为 null；contactNote 用中文简述原文说法。
+  - subjects：考试科目，中文简写，如「专业笔试」「外语（TOEFL 代替）」「口试・面接」「小论文」「研究计划书审查」。
+  - english / japanese：语言要求的中文简述（如「TOEFL iBT 成绩代替英语笔试」「JLPT N1 或同等」）。toefl / toeic / ielts / jlpt：只在写明最低分时填数字（jlpt 填级别数字，N1 = 1）。
+  - notes：其他重要的要求（如出愿资格审查、需提前申请），中文一句，没有为 null。
 
 只输出 JSON：
-{"admissionYear":2027,"title":"","events":[{"label":"","date":"","endDate":null,"kind":"deadline"}],"pdfUrl":null}
+{"admissionYear":2027,"title":"","events":[{"label":"","date":"","endDate":null,"kind":"deadline"}],"pdfUrl":null,"requirements":{"contact":null,"contactNote":null,"subjects":[],"english":null,"japanese":null,"toefl":null,"toeic":null,"ielts":null,"jlpt":null,"notes":null}}
 
 页面内容：
 ${source.slice(0, PROMPT_TEXT_LIMIT)}
@@ -113,7 +119,7 @@ async function extractGuide(school: School, page: LoadedPage, meter: UsageMeter)
   if (!page.links.some((l) => l.url === first.pdfUrl)) return first;
   const { content } = await fetchPage(first.pdfUrl, meter);
   const second = await askGuide(school, content, [], meter);
-  return second && second.events.length ? { ...second, pdfUrl: first.pdfUrl } : first;
+  return second && second.events.length ? { ...second, pdfUrl: first.pdfUrl, requirements: second.requirements ?? first.requirements } : first;
 }
 
 async function notifyWatchers(school: School, kind: "new_year" | "updated", admissionYear: number, events: GuideEvent[]) {
@@ -130,7 +136,7 @@ async function notifyWatchers(school: School, kind: "new_year" | "updated", admi
     formatGuideEvents(events),
     "",
     `来源：${school.url}`,
-    `查看日历：${env.APP_URL}/workbench`,
+    `查看主页：${env.APP_URL}/workbench（AI 可以帮你对照新日程，提议调整你的安排）`,
     "",
     "日程由 AI 从官网页面整理，出愿前请务必以募集要项原文为准。",
     "—— GradNavi（修考工作台）",
@@ -157,17 +163,30 @@ async function saveGuide(school: School, parsed: ParsedGuide & { admissionYear: 
     .select()
     .from(admissionGuide)
     .where(and(eq(admissionGuide.schoolId, school.id), eq(admissionGuide.admissionYear, parsed.admissionYear)));
-  const values = { title: parsed.title, events: parsed.events, sourceUrl: parsed.pdfUrl ?? school.url, updatedAt: new Date() };
+  const now = new Date();
+  const values = { title: parsed.title, events: parsed.events, sourceUrl: parsed.pdfUrl ?? school.url, updatedAt: now };
 
   if (same) {
     if (!eventsChanged(same.events, parsed.events)) return "unchanged";
-    await db.update(admissionGuide).set(values).where(eq(admissionGuide.id, same.id));
+    const announce = same.id === latest?.id ? { announcedAt: now, previousEvents: same.events } : {};
+    await db.update(admissionGuide).set({ ...values, ...announce }).where(eq(admissionGuide.id, same.id));
     if (same.id === latest?.id) await notifyWatchers(school, "updated", parsed.admissionYear, parsed.events);
     return "updated";
   }
-  await db.insert(admissionGuide).values({ id: crypto.randomUUID(), schoolId: school.id, admissionYear: parsed.admissionYear, ...values });
+  const isNewYear = !!latest && parsed.admissionYear > latest.admissionYear;
+  // 新年度要项公布：之前日历上是往年要项顺延出来的仮日程，记下来在主页提醒里对照
+  const announce = isNewYear
+    ? {
+        announcedAt: now,
+        previousEvents: latest.events.map((e) => {
+          const years = parsed.admissionYear - latest.admissionYear;
+          return { ...e, date: shiftYears(e.date, years), endDate: e.endDate ? shiftYears(e.endDate, years) : null };
+        }),
+      }
+    : {};
+  await db.insert(admissionGuide).values({ id: crypto.randomUUID(), schoolId: school.id, admissionYear: parsed.admissionYear, ...values, ...announce });
   if (!latest) return "baseline"; // 第一次检查：作为基准（多半是往年要项），日历显示仮日程，不发通知
-  if (parsed.admissionYear > latest.admissionYear) {
+  if (isNewYear) {
     await notifyWatchers(school, "new_year", parsed.admissionYear, parsed.events);
     return "new_year";
   }
@@ -196,6 +215,11 @@ export async function checkSchool(school: School): Promise<CheckResult> {
     const parsed = await extractGuide(school, page, meter).finally(() =>
       recordUsageSafe({ userId: null, feature: "admission_monitor", meter, refId: school.id }),
     );
+    // 入试要点（要不要先联系教授、考试科目、语言要求）：解析到就更新，覆盖 AI 在对话里查的
+    if (parsed?.requirements) {
+      const requirements: AdmissionRequirements = { ...parsed.requirements, sourceUrl: parsed.pdfUrl ?? school.url, source: "monitor", updatedAt: new Date().toISOString() };
+      await db.update(graduateSchool).set({ requirements }).where(eq(graduateSchool.id, school.id));
+    }
     if (!parsed?.admissionYear || !parsed.events.length) {
       await done({ contentHash: page.fingerprint, changedAt: new Date(), lastError: "页面上没有找到明确的入试日程（要项可能还没公开，或链接不是募集要项页面）" });
       return { status: "no_dates" };

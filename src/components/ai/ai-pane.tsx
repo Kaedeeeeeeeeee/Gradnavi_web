@@ -18,8 +18,7 @@ import { usePageStore } from "./page-context";
 
 const WORK_PAGE_LABELS: [string, string][] = [
   ["/workbench", "主页"],
-  ["/schools", "目标研究科"],
-  ["/professors", "找教授"],
+  ["/aspirations", "志愿"],
   ["/documents", "文书列表"],
   ["/profile", "我的档案"],
   ["/onboarding", "新用户引导"],
@@ -50,6 +49,11 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
   const bottomRef = useRef<HTMLDivElement>(null);
   const visible = shell.isVisible("ai");
   const { setBadge, expand } = shell;
+  // AI 找完教授：候选卡片在文稿栏打开（onFinish 里用最新的 openTab）
+  const openTabRef = useRef(shell.openTab);
+  useEffect(() => {
+    openTabRef.current = shell.openTab;
+  });
 
   // 栏收起时 AI 回复了：竖条 / 底部标签上亮一个点，看到后清掉
   const visibleRef = useRef(visible);
@@ -90,7 +94,10 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
       if (!visibleRef.current) setBadge("ai", true);
       // AI 改了数据（user.md、任务等）后刷新页面，让用户马上看到；任务对话的第一轮也刷新（任务卡变成「继续和 AI 做」）
       const mutated = message.parts.some((p) => isToolUIPart(p) && TOOL_META[getToolName(p)]?.mutates);
-      if (mutated || (conv.task && all.length <= 2)) router.refresh();
+      const search = message.parts.findLast((p) => isToolUIPart(p) && getToolName(p) === "search_professors" && p.state === "output-available");
+      const target = search && isToolUIPart(search) ? chipTarget("search_professors", search.input, search.output) : null;
+      if (target) openTabRef.current(target);
+      else if (mutated || (conv.task && all.length <= 2)) router.refresh();
     },
   });
 
@@ -310,6 +317,10 @@ function chipTarget(name: string, input: unknown, output: unknown): DocTab | nul
   if (name === "save_professor") {
     const id = field(output, "id");
     return id ? { kind: "professor", id, title: field(output, "name") ?? "教授" } : null;
+  }
+  if (name === "search_professors") {
+    const id = field(output, "searchId");
+    return id ? { kind: "search", id, title: `找教授：${field(input, "keywords") ?? ""}`.slice(0, 40) } : null;
   }
   if (name === "fetch_page") {
     const url = field(input, "url");
