@@ -8,6 +8,13 @@
       "when": 1792562778671,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792565253907,
+      "tag": "0001_ai-sidebar-onboarding",
+      "breakpoints": true
     }
   ]
 }

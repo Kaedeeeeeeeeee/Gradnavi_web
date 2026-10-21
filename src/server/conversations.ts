@@ -1,0 +1,55 @@
+import "server-only";
+import type { UIMessage } from "ai";
+import { asc, desc, eq, max, sql } from "drizzle-orm";
+import { db } from "@/db";
+import { aiConversation, aiMessage } from "@/db/schema";
+
+export async function getLatestConversation(userId: string) {
+  const [row] = await db
+    .select()
+    .from(aiConversation)
+    .where(eq(aiConversation.userId, userId))
+    .orderBy(desc(aiConversation.updatedAt))
+    .limit(1);
+  return row ?? null;
+}
+
+/** 取会话（校验归属）；不存在则按给定 id 新建 */
+export async function getOrCreateConversation(userId: string, id: string) {
+  const [row] = await db.select().from(aiConversation).where(eq(aiConversation.id, id));
+  if (row) return row.userId === userId ? row : null;
+  const [created] = await db.insert(aiConversation).values({ id, userId }).returning();
+  return created;
+}
+
+export async function loadMessages(conversationId: string): Promise<UIMessage[]> {
+  const rows = await db
+    .select()
+    .from(aiMessage)
+    .where(eq(aiMessage.conversationId, conversationId))
+    .orderBy(asc(aiMessage.seq));
+  return rows.map((r) => ({ id: r.id, role: r.role, parts: r.parts as UIMessage["parts"] }));
+}
+
+/** 保存整段对话：已有的消息按 id 更新，新消息追加 */
+export async function saveMessages(conversationId: string, messages: UIMessage[]) {
+  await db.transaction(async (tx) => {
+    const [{ last }] = await tx
+      .select({ last: max(aiMessage.seq) })
+      .from(aiMessage)
+      .where(eq(aiMessage.conversationId, conversationId));
+    let seq = (last ?? -1) + 1;
+    for (const m of messages) {
+      await tx
+        .insert(aiMessage)
+        .values({ id: m.id, conversationId, role: m.role, parts: m.parts, seq: seq++ })
+        .onConflictDoUpdate({ target: aiMessage.id, set: { parts: m.parts } });
+    }
+    const firstUser = messages.find((m) => m.role === "user");
+    const title = firstUser?.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("").slice(0, 40);
+    await tx
+      .update(aiConversation)
+      .set({ updatedAt: new Date(), title: sql`coalesce(${aiConversation.title}, ${title || null})` })
+      .where(eq(aiConversation.id, conversationId));
+  });
+}
