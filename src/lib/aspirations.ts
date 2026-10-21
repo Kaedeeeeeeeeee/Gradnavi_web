@@ -147,8 +147,10 @@ export function nextDeadline(items: CalendarItem[], today: string) {
   return it ? { label: it.title, date: it.endDate ?? it.date, start: it.date, tentative: !!it.tentative, sourceUrl: it.sourceUrl } : null;
 }
 
-export function contactLabel(req: Pick<AdmissionRequirements, "contact"> | null) {
-  return req?.contact ? CONTACT_RULE_LABELS[req.contact] : "未查到";
+/** 事先联系：有明确结论时显示结论；没有结论但要项里有相关说法（如「未提及需事先联系」）时显示那句说法 */
+export function contactLabel(req: Pick<AdmissionRequirements, "contact" | "contactNote"> | null) {
+  if (req?.contact) return CONTACT_RULE_LABELS[req.contact];
+  return req?.contactNote || "未查到";
 }
 
 export function languageLabel(req: Pick<AdmissionRequirements, "english" | "japanese" | "toefl" | "toeic" | "ielts" | "jlpt"> | null) {
@@ -164,7 +166,7 @@ export function languageLabel(req: Pick<AdmissionRequirements, "english" | "japa
 export function describeRequirements(req: AdmissionRequirements | null) {
   if (!req) return "入试要点：还没查到（可以用 web_search 查募集要项，再用 update_school_requirements 记下来）";
   return [
-    `事先联系：${contactLabel(req)}${req.contactNote ? `（${req.contactNote}）` : ""}`,
+    `事先联系：${contactLabel(req)}${req.contact && req.contactNote ? `（${req.contactNote}）` : ""}`,
     `考试科目：${req.subjects.join("、") || "未写明"}`,
     `语言：${languageLabel(req)}`,
     req.notes ? `其他：${req.notes}` : "",

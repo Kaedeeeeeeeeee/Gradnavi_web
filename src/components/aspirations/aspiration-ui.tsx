@@ -107,7 +107,7 @@ export function SchoolFacts({ school }: { school: SchoolView }) {
     <dl className="space-y-1 text-sm">
       <Fact label="事先联系">
         <span className={req?.contact === "required" ? "font-medium" : ""}>{contactLabel(req)}</span>
-        {req?.contactNote && <span className="ml-1 text-xs text-zinc-500">{req.contactNote}</span>}
+        {req?.contact && req.contactNote && <span className="ml-1 text-xs text-zinc-500">{req.contactNote}</span>}
       </Fact>
       <Fact label="考试科目">{req?.subjects.length ? req.subjects.join("、") : <span className="text-zinc-500">未查到</span>}</Fact>
       <Fact label="语言">{languageLabel(req)}</Fact>
