@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, eq, inArray, isNotNull, max } from "drizzle-orm";
 import { db } from "@/db";
 import { document, savedProfessor, schoolWatch, todo, userProfile } from "@/db/schema";
+import { profileScores } from "@/lib/aspirations";
 import { planNextSteps } from "@/lib/next-steps";
 
 /**
@@ -11,7 +12,7 @@ import { planNextSteps } from "@/lib/next-steps";
  */
 export async function syncNextSteps(userId: string) {
   const [[profile], schoolCount, professors, documents, existing] = await Promise.all([
-    db.select({ answers: userProfile.onboarding }).from(userProfile).where(eq(userProfile.userId, userId)),
+    db.select({ answers: userProfile.onboarding, markdown: userProfile.markdown }).from(userProfile).where(eq(userProfile.userId, userId)),
     db.$count(schoolWatch, eq(schoolWatch.userId, userId)),
     db
       .select({ id: savedProfessor.id, name: savedProfessor.name, status: savedProfessor.status, followUpDate: savedProfessor.followUpDate, schoolId: savedProfessor.schoolId })
@@ -29,6 +30,7 @@ export async function syncNextSteps(userId: string) {
   const byKey = new Map(existing.map((t) => [t.stepKey!, t]));
   const plan = planNextSteps({
     answers: profile.answers,
+    scores: profileScores(profile.markdown, profile.answers),
     schoolCount,
     professors,
     documents: documents.map((d) => ({ id: d.id, kind: d.kind, professorId: d.target?.professorId })),

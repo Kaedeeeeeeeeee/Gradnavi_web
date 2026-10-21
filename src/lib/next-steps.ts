@@ -2,12 +2,15 @@
 // 每条流程任务有固定 key，src/server/next-steps.ts 按 key 和 todo 表对账：缺的补上、条件达成的改成待你确认、过时的移除。
 // 默认先找教授（日本修士往往先和教授联系上，再看研究科怎么考）；每位教授都要同时弄清教授所在研究科的入试要求，两边一起权衡。
 
+import type { Scores } from "./aspirations";
 import type { DocKind } from "./documents";
-import { answerField, decideTrack, hasEnglishScore, hasStrongJapanese, PATH_LABELS, suggestPath, type OnboardingAnswers } from "./onboarding";
+import { answerField, decideTrack, PATH_LABELS, suggestPath, type OnboardingAnswers } from "./onboarding";
 import type { ProfessorStatus } from "./professors";
 
 export type StepState = {
   answers: OnboardingAnswers;
+  /** 用户现在的语言成绩（user.md「语言成绩」一节 + 旧问卷答案），AI 在聊天里随时更新 */
+  scores: Scores;
   /** 关注的研究科数量（志愿里的研究科，含只有研究科的志愿） */
   schoolCount: number;
   professors: { id: string; name: string; status: ProfessorStatus; followUpDate?: string | null; schoolId?: string | null }[];
@@ -53,7 +56,7 @@ export function planNextSteps(s: StepState): StepPlan {
 
   if (a.path === "unsure") {
     step("confirm_path", false, {
-      title: `确认申请路径（建议：${PATH_LABELS[suggestPath(a)]}）`,
+      title: `确认申请路径（建议：${PATH_LABELS[suggestPath(a, s.scores.jlpt)]}）`,
       note: "可以在右侧问 AI 几条路的区别和适合人群",
     });
   } else done.push("confirm_path");
@@ -75,13 +78,13 @@ export function planNextSteps(s: StepState): StepPlan {
 
   // 有了志愿（教授或研究科）之后，语言成绩这些研究科那边的要求才具体
   if (active.length > 0 || s.schoolCount > 0) {
-    if (!hasStrongJapanese(a.japanese)) {
+    if (!(s.scores.jlpt && s.scores.jlpt <= 2)) {
       step("japanese", false, { title: "制定日语学习计划，目标 JLPT N2 以上", note: "文科多数研究科要求 N1 或同等水平" });
     }
-    if (answerField(a) === "sciences" && !hasEnglishScore(a.english)) {
+    if (answerField(a) === "sciences" && s.scores.toefl === undefined && s.scores.toeic === undefined && s.scores.ielts === undefined) {
       step("english", false, { title: "准备 TOEFL 或 TOEIC", note: "理科很多研究科用英语成绩代替英语笔试" });
     }
-    if ((a.path === "unsure" ? suggestPath(a) : a.path) === "doctor") {
+    if ((a.path === "unsure" ? suggestPath(a, s.scores.jlpt) : a.path) === "doctor") {
       step("achievements", false, { title: "整理已有研究成果（硕士论文、发表论文、学会报告）" });
     }
   }

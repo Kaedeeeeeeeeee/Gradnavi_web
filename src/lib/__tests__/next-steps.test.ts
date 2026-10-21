@@ -5,22 +5,16 @@ import type { OnboardingAnswers } from "../onboarding";
 
 const answers: OnboardingAnswers = {
   status: "国内本科在读",
-  education: "本科",
   major: "日语",
-  gpa: "",
   field: "humanities",
   path: "master",
   planStatus: "none",
-  direction: "",
-  targetSchools: "",
-  japanese: "N1 140",
-  english: "",
   targetEntry: "2027年4月",
-  notes: "",
 };
 
 const state = (patch: Partial<StepState> = {}): StepState => ({
   answers,
+  scores: { jlpt: 1 },
   schoolCount: 0,
   professors: [],
   documents: [],
@@ -37,9 +31,11 @@ test("教授优先：一开始就是和 AI 一起找教授", () => {
 });
 
 test("有了志愿（教授或研究科）才出现语言准备", () => {
-  const a = { ...answers, field: "sciences" as const, japanese: "N2 备考中" };
-  assert.deepEqual(openKeys(state({ answers: a })), ["find_professors"]);
-  assert.deepEqual(openKeys(state({ answers: a, schoolCount: 1 })), ["find_professors", "japanese", "english"]);
+  const a = { ...answers, field: "sciences" as const };
+  assert.deepEqual(openKeys(state({ answers: a, scores: {} })), ["find_professors"]);
+  assert.deepEqual(openKeys(state({ answers: a, scores: {}, schoolCount: 1 })), ["find_professors", "japanese", "english"]);
+  // 成绩在聊天里记进 user.md 之后，对应的准备任务就不再出现
+  assert.deepEqual(openKeys(state({ answers: a, scores: { jlpt: 2, toefl: 72 }, schoolCount: 1 })), ["find_professors"]);
 });
 
 test("计划书优先：计划书初稿有了才找教授", () => {

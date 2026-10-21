@@ -3,6 +3,8 @@
 import type { AdmissionRequirements } from "./admissions";
 import { CONTACT_RULE_LABELS } from "./admissions";
 import type { CalendarItem } from "./calendar";
+import { getSection } from "./md-sections";
+import type { OnboardingAnswers } from "./onboarding";
 import { describeProfessor, PROFESSOR_STATUS_LABELS, type PaperRef, type ProfessorStatus, type SourceLink } from "./professors";
 
 /** 志愿里的教授（页面用） */
@@ -73,6 +75,11 @@ export function parseScores(text: string): Scores {
     for (const m of seg.matchAll(/(?:JLPT\s*)?N\s*([1-5])(?![0-9])/gi)) best("jlpt", Number(m[1]), (a, b) => a < b);
   }
   return out;
+}
+
+/** 用户现在的语言成绩：user.md「语言成绩」一节（AI 会随时更新）+ 旧问卷答案，取最好的 */
+export function profileScores(markdown: string, answers?: Pick<OnboardingAnswers, "japanese" | "english"> | null): Scores {
+  return parseScores([getSection(markdown, "语言成绩"), answers?.japanese, answers?.english].filter(Boolean).join("\n"));
 }
 
 /**

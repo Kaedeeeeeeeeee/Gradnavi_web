@@ -2,7 +2,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { userProfile } from "@/db/schema";
-import { upsertSection } from "@/lib/md-sections";
+import { getSection, listSections, undoSectionChange, upsertSection, type SectionChange } from "@/lib/md-sections";
 import type { OnboardingAnswers } from "@/lib/onboarding";
 
 // user.md 的读写。页面（用户）和 AI 工具都走这里，保证两边行为一致。
@@ -26,10 +26,22 @@ export async function saveUserMd(userId: string, markdown: string) {
     .onConflictDoUpdate({ target: userProfile.userId, set: { markdown, updatedAt: new Date() } });
 }
 
+/** 改 user.md 的某一节，返回新全文和这一节的前后内容（聊天里的「撤销」用） */
 export async function updateUserMdSection(userId: string, heading: string, content: string, mode: "replace" | "append") {
-  const next = upsertSection(await getUserMd(userId), heading, content, mode);
+  const md = await getUserMd(userId);
+  const before = listSections(md).includes(heading.trim()) ? getSection(md, heading) : null;
+  const next = upsertSection(md, heading, content, mode);
   await saveUserMd(userId, next);
-  return next;
+  const change: SectionChange = { section: heading.trim(), before, after: getSection(next, heading), content };
+  return { markdown: next, change };
+}
+
+/** 撤销 AI 记下的一条信息。这条已经不在档案里（撤销过、或用户自己改掉了）时返回 false */
+export async function undoUserMdChange(userId: string, change: SectionChange) {
+  const next = undoSectionChange(await getUserMd(userId), change);
+  if (next === null) return false;
+  await saveUserMd(userId, next);
+  return true;
 }
 
 export async function completeOnboarding(userId: string, answers: OnboardingAnswers, markdown: string) {
