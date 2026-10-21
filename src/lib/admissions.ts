@@ -187,6 +187,45 @@ export function parseRequirements(raw: unknown): ParsedGuide["requirements"] {
   return empty ? null : req;
 }
 
+type Requirements = NonNullable<ParsedGuide["requirements"]>;
+
+/** 入试要点还缺关键项（考试科目、要不要先联系教授）：这时再去读要项全文 */
+export function requirementsIncomplete(req: ParsedGuide["requirements"]) {
+  return !req || !req.subjects.length || !req.contact;
+}
+
+/** 合并两次抽取的入试要点：要项全文（detail）里有的优先，没有的沿用页面上的 */
+export function mergeRequirements(page: ParsedGuide["requirements"], detail: ParsedGuide["requirements"]): ParsedGuide["requirements"] {
+  if (!page || !detail) return detail ?? page;
+  const pick = <K extends keyof Requirements>(k: K): Requirements[K] => {
+    const v = detail[k];
+    return (Array.isArray(v) ? v.length : v !== null) ? v : page[k];
+  };
+  return {
+    contact: pick("contact"),
+    contactNote: pick("contactNote"),
+    subjects: pick("subjects"),
+    english: pick("english"),
+    japanese: pick("japanese"),
+    toefl: pick("toefl"),
+    toeic: pick("toeic"),
+    ielts: pick("ielts"),
+    jlpt: pick("jlpt"),
+    notes: pick("notes"),
+  };
+}
+
+/**
+ * 要项全文在哪：AI 指出的链接（必须是页面上真有的），否则按链接文字找「募集要項」，PDF 优先。
+ * 防止 worker 去抓 AI 编出来的网址。
+ */
+export function guideDocumentUrl(pdfUrl: string | null, links: PageLink[]): string | null {
+  if (pdfUrl && links.some((l) => l.url === pdfUrl)) return pdfUrl;
+  const named = links.filter((l) => /募集要[項项]|学生募集|要[項綱]|入試案内|入学試験/.test(l.text));
+  const pdf = named.find((l) => /\.pdf($|\?)/i.test(l.url));
+  return (pdf ?? named[0])?.url ?? null;
+}
+
 function extractJson(reply: string): unknown {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(reply)?.[1];
   const body = (fenced ?? reply).trim();

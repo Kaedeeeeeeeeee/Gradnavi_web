@@ -5,9 +5,12 @@ import {
   eventsChanged,
   extractLinks,
   fingerprintSource,
+  guideDocumentUrl,
   htmlToText,
+  mergeRequirements,
   parseGuideReply,
   projectGuide,
+  requirementsIncomplete,
   type GuideEvent,
 } from "../admissions";
 
@@ -98,4 +101,31 @@ test("assertPublicUrl 拒绝内网地址", () => {
   for (const bad of ["http://localhost:3000", "http://db:5432", "http://169.254.169.254/latest", "http://10.0.0.5/", "ftp://example.ac.jp", "not a url"]) {
     assert.throws(() => assertPublicUrl(bad), bad);
   }
+});
+
+test("要项全文的链接：AI 给的必须在页面上，否则按链接文字找，PDF 优先", () => {
+  const links = [
+    { text: "入試案内", url: "https://example.ac.jp/admission/guide.html" },
+    { text: "学生募集要項（PDF）", url: "https://example.ac.jp/files/boshu.pdf" },
+    { text: "ニュース", url: "https://example.ac.jp/news" },
+  ];
+  assert.equal(guideDocumentUrl("https://example.ac.jp/admission/guide.html", links), "https://example.ac.jp/admission/guide.html");
+  assert.equal(guideDocumentUrl("https://evil.example/x.pdf", links), "https://example.ac.jp/files/boshu.pdf");
+  assert.equal(guideDocumentUrl(null, links.slice(0, 1)), "https://example.ac.jp/admission/guide.html");
+  assert.equal(guideDocumentUrl(null, links.slice(2)), null);
+});
+
+test("入试要点：缺考试科目或联系要求时再读全文，全文优先、页面补缺", () => {
+  const page = { contact: null, contactNote: null, subjects: [], english: "TOEFL 代替英语笔试", japanese: null, toefl: 80, toeic: null, ielts: null, jlpt: null, notes: null };
+  assert.equal(requirementsIncomplete(page), true);
+  assert.equal(requirementsIncomplete(null), true);
+  const detail = { ...page, contact: "required" as const, contactNote: "出愿前须取得指导教员内诺", subjects: ["专业笔试", "口试"], english: null, toefl: null };
+  const merged = mergeRequirements(page, detail)!;
+  assert.equal(merged.contact, "required");
+  assert.deepEqual(merged.subjects, ["专业笔试", "口试"]);
+  assert.equal(merged.english, "TOEFL 代替英语笔试");
+  assert.equal(merged.toefl, 80);
+  assert.equal(requirementsIncomplete(merged), false);
+  assert.equal(mergeRequirements(null, detail), detail);
+  assert.equal(mergeRequirements(page, null), page);
 });

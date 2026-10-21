@@ -78,6 +78,13 @@
       "when": 1792597777170,
       "tag": "0010_aspirations",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792599790634,
+      "tag": "0011_reparse-requirements",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { CONTACT_RULES } from "@/lib/admissions";
 import { describeRequirements } from "@/lib/aspirations";
 import { todayJst } from "@/lib/calendar";
-import { describeProfessor, MAX_SCHOOLS, paperLabel, PROFESSOR_STATUSES } from "@/lib/professors";
+import { DEFAULT_CANDIDATES, describeProfessor, MAX_CANDIDATES, MAX_SCHOOLS, paperLabel, PROFESSOR_STATUSES } from "@/lib/professors";
 import { answerField } from "@/lib/onboarding";
 import { listAspirations } from "@/server/aspirations";
 import { getProfile } from "@/server/profile";
@@ -28,11 +28,18 @@ export const searchProfessorsTool = defineTool({
     schools: z.array(z.string().min(1).max(50)).max(MAX_SCHOOLS).default([]).describe("目标大学名，日文，如 東京大学；地区要求（如关东）请换成具体大学"),
     preference: z.string().max(300).optional().describe("用户追加的要求，如：更偏应用、要有研究生制度"),
     field: z.enum(["humanities", "sciences"]).optional(),
+    count: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_CANDIDATES)
+      .optional()
+      .describe(`要几位候选：用户说了数量就照着填（「两三位」填 3，「一位」填 1）；没说就不填（默认 ${DEFAULT_CANDIDATES} 位）`),
   }),
-  execute: async ({ keywords, schools, preference, field }, { userId, meter }) => {
+  execute: async ({ keywords, schools, preference, field, count }, { userId, meter }) => {
     const profile = await getProfile(userId);
     const f = field ?? answerField(profile?.onboarding);
-    const res = await runProfessorSearch(userId, { keywords, schools, preference, field: f, profile: profile?.markdown.slice(0, 2500) }, meter);
+    const res = await runProfessorSearch(userId, { keywords, schools, preference, field: f, count, profile: profile?.markdown.slice(0, 2500) }, meter);
     return {
       searchId: res.searchId,
       demo: res.demo,

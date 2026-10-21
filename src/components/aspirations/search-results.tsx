@@ -101,7 +101,7 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
       <div className="space-y-1">
         <h3 className="text-xs text-zinc-500">近期论文</h3>
         <PaperList refs={p.paperRefs ?? []} papers={p.papers} />
-        {!p.papers.length && <p className="text-sm text-zinc-500">检索结果里没有找到论文</p>}
+        {!p.papers.length && <p className="text-sm text-zinc-500">没查到近期论文，可以在研究室主页或 researchmap 上看</p>}
       </div>
       <p className="text-sm text-zinc-600 dark:text-zinc-400">留学生 / 研究生制度：{p.acceptsInternational || "未查到，以研究室主页为准"}</p>
       {c.school && (
