@@ -32,13 +32,13 @@ const professorSchema = z.object({
 const savedProfessorId = z
   .string()
   .optional()
-  .describe("教授清单里的教授 ID（list_saved_professors 查）。传了就用清单里的信息作为目标教授，不用再填 targetProfessor");
+  .describe("志愿里的教授 ID（list_aspirations 查）。传了就用清单里的信息作为目标教授，不用再填 targetProfessor");
 
-/** 优先用教授清单里的教授；否则用 AI 手填的信息 */
+/** 优先用志愿里的教授；否则用 AI 手填的信息 */
 async function resolveTarget(userId: string, professorId: string | undefined, manual: z.infer<typeof professorSchema> | null | undefined) {
   if (!professorId) return manual;
   const p = await getSavedProfessor(userId, professorId);
-  if (!p) throw new Error("教授清单里没有这位教授，请先用 list_saved_professors 确认 ID");
+  if (!p) throw new Error("志愿里没有这位教授，请先用 list_aspirations 确认 ID");
   return professorToTarget(p);
 }
 
@@ -84,7 +84,7 @@ export const readDocumentTool = defineTool({
 export const createDocumentTool = defineTool({
   name: "create_document",
   description:
-    "新建一份文书。不传 markdown 时使用模板（计划书按文科/理科分节）。主线 A（先找教授）写计划书、给某位教授写套磁信时，传 professorId（教授清单里的教授）或 targetProfessor。传了 markdown 就同时传 zh（中文对照）。",
+    "新建一份文书。不传 markdown 时使用模板（计划书按文科/理科分节）。主线 A（先找教授）写计划书、给某位教授写套磁信时，传 professorId（志愿里的教授）或 targetProfessor。传了 markdown 就同时传 zh（中文对照）。",
   inputSchema: z.object({
     kind: kindSchema,
     title: z.string().max(100).optional(),
@@ -198,10 +198,10 @@ export const proposeOutlineTool = defineTool({
 export const createTailoredCopyTool = defineTool({
   name: "create_tailored_copy",
   description:
-    "为教授清单里的某位教授复制一份定制版研究计划书（从通用版复制，会标明复制自第几版），之后按这位教授的论文调整定制版。",
+    "为志愿里的某位教授复制一份定制版研究计划书（从通用版复制，会标明复制自第几版），之后按这位教授的论文调整定制版。",
   inputSchema: z.object({
     id: docId.describe("通用版计划书的文书 ID"),
-    professorId: z.string().describe("教授清单里的教授 ID（list_saved_professors 查）"),
+    professorId: z.string().describe("志愿里的教授 ID（list_aspirations 查）"),
   }),
   execute: async ({ id, professorId }, { userId }) => {
     const copy = await createTailoredCopy(userId, id, professorId);

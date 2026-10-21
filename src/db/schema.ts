@@ -1,5 +1,5 @@
 import { boolean, date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
-import type { GuideEvent } from "../lib/admissions";
+import type { AdmissionRequirements, GuideEvent } from "../lib/admissions";
 import type { CalendarKind } from "../lib/calendar";
 import type { Feature, LedgerKind } from "../lib/credits";
 import type { DocKind, Outline, TargetProfessor, WriteMode, CommentCategory, CommentStatus } from "../lib/documents";
@@ -7,7 +7,7 @@ import type { DocOp, SuggestionSource, SuggestionStatus } from "../lib/doc-ops";
 import type { VersionTrigger } from "../lib/doc-history";
 import type { ZhEntry } from "../lib/doc-zh";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import type { ProfessorStatus, SourceLink } from "../lib/professors";
+import type { PaperRef, ProfessorCandidate, ProfessorStatus, SourceLink } from "../lib/professors";
 import type { OnboardingAnswers } from "../lib/onboarding";
 import type { TaskChange, TaskStatus, TaskStep } from "../lib/tasks";
 
@@ -274,11 +274,12 @@ export const documentComment = pgTable(
   (t) => [index("document_comment_doc_idx").on(t.documentId, t.round)],
 );
 
-// ---------- 第 4 步：找教授（教授清单） ----------
+// ---------- 第 4 步：找教授 → 志愿 ----------
 
 /**
- * 用户收藏的教授。教授信息是收藏时的快照（来自 AI 检索或手填），每个用户一份，
- * 用户和 AI 都能修改，互不影响。跨用户共享的教授库等数据量上来再考虑。
+ * 志愿里的教授（加入志愿 = 收藏）。一条志愿 = 一位教授 + 教授所在的研究科（schoolId）；
+ * 只有研究科、没有教授的志愿是没被任何教授关联的 school_watch。
+ * 教授信息是加入时的快照（来自 AI 检索或手填），每个用户一份，用户和 AI 都能修改，互不影响。
  */
 export const savedProfessor = pgTable(
   "saved_professor",
@@ -296,17 +297,48 @@ export const savedProfessor = pgTable(
     research: text("research"),
     /** 代表论文（标题，尽量带年份） */
     papers: jsonb("papers").$type<string[]>().notNull().default([]),
+    /** 近两三年的论文，带链接（检索结果里有链接时） */
+    paperRefs: jsonb("paper_refs").$type<PaperRef[]>().notNull().default([]),
+    /** 为什么适合这位用户（AI 检索时写的） */
+    fit: text("fit"),
     /** 是否招外国留学生/研究生，查不到时为空 */
     acceptsInternational: text("accepts_international"),
     sources: jsonb("sources").$type<SourceLink[]>().notNull().default([]),
     status: text("status").$type<ProfessorStatus>().notNull().default("to_contact"),
     note: text("note"),
-    /** 跟进日期。第 5 步接入日历 */
+    /** 跟进日期，显示在日历上 */
     followUpDate: date("follow_up_date"),
+    /** AI 对跟进日期的修改提议（日历上虚线显示），用户同意后写进 followUpDate；date 为 null = 提议取消跟进日 */
+    proposedFollowUp: jsonb("proposed_follow_up").$type<{ date: string | null }>(),
+    /** 教授所在的研究科（志愿的研究科这边：入试要点、募集要项日程） */
+    schoolId: text("school_id").references(() => graduateSchool.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("saved_professor_user_name_univ_idx").on(t.userId, t.name, t.university)],
+);
+
+/**
+ * 在对话里找教授的每一轮结果（AI 调 search_professors 时保存），在文稿栏以候选卡片显示。
+ * 用户点「不合适」的记在 rejected 里（原因同时写进 user.md）；加入志愿的看 saved_professor。
+ */
+export const professorSearch = pgTable(
+  "professor_search",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    keywords: text("keywords").notNull(),
+    schools: jsonb("schools").$type<string[]>().notNull().default([]),
+    preference: text("preference"),
+    candidates: jsonb("candidates").$type<ProfessorCandidate[]>().notNull().default([]),
+    /** 候选 key（candidateKey）→ 不合适的原因（可为空） */
+    rejected: jsonb("rejected").$type<Record<string, string>>().notNull().default({}),
+    demo: boolean("demo").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("professor_search_user_idx").on(t.userId, t.createdAt)],
 );
 
 // ---------- 第 5 步：日历、募集要项监控 ----------
@@ -354,6 +386,8 @@ export const graduateSchool = pgTable(
     /** 用户点“立即检查”或刚关注时设置，worker 几分钟内处理 */
     checkRequestedAt: timestamp("check_requested_at", { withTimezone: true }),
     lastError: text("last_error"),
+    /** 入试要点：要不要先联系教授、考试科目、语言要求（监控解析或 AI 检索） */
+    requirements: jsonb("requirements").$type<AdmissionRequirements>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("graduate_school_univ_name_idx").on(t.university, t.name)],
@@ -372,6 +406,10 @@ export const admissionGuide = pgTable(
     title: text("title"),
     events: jsonb("events").$type<GuideEvent[]>().notNull().default([]),
     sourceUrl: text("source_url").notNull(),
+    /** 新要项公布 / 日程更新、通知了关注的用户的时间（主页提醒用）；第一次检查得到的基准要项为空 */
+    announcedAt: timestamp("announced_at", { withTimezone: true }),
+    /** 公布前日历上的日程（往年要项顺延的仮日程，或更新前的日程），主页提醒里对照显示 */
+    previousEvents: jsonb("previous_events").$type<GuideEvent[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

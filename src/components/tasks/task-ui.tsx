@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { updateProfessorAction } from "@/app/(app)/professors/actions";
 import { acceptProposalAction, rejectProposalAction, rescheduleEventAction, setTaskStatusAction, updateTaskAction } from "@/app/(app)/workbench/actions";
 import { useStartTask } from "@/components/ai/page-context";
 import { useShell } from "@/components/shell/app-shell";
@@ -56,7 +57,8 @@ export function ProposalButtons({
   date,
   editable = true,
 }: {
-  kind: "task" | "event";
+  /** professor = AI 对志愿里教授跟进日的提议 */
+  kind: "task" | "event" | "professor";
   id: string;
   /** 提议的日期，用于「改」的默认值 */
   date?: string | null;
@@ -77,9 +79,14 @@ export function ProposalButtons({
           onClick={() =>
             run(async () => {
               // 用户自己改的日期直接生效，再把提议标成同意
-              if (kind === "task") await updateTaskAction(id, { dueDate: value });
-              else await rescheduleEventAction(id, value);
-              await acceptProposalAction({ kind, id });
+              if (kind === "professor") {
+                // 用户自己定的跟进日直接生效，同时丢掉 AI 的提议
+                await updateProfessorAction(id, { followUpDate: value });
+              } else {
+                if (kind === "task") await updateTaskAction(id, { dueDate: value });
+                else await rescheduleEventAction(id, value);
+                await acceptProposalAction({ kind, id });
+              }
               setEditing(false);
             })
           }

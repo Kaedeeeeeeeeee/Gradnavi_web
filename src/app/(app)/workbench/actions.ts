@@ -8,7 +8,7 @@ import { requireUser } from "@/lib/session";
 import { kickoffPrompt, TASK_STATUSES } from "@/lib/tasks";
 import { acceptEventProposal, addCalendarEvent, deleteCalendarEvent, listProposedEvents, rejectEventProposal, rescheduleEvent } from "@/server/calendar";
 import { getTaskConversation, loadMessages } from "@/server/conversations";
-import { getSavedProfessor } from "@/server/professors";
+import { getSavedProfessor, listFollowUpProposals, resolveFollowUpProposal } from "@/server/professors";
 import {
   acceptTodoProposal,
   addTodos,
@@ -100,13 +100,14 @@ export async function openTaskConversationAction(id: string, start: boolean): Pr
 
 // ---- AI 的提议（任务、截止日改动、日程）：同意 / 拒绝 ----
 
-const proposalRef = z.object({ kind: z.enum(["task", "event"]), id: z.string().max(64) });
+const proposalRef = z.object({ kind: z.enum(["task", "event", "professor"]), id: z.string().max(64) });
 type ProposalRef = z.infer<typeof proposalRef>;
 
 export async function acceptProposalAction(ref: ProposalRef) {
   const user = await requireUser();
   const { kind, id } = proposalRef.parse(ref);
   if (kind === "task") await acceptTodoProposal(user.id, id);
+  else if (kind === "professor") await resolveFollowUpProposal(user.id, id, true);
   else await acceptEventProposal(user.id, id);
   refresh();
 }
@@ -115,15 +116,17 @@ export async function rejectProposalAction(ref: ProposalRef) {
   const user = await requireUser();
   const { kind, id } = proposalRef.parse(ref);
   if (kind === "task") await rejectTodoProposal(user.id, id);
+  else if (kind === "professor") await resolveFollowUpProposal(user.id, id, false);
   else await rejectEventProposal(user.id, id);
   refresh();
 }
 
 export async function acceptAllProposalsAction() {
   const user = await requireUser();
-  const [tasks, events] = await Promise.all([listTodos(user.id), listProposedEvents(user.id)]);
+  const [tasks, events, followUps] = await Promise.all([listTodos(user.id), listProposedEvents(user.id), listFollowUpProposals(user.id)]);
   for (const t of tasks) if (t.proposed || t.proposedChange) await acceptTodoProposal(user.id, t.id);
   for (const e of events) await acceptEventProposal(user.id, e.id);
+  for (const p of followUps) await resolveFollowUpProposal(user.id, p.id, true);
   refresh();
 }
 

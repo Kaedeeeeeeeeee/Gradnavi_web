@@ -50,7 +50,7 @@ type Doc = {
 type Props = {
   doc: Doc;
   track: Track | null;
-  /** 教授清单，用来选目标教授、复制定制版 */
+  /** 志愿，用来选目标教授、复制定制版 */
   professors: ProfessorOption[];
   /** 关联教授在清单里的联系状态 */
   linkedStatus: ProfessorStatus | null;

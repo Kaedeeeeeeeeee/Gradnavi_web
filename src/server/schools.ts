@@ -1,10 +1,10 @@
 import "server-only";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
-import { admissionGuide, graduateSchool, schoolWatch } from "@/db/schema";
-import { assertPublicUrl, projectGuide } from "@/lib/admissions";
+import { admissionGuide, graduateSchool, savedProfessor, schoolWatch } from "@/db/schema";
+import { assertPublicUrl, parseRequirements, projectGuide, type AdmissionRequirements, type GuideEvent } from "@/lib/admissions";
 
-// 关注的研究科（募集要项监控）。研究科跨用户共享，关注关系每人一份。
+// 关注的研究科（志愿的研究科这边：募集要项监控 + 入试要点）。研究科跨用户共享，关注关系每人一份。
 // 页面（用户）和 AI 工具都走这里；真正的检查在 worker（src/server/admission-monitor.ts）。
 
 export type WatchInput = { university: string; name: string; url: string };
@@ -15,7 +15,8 @@ export function normalizeSchoolUrl(url: string) {
   return u.toString();
 }
 
-export async function watchSchool(userId: string, input: WatchInput) {
+/** professorId：同时把这位志愿教授关联到这个研究科（教授 + 研究科 = 一条志愿） */
+export async function watchSchool(userId: string, input: WatchInput, professorId?: string) {
   const university = input.university.trim();
   const name = input.name.trim();
   if (!university || !name) throw new Error("请填写大学和研究科");
@@ -42,7 +43,34 @@ export async function watchSchool(userId: string, input: WatchInput) {
       .returning();
   }
   await db.insert(schoolWatch).values({ userId, schoolId: school.id }).onConflictDoNothing();
+  if (professorId) {
+    const [linked] = await db
+      .update(savedProfessor)
+      .set({ schoolId: school.id, updatedAt: now })
+      .where(and(eq(savedProfessor.id, professorId), eq(savedProfessor.userId, userId)))
+      .returning({ id: savedProfessor.id });
+    if (!linked) throw new Error("志愿里没有这位教授");
+  }
   return school;
+}
+
+/**
+ * AI 在对话里查到的入试要点（要不要先联系教授、考试科目、语言要求）。研究科跨用户共享：
+ * 募集要项监控解析出的要点更可靠，已有时不覆盖；监控之后解析到会覆盖 AI 填的。
+ */
+export async function updateSchoolRequirements(userId: string, schoolId: string, raw: unknown, sourceUrl: string | null) {
+  const [watch] = await db
+    .select({ school: graduateSchool })
+    .from(schoolWatch)
+    .innerJoin(graduateSchool, eq(schoolWatch.schoolId, graduateSchool.id))
+    .where(and(eq(schoolWatch.userId, userId), eq(schoolWatch.schoolId, schoolId)));
+  if (!watch) throw new Error("没有关注这个研究科");
+  if (watch.school.requirements?.source === "monitor") return { saved: false, reason: "已有募集要项监控解析的要点，不覆盖", requirements: watch.school.requirements };
+  const parsed = parseRequirements(raw);
+  if (!parsed) throw new Error("没有可记录的要点");
+  const requirements: AdmissionRequirements = { ...parsed, sourceUrl, source: "ai", updatedAt: new Date().toISOString() };
+  await db.update(graduateSchool).set({ requirements }).where(eq(graduateSchool.id, schoolId));
+  return { saved: true, requirements };
 }
 
 export async function unwatchSchool(userId: string, schoolId: string) {
@@ -91,4 +119,36 @@ export async function listWatchedSchools(userId: string, today: string) {
       : { tentative: false, items: [] };
     return { school, guide, tentative: projected.tentative, calendar: projected.items };
   });
+}
+
+/** 主页提醒：最近公布（或更新）的新募集要项，附公布前日历上的日程，方便对照 */
+export type GuideAlert = {
+  schoolId: string;
+  school: string;
+  admissionYear: number;
+  announcedAt: string;
+  events: GuideEvent[];
+  previous: GuideEvent[];
+  sourceUrl: string;
+};
+
+/** days：公布后多少天内提醒 */
+export async function listGuideAlerts(userId: string, days: number): Promise<GuideAlert[]> {
+  const since = new Date(Date.now() - days * 86_400_000);
+  const rows = await db
+    .select({ guide: admissionGuide, school: graduateSchool })
+    .from(schoolWatch)
+    .innerJoin(graduateSchool, eq(schoolWatch.schoolId, graduateSchool.id))
+    .innerJoin(admissionGuide, eq(admissionGuide.schoolId, graduateSchool.id))
+    .where(and(eq(schoolWatch.userId, userId), isNotNull(admissionGuide.announcedAt), gte(admissionGuide.announcedAt, since)))
+    .orderBy(desc(admissionGuide.announcedAt));
+  return rows.map(({ guide, school }) => ({
+    schoolId: school.id,
+    school: `${school.university} ${school.name}`,
+    admissionYear: guide.admissionYear,
+    announcedAt: guide.announcedAt!.toISOString(),
+    events: guide.events,
+    previous: guide.previousEvents ?? [],
+    sourceUrl: guide.sourceUrl,
+  }));
 }

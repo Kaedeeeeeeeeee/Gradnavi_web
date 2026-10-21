@@ -21,6 +21,8 @@ export type DocTab =
   | { kind: "doc"; id: string; title: string }
   | { kind: "professor"; id: string; title: string }
   | { kind: "task"; id: string; title: string }
+  /** 找教授的一轮结果（候选卡片）。同时只开一个：新一轮结果替换旧的 */
+  | { kind: "search"; id: string; title: string }
   | { kind: "web"; url: string; title: string };
 
 export type Tabs = { tabs: DocTab[]; active: string | null };
@@ -88,11 +90,12 @@ export function expandPane(layout: Layout, pane: PaneId): Layout {
 
 export const tabKey = (t: DocTab) => (t.kind === "web" ? `web:${t.url}` : `${t.kind}:${t.id}`);
 
-/** 打开（或切到）一个标签；超过上限时去掉最早打开的 */
+/** 打开（或切到）一个标签；超过上限时去掉最早打开的。找教授的结果标签只有一个，新结果在原位置替换 */
 export function openTab(state: Tabs, tab: DocTab): Tabs {
   const key = tabKey(tab);
-  const exists = state.tabs.some((t) => tabKey(t) === key);
-  let tabs = exists ? state.tabs.map((t) => (tabKey(t) === key ? tab : t)) : [...state.tabs, tab];
+  const same = (t: DocTab) => tabKey(t) === key || (tab.kind === "search" && t.kind === "search");
+  const exists = state.tabs.some(same);
+  let tabs = exists ? state.tabs.map((t) => (same(t) ? tab : t)) : [...state.tabs, tab];
   if (tabs.length > MAX_TABS) tabs = tabs.slice(tabs.length - MAX_TABS);
   return { tabs, active: key };
 }
@@ -125,6 +128,7 @@ const tabSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("doc"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("professor"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("task"), id: z.string().max(64), title: z.string().max(100) }),
+  z.object({ kind: z.literal("search"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("web"), url: z.string().max(500), title: z.string().max(100) }),
 ]);
 

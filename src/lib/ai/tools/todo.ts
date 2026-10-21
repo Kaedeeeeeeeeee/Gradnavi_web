@@ -6,7 +6,7 @@ import { addTodos, deleteTodo, listTodos, updateTodo } from "@/server/todos";
 import { defineTool } from "./registry";
 
 const links = {
-  professorId: z.string().optional().describe("挂在教授清单里的某位教授下（教授 ID）"),
+  professorId: z.string().optional().describe("挂在志愿里的某位教授下（教授 ID）"),
   documentId: z.string().optional().describe("挂在某份文书下（文书 ID）"),
   schoolId: z.string().optional().describe("挂在某个关注的研究科下（研究科 ID，用 list_watched_schools 查）"),
 };
