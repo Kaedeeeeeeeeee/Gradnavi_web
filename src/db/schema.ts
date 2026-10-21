@@ -1,5 +1,6 @@
-import { boolean, date, index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { DocKind, TargetProfessor } from "../lib/documents";
+import type { ProfessorStatus, SourceLink } from "../lib/professors";
 import type { OnboardingAnswers } from "../lib/onboarding";
 
 // 以下四张表是 Better Auth 的核心表，字段名需与 Better Auth 保持一致。
@@ -168,4 +169,39 @@ export const document = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("document_user_id_idx").on(t.userId, t.updatedAt)],
+);
+
+// ---------- 第 4 步：找教授（教授清单） ----------
+
+/**
+ * 用户收藏的教授。教授信息是收藏时的快照（来自 AI 检索或手填），每个用户一份，
+ * 用户和 AI 都能修改，互不影响。跨用户共享的教授库等数据量上来再考虑。
+ */
+export const savedProfessor = pgTable(
+  "saved_professor",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    university: text("university").notNull(),
+    /** 研究科・専攻 */
+    department: text("department"),
+    lab: text("lab"),
+    /** 研究方向摘要（中文） */
+    research: text("research"),
+    /** 代表论文（标题，尽量带年份） */
+    papers: jsonb("papers").$type<string[]>().notNull().default([]),
+    /** 是否招外国留学生/研究生，查不到时为空 */
+    acceptsInternational: text("accepts_international"),
+    sources: jsonb("sources").$type<SourceLink[]>().notNull().default([]),
+    status: text("status").$type<ProfessorStatus>().notNull().default("to_contact"),
+    note: text("note"),
+    /** 跟进日期。第 5 步接入日历 */
+    followUpDate: date("follow_up_date"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("saved_professor_user_name_univ_idx").on(t.userId, t.name, t.university)],
 );

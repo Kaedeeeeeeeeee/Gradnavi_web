@@ -24,6 +24,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <Link href="/workbench" className="text-zinc-500 hover:text-foreground">
                 工作台
               </Link>
+              <Link href="/professors" className="text-zinc-500 hover:text-foreground">
+                找教授
+              </Link>
               <Link href="/documents" className="text-zinc-500 hover:text-foreground">
                 文书
               </Link>

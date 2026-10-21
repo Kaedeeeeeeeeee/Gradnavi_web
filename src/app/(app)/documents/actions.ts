@@ -6,7 +6,9 @@ import { z } from "zod";
 import { docTemplate, MAX_DOC_LENGTH } from "@/lib/documents";
 import { requireUser } from "@/lib/session";
 import { createDocument, deleteDocument, updateDocument } from "@/server/documents";
+import { professorToTarget } from "@/lib/professors";
 import { getProfile } from "@/server/profile";
+import { getSavedProfessor, updateSavedProfessor } from "@/server/professors";
 
 // 文书页面上的用户操作。与 AI 工具调用同一套 src/server/documents 函数。
 
@@ -48,6 +50,23 @@ export async function setTargetProfessorAction(id: string, input: z.infer<typeof
   const targetProfessor = p.name ? { name: p.name, affiliation: p.affiliation || undefined, research: p.research || undefined } : null;
   await updateDocument(user.id, id, { targetProfessor });
   revalidatePath(`/documents/${id}`);
+}
+
+/** 从教授清单选目标教授 */
+export async function linkProfessorAction(id: string, professorId: string) {
+  const user = await requireUser();
+  const p = await getSavedProfessor(user.id, professorId);
+  if (!p) throw new Error("教授清单里没有这位教授");
+  await updateDocument(user.id, id, { targetProfessor: professorToTarget(p) });
+  revalidatePath(`/documents/${id}`);
+}
+
+/** 套磁信发出后，把关联教授标记为“已发套磁” */
+export async function markLetterSentAction(id: string, professorId: string) {
+  const user = await requireUser();
+  await updateSavedProfessor(user.id, professorId, { status: "contacted" });
+  revalidatePath(`/documents/${id}`);
+  revalidatePath("/professors");
 }
 
 export async function deleteDocumentAction(id: string) {

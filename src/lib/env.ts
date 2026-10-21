@@ -38,4 +38,8 @@ export const env = {
   get DEEPSEEK_BASE_URL() {
     return process.env.DEEPSEEK_BASE_URL || undefined;
   },
+  /** DeepSeek 检索/抓取服务（search、fetch），和对话共用 DEEPSEEK_API_KEY */
+  get DEEPSEEK_TOOLS_URL() {
+    return process.env.DEEPSEEK_TOOLS_URL || "https://api.deepseek.com/v1/tools";
+  },
 };

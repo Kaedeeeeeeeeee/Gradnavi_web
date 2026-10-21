@@ -10,7 +10,9 @@ import {
   updateDocument,
   updateDocumentSection,
 } from "@/server/documents";
+import { professorToTarget } from "@/lib/professors";
 import { getProfile } from "@/server/profile";
+import { getSavedProfessor } from "@/server/professors";
 import { defineTool } from "./registry";
 
 const docId = z.string().describe("文书 ID。用户正在编辑的文书 ID 在“页面内容”里，其他文书先用 list_documents 查");
@@ -21,6 +23,19 @@ const professorSchema = z.object({
   affiliation: z.string().max(200).optional().describe("大学・研究科・研究室"),
   research: z.string().max(3000).optional().describe("研究方向、近期论文"),
 });
+
+const savedProfessorId = z
+  .string()
+  .optional()
+  .describe("教授清单里的教授 ID（list_saved_professors 查）。传了就用清单里的信息作为目标教授，不用再填 targetProfessor");
+
+/** 优先用教授清单里的教授；否则用 AI 手填的信息 */
+async function resolveTarget(userId: string, professorId: string | undefined, manual: z.infer<typeof professorSchema> | null | undefined) {
+  if (!professorId) return manual;
+  const p = await getSavedProfessor(userId, professorId);
+  if (!p) throw new Error("教授清单里没有这位教授，请先用 list_saved_professors 确认 ID");
+  return professorToTarget(p);
+}
 
 const summary = (doc: { id: string; title: string; markdown: string; version: number }) => ({
   id: doc.id,
@@ -53,14 +68,16 @@ export const readDocumentTool = defineTool({
 export const createDocumentTool = defineTool({
   name: "create_document",
   description:
-    "新建一份文书。不传 markdown 时使用模板（计划书按文科/理科分节）。主线 A（先找教授）写计划书时，把目标教授信息填进 targetProfessor。",
+    "新建一份文书。不传 markdown 时使用模板（计划书按文科/理科分节）。主线 A（先找教授）写计划书、给某位教授写套磁信时，传 professorId（教授清单里的教授）或 targetProfessor。",
   inputSchema: z.object({
     kind: kindSchema,
     title: z.string().max(100).optional(),
     markdown: z.string().max(50000).optional(),
     targetProfessor: professorSchema.optional(),
+    professorId: savedProfessorId,
   }),
-  execute: async ({ kind, title, markdown, targetProfessor }, { userId }) => {
+  execute: async ({ kind, title, markdown, targetProfessor: manual, professorId }, { userId }) => {
+    const targetProfessor = await resolveTarget(userId, professorId, manual);
     const field = (await getProfile(userId))?.onboarding?.field;
     const template = docTemplate(kind as DocKind, field);
     const doc = await createDocument(userId, {
@@ -100,15 +117,17 @@ export const replaceDocumentTextTool = defineTool({
 export const updateDocumentTool = defineTool({
   name: "update_document",
   description:
-    "修改文书标题、目标教授，或用新 Markdown 整篇替换正文。整篇替换只在用户要求重写或大幅调整结构时使用，局部修改用 update_document_section / replace_document_text。",
+    "修改文书标题、目标教授（professorId 或 targetProfessor），或用新 Markdown 整篇替换正文。整篇替换只在用户要求重写或大幅调整结构时使用，局部修改用 update_document_section / replace_document_text。",
   inputSchema: z.object({
     id: docId,
     title: z.string().min(1).max(100).optional(),
     markdown: z.string().max(50000).optional(),
     targetProfessor: professorSchema.nullable().optional(),
+    professorId: savedProfessorId,
   }),
-  execute: async ({ id, ...patch }, { userId }) => {
-    const result = await updateDocument(userId, id, patch);
+  execute: async ({ id, professorId, targetProfessor, ...patch }, { userId }) => {
+    const target = await resolveTarget(userId, professorId, targetProfessor);
+    const result = await updateDocument(userId, id, target === undefined ? patch : { ...patch, targetProfessor: target });
     return summary(result.doc);
   },
 });
