@@ -1,25 +1,39 @@
 "use client";
 
 import { Markdown } from "@tiptap/markdown";
+import type { Node as PmNode } from "@tiptap/pm/model";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { useAiBeforeSend, useAiPageContent, useAskAi } from "@/components/ai/page-context";
-import { useShell } from "@/components/shell/app-shell";
+import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { takeAutoAsk } from "@/components/shell/pending-ask";
 import { copyText } from "@/lib/browser";
-import { describeDocument, DOC_KIND_LABELS, planProgress, type DocKind, type TargetProfessor } from "@/lib/documents";
-import type { Field, Track } from "@/lib/onboarding";
-import { PROFESSOR_STATUS_LABELS, type ProfessorStatus } from "@/lib/professors";
+import { isRewrite, SELECTION_ACTION_LABELS, SELECTION_ACTIONS, type SelectionAction } from "@/lib/doc-assist";
+import { alignZh, blockKey, type ZhEntry } from "@/lib/doc-zh";
+import { describeDocument, DOC_KIND_LABELS, type DocKind, type Outline, type TargetProfessor, type WriteMode } from "@/lib/documents";
+import type { Track } from "@/lib/onboarding";
+import type { ProfessorStatus } from "@/lib/professors";
 import {
+  acceptAllSuggestionsAction,
+  acceptSuggestionAction,
+  applyCommentAction,
+  assistSelectionAction,
   deleteDocumentAction,
-  linkProfessorAction,
-  markLetterSentAction,
+  ignoreCommentAction,
+  rejectSuggestionAction,
   renameDocumentAction,
+  reviewAction,
   saveDocumentAction,
-  setTargetProfessorAction,
+  snapshotAction,
+  translateAction,
 } from "../actions";
+import { createOverlayStore, DocOverlay, findTextRange, overlayKey, type OverlayMark } from "./doc-overlay";
+import { HistoryView } from "./history-view";
+import { LetterPanel, ProfessorForm, TailoredCopies, type DocLink, type PlanOption, type ProfessorOption } from "./panels";
+import { ReviewRail, type CommentView, type SuggestionView } from "./review-rail";
+import { WritingGuide } from "./writing-guide";
 
 type Doc = {
   id: string;
@@ -28,40 +42,72 @@ type Doc = {
   markdown: string;
   version: number;
   targetProfessor: TargetProfessor | null;
+  zh: ZhEntry[];
+  outline: Outline | null;
+  writeMode: WriteMode | null;
 };
-
-type ProfessorOption = { id: string; label: string };
 
 type Props = {
   doc: Doc;
-  planField: Field;
   track: Track | null;
-  /** 教授清单，用来选目标教授 */
+  /** 教授清单，用来选目标教授、复制定制版 */
   professors: ProfessorOption[];
   /** 关联教授在清单里的联系状态 */
   linkedStatus: ProfessorStatus | null;
+  suggestions: SuggestionView[];
+  comments: CommentView[];
+  /** 定制版：复制自哪份文书的第几版 */
+  parent: (DocLink & { version: number | null }) | null;
+  copies: (DocLink & { professorName: string | null; parentVersion: number | null })[];
+  /** 套磁信：附上的计划书和可选的计划书 */
+  attachment: DocLink | null;
+  plans: PlanOption[];
+  versionCount: number;
 };
 
 const AUTOSAVE_MS = 1500;
 // 发给 AI 的页面内容上限（接口限制 20000 字），更长时 AI 用 read_document 读全文
-const PAGE_CONTENT_LIMIT = 18000;
+const PAGE_CONTENT_LIMIT = 16000;
+const ZH_PREF = "gn_doc_zh";
 
 type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error";
 
-export function DocumentEditor({ doc, planField, track, professors, linkedStatus }: Props) {
+function readZhPref() {
+  try {
+    return localStorage.getItem(ZH_PREF) === "1";
+  } catch {
+    return false;
+  }
+}
+const noSubscribe = () => () => {};
+
+export function DocumentEditor(props: Props) {
+  const { doc, suggestions, comments } = props;
   const askAi = useAskAi();
   const { closeTab } = useShell();
   const [markdown, setMarkdown] = useState(doc.markdown);
   const [saveState, setSaveState] = useState<SaveState>("saved");
-  // 冲突时服务器上的最新版本（通常是 AI 刚改过）
+  // 冲突时服务器上的最新版本（通常是用户刚在别处接受了 AI 的修改）
   const [conflict, setConflict] = useState<{ markdown: string; version: number } | null>(null);
+  // 中文对照开关按浏览器记住
+  const [zhPicked, setZhOn] = useState<boolean | null>(null);
+  const zhStored = useSyncExternalStore(noSubscribe, readZhPref, () => false);
+  const zhOn = zhPicked ?? zhStored;
+  const [view, setView] = useState<"edit" | "history">("edit");
+  const [active, setActive] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  const [, startTransition] = useTransition();
   const version = useRef(doc.version);
   const baseline = useRef<string | null>(null); // 编辑器规范化后的“已保存”内容
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saving = useRef<Promise<void> | null>(null);
+  // 段落指纹的缓存（ProseMirror 节点不可变，按节点缓存）；叠加显示的数据由下面的 effect 更新
+  const [keyCache] = useState(() => new WeakMap<PmNode, string>());
+  const [overlay] = useState(createOverlayStore);
 
   const editor = useEditor({
-    extensions: [StarterKit.configure({ link: false }), Markdown],
+    extensions: [StarterKit.configure({ link: false }), Markdown, DocOverlay.configure({ get: overlay.get })],
     content: doc.markdown,
     contentType: "markdown",
     immediatelyRender: false,
@@ -85,32 +131,35 @@ export function DocumentEditor({ doc, planField, track, professors, linkedStatus
     },
   });
 
-  const save = useCallback(async (ed: Editor) => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    if (saving.current) await saving.current;
-    const md = ed.getMarkdown();
-    if (md === baseline.current) return;
-    const run = (async () => {
-      setSaveState("saving");
-      try {
-        const result = await saveDocumentAction(doc.id, md, version.current);
-        if (result.ok) {
-          version.current = result.version;
-          baseline.current = md;
-          setSaveState(ed.getMarkdown() === md ? "saved" : "dirty");
-        } else {
-          setConflict({ markdown: result.markdown, version: result.version });
-          setSaveState("conflict");
+  const save = useCallback(
+    async (ed: Editor) => {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      if (saving.current) await saving.current;
+      const md = ed.getMarkdown();
+      if (md === baseline.current) return;
+      const run = (async () => {
+        setSaveState("saving");
+        try {
+          const result = await saveDocumentAction(doc.id, md, version.current);
+          if (result.ok) {
+            version.current = result.version;
+            baseline.current = md;
+            setSaveState(ed.getMarkdown() === md ? "saved" : "dirty");
+          } else {
+            setConflict({ markdown: result.markdown, version: result.version });
+            setSaveState("conflict");
+          }
+        } catch {
+          setSaveState("error");
         }
-      } catch {
-        setSaveState("error");
-      }
-    })();
-    saving.current = run;
-    await run;
-    saving.current = null;
-  }, [doc.id]);
+      })();
+      saving.current = run;
+      await run;
+      saving.current = null;
+    },
+    [doc.id],
+  );
 
   const loadVersion = useCallback(
     (md: string, v: number) => {
@@ -126,7 +175,7 @@ export function DocumentEditor({ doc, planField, track, professors, linkedStatus
     [editor],
   );
 
-  // AI 改了文书后页面会刷新、带来新版本：没有未保存的修改就直接载入，否则提示冲突
+  // 接受了 AI 的修改、恢复了旧版等，页面刷新会带来新版本：没有未保存的修改就直接载入，否则提示冲突
   useEffect(() => {
     if (!editor || doc.version <= version.current) return;
     if (editor.getMarkdown() === baseline.current) loadVersion(doc.markdown, doc.version);
@@ -144,42 +193,110 @@ export function DocumentEditor({ doc, planField, track, professors, linkedStatus
     };
   }, [editor, doc.id]);
 
-  // 发消息给 AI 前先保存，AI 才能读到最新内容
+  // 发消息给 AI、接受修改、审阅前先保存，服务器上才是最新内容
   const flush = useCallback(async () => {
     if (editor) await save(editor);
   }, [editor, save]);
   useAiBeforeSend(flush);
 
-  const progress = doc.kind === "plan" ? planProgress(markdown, planField) : null;
+  /** 跑一个编辑器里的操作：先保存，失败时在顶部提示 */
+  function act(id: string, fn: () => Promise<{ ok: true; value?: unknown } | { ok: false; error: string }>, done?: string) {
+    setBusy(id);
+    setNotice(null);
+    startTransition(async () => {
+      await flush();
+      const r = await fn();
+      setBusy(null);
+      if (!r.ok) setNotice({ text: r.error, error: true });
+      else if (done) setNotice({ text: done });
+    });
+  }
+
+  // ---------- 编辑器上的叠加显示：修改建议、批注的位置，中文对照 ----------
+
+  const translate = (key?: string) => act("translate", () => translateAction(doc.id, key ? [key] : undefined));
+
+  const keyOf = useCallback(
+    (node: PmNode) => {
+      let k = keyCache.get(node);
+      if (k === undefined) {
+        const md = editor?.markdown?.serialize({ type: "doc", content: [node.toJSON()] }) ?? node.textContent;
+        k = blockKey(md);
+        keyCache.set(node, k);
+      }
+      return k;
+    },
+    [editor, keyCache],
+  );
+
+  const marks: OverlayMark[] = [
+    ...suggestions.flatMap((s): OverlayMark[] =>
+      s.op.type === "replace"
+        ? [{ id: s.id, text: s.op.find, nth: s.op.nth, kind: "suggestion", active: active === s.id }]
+        : s.op.type === "section"
+          ? [{ id: s.id, text: s.op.heading, kind: "suggestion", active: active === s.id }]
+          : [],
+    ),
+    ...comments.map((c): OverlayMark => ({ id: c.id, text: c.quote, kind: "comment", active: active === c.id })),
+  ];
+  const zhBusy = busy === "translate";
+  const translateRef = useRef(translate);
+  useLayoutEffect(() => {
+    translateRef.current = translate;
+  });
+  const overlaySig = JSON.stringify([marks, zhOn, doc.zh, zhBusy]);
+  useLayoutEffect(() => {
+    overlay.set({
+      marks: JSON.parse(overlaySig)[0] as OverlayMark[],
+      zh: zhOn ? { stored: doc.zh, keyOf, onTranslate: (k) => translateRef.current(k), busy: zhBusy } : null,
+      onMarkClick: (id) => {
+        setActive(id);
+        document.querySelector(`[data-rail-id="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      },
+    });
+    if (editor && !editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(overlayKey, true));
+  }, [editor, overlay, overlaySig, zhOn, doc.zh, keyOf, zhBusy]);
+
+  function focusMark(id: string) {
+    setActive(id);
+    const m = marks.find((x) => x.id === id);
+    if (!editor || !m) return;
+    const range = findTextRange(editor.state.doc, m.text, m.nth);
+    if (!range) return;
+    const dom = editor.view.domAtPos(range.from).node;
+    (dom instanceof HTMLElement ? dom : dom.parentElement)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  // 中文对照：缺失或待更新的段落数
+  const zhMissing = (() => {
+    if (!zhOn || !editor) return 0;
+    const keys: string[] = [];
+    editor.state.doc.forEach((n) => {
+      if (n.type.name === "heading") return;
+      const k = keyOf(n);
+      if (k) keys.push(k);
+    });
+    return alignZh(keys, doc.zh).filter((c) => !c || c.stale).length;
+  })();
+
+  // ---------- 发给 AI 的页面内容 ----------
+
   const header = describeDocument(doc);
-  const progressLine = progress ? `\n带写进度：${progress.steps.map((s) => `${s.label}${s.done ? "✓" : "…"}`).join(" → ")}` : "";
+  const outlineLine = doc.outline
+    ? `\n提纲（${doc.outline.status === "approved" ? "用户已同意" : "等用户同意"}）：${doc.outline.sections.map((s) => s.heading).join(" / ")}`
+    : "";
+  const modeLine = doc.writeMode === "self" ? "\n写法：用户自己写，AI 只给意见" : doc.writeMode === "together" ? "\n写法：和 AI 一起写" : "";
+  const pendingLine = suggestions.length ? `\n待用户确认的修改建议：${suggestions.map((s) => s.summary).join("；")}` : "";
   const body = markdown.length > PAGE_CONTENT_LIMIT ? `${markdown.slice(0, PAGE_CONTENT_LIMIT)}\n\n（后文省略，用 read_document 读取全文）` : markdown;
-  useAiPageContent(`${header}${progressLine}\n\n---\n${body}`, "doc");
+  useAiPageContent(`${header}${outlineLine}${modeLine}${pendingLine}\n\n---\n${body}`, "doc");
 
   // 从找教授页“写套磁信”进来时让 AI 写初稿（只触发一次）
   useEffect(() => {
     if (!editor || takeAutoAsk(doc.id) !== "letter") return;
     askAi(
-      `请给目标教授 ${doc.targetProfessor?.name ?? ""} 写这封套磁信的日文初稿，直接写进当前文书（整篇替换）。根据我的 user.md 和教授的研究方向，说明我为什么对教授的研究感兴趣、我的背景和研究计划概要，并提到附上研究计划书（草稿）。缺少关键信息（如姓名、研究计划）时先用占位符，写完告诉我需要补充什么。`,
+      `请给目标教授 ${doc.targetProfessor?.name ?? ""} 写这封套磁信的日文初稿，用 update_document 整篇写入当前文书（附中文对照和一句说明）。根据我的 user.md 和教授的研究方向，说明我为什么对教授的研究感兴趣、我的背景和研究计划概要，并提到附上研究计划书（草稿）。缺少关键信息（如姓名、研究计划）时先用占位符，写完告诉我需要补充什么。`,
     );
   }, [editor, askAi, doc.id, doc.targetProfessor?.name]);
-
-  const selection = useEditorState({
-    editor,
-    selector: ({ editor: e }) => {
-      if (!e) return "";
-      const { from, to } = e.state.selection;
-      return from === to ? "" : e.state.doc.textBetween(from, to, "\n");
-    },
-  });
-  const [instruction, setInstruction] = useState("");
-
-  function rewriteSelection() {
-    if (!selection) return;
-    const req = instruction.trim() || "让日语更自然、更符合学术文书的表达，保持原意";
-    askAi(`请改写文书中我选中的这段内容（${req}），改好后直接替换原文：\n\n「${selection}」`);
-    setInstruction("");
-  }
 
   async function exportPdf() {
     // 先打开窗口再保存，避免浏览器拦截弹窗
@@ -190,36 +307,63 @@ export function DocumentEditor({ doc, planField, track, professors, linkedStatus
     else window.open(url, "_self");
   }
 
+  async function copyLetter() {
+    if (!editor) return false;
+    const ok = await copyText(editor.getText({ blockSeparator: "\n" }));
+    if (ok) {
+      await flush();
+      void snapshotAction(doc.id, "copy");
+    }
+    return ok;
+  }
+
+  const reviewer = doc.targetProfessor ? `${doc.targetProfessor.name}教授` : "教授";
+  const guided = doc.kind === "plan" || doc.kind === "intro";
+  const hasRail = suggestions.length > 0 || comments.length > 0;
+
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="@container mx-auto max-w-6xl space-y-4">
       <div className="flex items-center gap-2 text-sm text-zinc-500">
         <Link href="/documents" className="hover:text-foreground">
           文书
         </Link>
         <span>/</span>
         <span>{DOC_KIND_LABELS[doc.kind]}</span>
+        {props.parent && (
+          <span data-testid="copied-from">
+            · 复制自
+            <OpenTabLink tab={{ kind: "doc", id: props.parent.id, title: props.parent.title }} href={`/documents/${props.parent.id}`} className="mx-0.5 underline hover:text-foreground">
+              「{props.parent.title}」
+            </OpenTabLink>
+            {props.parent.version && `第 ${props.parent.version} 版`}
+          </span>
+        )}
       </div>
 
       <TitleInput id={doc.id} title={doc.title} />
 
-      {progress && (
-        <PlanGuide
-          progress={progress}
-          professor={doc.targetProfessor}
-          track={track}
-          onAsk={(text) => askAi(text)}
-          docId={doc.id}
-          professors={professors}
-        />
+      {guided && <WritingGuide doc={doc} track={props.track} onAsk={askAi} />}
+      {doc.kind === "plan" && !props.parent && <TailoredCopies docId={doc.id} copies={props.copies} professors={props.professors} />}
+      {doc.kind === "plan" && (
+        <div className="rounded-md border border-zinc-200 p-4 text-sm dark:border-zinc-800">
+          <ProfessorForm docId={doc.id} professor={doc.targetProfessor} professors={props.professors} defaultOpen={false} />
+        </div>
       )}
-
       {doc.kind === "letter" && (
-        <LetterPanel docId={doc.id} professor={doc.targetProfessor} professors={professors} linkedStatus={linkedStatus} editor={editor} />
+        <LetterPanel
+          docId={doc.id}
+          professor={doc.targetProfessor}
+          professors={props.professors}
+          linkedStatus={props.linkedStatus}
+          attachment={props.attachment}
+          plans={props.plans}
+          onCopy={copyLetter}
+        />
       )}
 
       {conflict && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-700 dark:bg-amber-950">
-          <span>文书在别处被修改了（可能是 AI 刚改过），你这里还有未保存的内容。</span>
+          <span>文书在别处被修改了，你这里还有未保存的内容。</span>
           <button className="underline" onClick={() => loadVersion(conflict.markdown, conflict.version)}>
             载入最新版（放弃我的修改）
           </button>
@@ -236,48 +380,97 @@ export function DocumentEditor({ doc, planField, track, professors, linkedStatus
         </div>
       )}
 
-      <Toolbar editor={editor} />
+      {notice && (
+        <p className={`text-sm ${notice.error ? "text-red-600" : "text-emerald-700 dark:text-emerald-400"}`} role="status">
+          {notice.text}
+        </p>
+      )}
 
-      <EditorContent editor={editor} />
+      {view === "history" && (
+        <HistoryView docId={doc.id} current={{ markdown, zh: doc.zh }} flush={flush} onClose={() => setView("edit")} />
+      )}
 
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <input
-          value={instruction}
-          onChange={(e) => setInstruction(e.target.value)}
-          placeholder={selection ? "改写要求（可选），如：更简洁" : "先在文中选中一段，再让 AI 改写"}
-          className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-1.5 outline-none focus:border-zinc-500 dark:border-zinc-700"
-        />
-        <button
-          onClick={rewriteSelection}
-          disabled={!selection}
-          className="rounded-md bg-foreground px-3 py-1.5 text-background disabled:opacity-40"
-        >
-          AI 改写选中内容
-        </button>
-        <button
-          onClick={() => askAi("请通读这份文书，检查日语表达（语法、敬语/である体是否统一、学术用语）和逻辑，先列出问题，等我确认后再改。")}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 dark:border-zinc-700"
-        >
-          AI 检查日语
-        </button>
-      </div>
+      <div className={`flex flex-col gap-4 @4xl:flex-row @4xl:items-start ${view === "history" ? "hidden" : ""}`}>
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Toolbar editor={editor} />
+            <div className="ml-auto flex flex-wrap items-center gap-2 text-sm">
+              <label className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
+                <input
+                  type="checkbox"
+                  data-testid="zh-toggle"
+                  checked={zhOn}
+                  onChange={(e) => {
+                    setZhOn(e.target.checked);
+                    try {
+                      localStorage.setItem(ZH_PREF, e.target.checked ? "1" : "0");
+                    } catch {}
+                  }}
+                />
+                中文对照
+              </label>
+              {zhOn && zhMissing > 0 && (
+                <button onClick={() => translate()} disabled={!!busy} className="text-blue-600 underline disabled:opacity-40 dark:text-blue-400">
+                  {busy === "translate" ? "翻译中…" : `翻译 ${zhMissing} 段`}
+                </button>
+              )}
+              <button onClick={() => setView("history")} className="rounded-md border border-zinc-300 px-3 py-1 dark:border-zinc-700">
+                版本历史{props.versionCount ? `（${props.versionCount}）` : ""}
+              </button>
+              <button
+                data-testid="review-button"
+                onClick={() => act("review", () => reviewAction(doc.id), "审阅完成，批注在页边。")}
+                disabled={!!busy}
+                className="rounded-md bg-foreground px-3 py-1 text-background disabled:opacity-40"
+              >
+                {busy === "review" ? "AI 正在审阅…" : `让 AI 当${reviewer}审一遍`}
+              </button>
+            </div>
+          </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-800">
-        <span className="text-zinc-500">{SAVE_LABELS[saveState]}</span>
-        <div className="flex gap-2">
-          <button onClick={exportPdf} className="rounded-md border border-zinc-300 px-3 py-1.5 dark:border-zinc-700">
-            导出 PDF
-          </button>
-          <form
-            action={async () => {
-              await deleteDocumentAction(doc.id);
-              closeTab(`doc:${doc.id}`);
-            }}
-            onSubmit={(e) => !confirm("确定删除这份文书？") && e.preventDefault()}
-          >
-            <button className="rounded-md px-3 py-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950">删除</button>
-          </form>
+          <SelectionArea editor={editor} zhOn={zhOn} docId={doc.id} flush={flush} />
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-800">
+            <span className="text-zinc-500">{SAVE_LABELS[saveState]}</span>
+            <div className="flex gap-2">
+              <button onClick={exportPdf} className="rounded-md border border-zinc-300 px-3 py-1.5 dark:border-zinc-700">
+                导出 PDF
+              </button>
+              <form
+                action={async () => {
+                  await deleteDocumentAction(doc.id);
+                  closeTab(`doc:${doc.id}`);
+                }}
+                onSubmit={(e) => !confirm("确定删除这份文书？") && e.preventDefault()}
+              >
+                <button className="rounded-md px-3 py-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950">删除</button>
+              </form>
+            </div>
+          </div>
         </div>
+
+        {hasRail && (
+          <aside className="order-first shrink-0 @4xl:sticky @4xl:top-2 @4xl:order-none @4xl:max-h-[85vh] @4xl:w-80 @4xl:overflow-y-auto">
+            <ReviewRail
+              markdown={markdown}
+              suggestions={suggestions}
+              comments={comments}
+              active={active}
+              busy={busy}
+              onFocus={focusMark}
+              onAccept={(id) => act(id, () => acceptSuggestionAction(id))}
+              onReject={(id) => act(id, () => rejectSuggestionAction(id))}
+              onAcceptAll={() =>
+                act("all", async () => {
+                  const r = await acceptAllSuggestionsAction(doc.id);
+                  return r.ok && r.value ? { ok: false, error: `有 ${r.value} 条修改的原文已经变了，没能接受，请逐条处理。` } : r;
+                })
+              }
+              onApplyComment={(id) => act(id, () => applyCommentAction(doc.id, id), "已按批注生成修改建议。")}
+              onIgnoreComment={(id) => act(id, () => ignoreCommentAction(doc.id, id))}
+            />
+          </aside>
+        )}
       </div>
     </div>
   );
@@ -290,6 +483,85 @@ const SAVE_LABELS: Record<SaveState, string> = {
   conflict: "保存冲突，请在上方选择",
   error: "保存失败，请检查网络后继续编辑重试",
 };
+
+/** 编辑区 + 选中文字后弹出的小菜单（改得更自然 / 更简短 / 解释这句 / 翻成中文） */
+function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; zhOn: boolean; docId: string; flush: () => Promise<void> }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const sel = useEditorState({
+    editor,
+    selector: ({ editor: e }) => {
+      if (!e) return null;
+      const { from, to } = e.state.selection;
+      if (from === to) return null;
+      const text = e.state.doc.textBetween(from, to, "\n").trim();
+      return text ? { from, to, text } : null;
+    },
+    equalityFn: (a, b) => a?.from === b?.from && a?.to === b?.to,
+  });
+  const [result, setResult] = useState<{ for: string; text: string; error?: boolean } | null>(null);
+  const [running, setRunning] = useState<SelectionAction | null>(null);
+
+  const pos = (() => {
+    if (!editor || !sel || editor.isDestroyed) return null;
+    try {
+      // 编辑区（view.dom）贴着外层容器的左上角，按它算相对位置
+      const start = editor.view.coordsAtPos(sel.from);
+      const box = editor.view.dom.getBoundingClientRect();
+      return { top: start.top - box.top, left: Math.max(0, Math.min(start.left - box.left, box.width - 320)) };
+    } catch {
+      return null;
+    }
+  })();
+
+  async function run(action: SelectionAction) {
+    if (!editor || !sel) return;
+    // 选中的是原文里第几处相同的文字（原文重复出现时定位用）
+    const before = editor.state.doc.textBetween(0, sel.from, "\n");
+    let nth = 0;
+    for (let at = before.indexOf(sel.text); at !== -1; at = before.indexOf(sel.text, at + sel.text.length)) nth++;
+    setRunning(action);
+    setResult(null);
+    await flush();
+    const r = await assistSelectionAction(docId, { action, text: sel.text, nth });
+    setRunning(null);
+    if (!r.ok) setResult({ for: sel.text, text: r.error, error: true });
+    else if (r.value.kind === "text") setResult({ for: sel.text, text: r.value.text });
+    else setResult({ for: sel.text, text: "已生成修改建议，在旁边接受或拒绝。" });
+  }
+
+  const showResult = result && sel?.text === result.for;
+  return (
+    <div ref={wrap} className={`relative ${zhOn ? "zh-on" : ""}`}>
+      <EditorContent editor={editor} />
+      {sel && pos && (
+        <div
+          data-testid="selection-menu"
+          className="absolute z-20 w-80 -translate-y-full pb-1"
+          style={{ top: pos.top, left: pos.left }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {showResult && (
+            <div className={`mb-1 rounded-md border bg-background p-2 text-sm shadow-md ${result.error ? "border-red-300 text-red-600" : "border-zinc-200 dark:border-zinc-700"}`} lang="zh-CN">
+              {result.text}
+            </div>
+          )}
+          <div className="inline-flex overflow-hidden rounded-md border border-zinc-300 bg-background text-sm shadow-md dark:border-zinc-700">
+            {SELECTION_ACTIONS.map((a) => (
+              <button
+                key={a}
+                disabled={!!running}
+                onClick={() => void run(a)}
+                className="border-r border-zinc-200 px-2.5 py-1 last:border-r-0 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                {running === a ? (isRewrite(a) ? "改写中…" : "思考中…") : SELECTION_ACTION_LABELS[a]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TitleInput({ id, title }: { id: string; title: string }) {
   const [value, setValue] = useState(title);
@@ -353,209 +625,5 @@ function Toolbar({ editor }: { editor: Editor | null }) {
         </button>
       ))}
     </div>
-  );
-}
-
-type Progress = ReturnType<typeof planProgress>;
-
-function PlanGuide({
-  progress,
-  professor,
-  track,
-  onAsk,
-  docId,
-  professors,
-}: {
-  progress: Progress;
-  professor: TargetProfessor | null;
-  track: Track | null;
-  onAsk: (text: string) => void;
-  docId: string;
-  professors: ProfessorOption[];
-}) {
-  const next = progress.next;
-  const needProfessor = track === "professor_first" && !professor;
-
-  function askNext() {
-    if (!next) {
-      onAsk("计划书各部分都写好了。请通读全文，从逻辑、和目标教授研究的契合度、日语表达三方面给出修改建议。");
-      return;
-    }
-    const fit = professor
-      ? `要贴合目标教授 ${professor.name} 的研究方向。`
-      : track === "plan_first"
-        ? "我已经有自己的研究计划，请在我的思路基础上打磨。"
-        : "";
-    onAsk(`带我写计划书的「${next.label}」部分（${next.headings.join("、")}）。${fit}先问我几个关键问题，再动笔写进文书。`);
-  }
-
-  return (
-    <div className="space-y-3 rounded-md border border-zinc-200 p-4 text-sm dark:border-zinc-800">
-      <div className="flex flex-wrap items-center gap-2">
-        {progress.steps.map((s, i) => (
-          <span
-            key={s.key}
-            className={`rounded-full px-2.5 py-0.5 text-xs ${
-              s.done ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : s === next ? "bg-foreground text-background" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800"
-            }`}
-          >
-            {i + 1}. {s.label}
-            {s.done && " ✓"}
-          </span>
-        ))}
-        <button onClick={askNext} className="ml-auto rounded-md bg-foreground px-3 py-1.5 text-background">
-          {next ? `AI 带写：${next.label}` : "AI 通读并提建议"}
-        </button>
-      </div>
-      {needProfessor && (
-        <p className="text-amber-700 dark:text-amber-400">
-          你目前的路线是“先找教授”：计划书最好贴合目标教授的近期研究。先从教授清单选择目标教授（还没有的话去
-          <Link href="/professors" className="underline">
-            找教授
-          </Link>
-          ），或在下面手动填写。
-        </p>
-      )}
-      <ProfessorForm key={professorKey(professor)} docId={docId} professor={professor} professors={professors} defaultOpen={needProfessor} />
-    </div>
-  );
-}
-
-// 目标教授变了（例如从清单里选了另一位）时重新挂载表单，让输入框显示新的信息
-const professorKey = (p: TargetProfessor | null) => (p ? `${p.professorId ?? ""}:${p.name}` : "none");
-
-/** 套磁信：收件教授、一键复制（用户用自己的邮箱发送）、发送后标记状态 */
-function LetterPanel({
-  docId,
-  professor,
-  professors,
-  linkedStatus,
-  editor,
-}: {
-  docId: string;
-  professor: TargetProfessor | null;
-  professors: ProfessorOption[];
-  linkedStatus: ProfessorStatus | null;
-  editor: Editor | null;
-}) {
-  const [copied, setCopied] = useState(false);
-  const [pending, startTransition] = useTransition();
-  const professorId = professor?.professorId;
-
-  async function copy() {
-    if (!editor) return;
-    if (!(await copyText(editor.getText({ blockSeparator: "\n" })))) {
-      alert("复制失败，请在编辑器里全选（Ctrl/⌘+A）后手动复制");
-      return;
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  return (
-    <div className="space-y-3 rounded-md border border-zinc-200 p-4 text-sm dark:border-zinc-800">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-zinc-500">GradNavi 不代发邮件：复制全文后用你自己的邮箱发送。</span>
-        <button onClick={copy} className="ml-auto rounded-md bg-foreground px-3 py-1.5 text-background">
-          {copied ? "已复制" : "复制全文"}
-        </button>
-        {professorId &&
-          (linkedStatus === "to_contact" ? (
-            <button
-              disabled={pending}
-              onClick={() => startTransition(() => markLetterSentAction(docId, professorId))}
-              className="rounded-md border border-zinc-300 px-3 py-1.5 disabled:opacity-40 dark:border-zinc-700"
-            >
-              我已发送，标记为“已发套磁”
-            </button>
-          ) : (
-            linkedStatus && <span className="text-zinc-500">教授状态：{PROFESSOR_STATUS_LABELS[linkedStatus]}</span>
-          ))}
-      </div>
-      <ProfessorForm key={professorKey(professor)} docId={docId} professor={professor} professors={professors} defaultOpen={!professor} label="收件教授" />
-    </div>
-  );
-}
-
-function ProfessorPicker({ docId, professor, professors }: { docId: string; professor: TargetProfessor | null; professors: ProfessorOption[] }) {
-  const [pending, startTransition] = useTransition();
-  if (!professors.length) {
-    return (
-      <p className="text-zinc-500">
-        教授清单还是空的，可以先去
-        <Link href="/professors" className="underline">
-          找教授
-        </Link>
-        并收藏，或在下面手动填写。
-      </p>
-    );
-  }
-  return (
-    <label className="flex flex-wrap items-center gap-2">
-      <span className="text-zinc-500">从教授清单选择</span>
-      <select
-        value={professor?.professorId ?? ""}
-        disabled={pending}
-        onChange={(e) => e.target.value && startTransition(() => linkProfessorAction(docId, e.target.value))}
-        className="min-w-0 max-w-full rounded-md border border-zinc-300 bg-transparent px-2 py-1 dark:border-zinc-700"
-      >
-        <option value="">{professor && !professor.professorId ? "（手动填写）" : "请选择"}</option>
-        {professors.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function ProfessorForm({
-  docId,
-  professor,
-  professors,
-  defaultOpen,
-  label = "目标教授",
-}: {
-  docId: string;
-  professor: TargetProfessor | null;
-  professors: ProfessorOption[];
-  defaultOpen: boolean;
-  label?: string;
-}) {
-  const [pending, startTransition] = useTransition();
-  const [form, setForm] = useState({
-    name: professor?.name ?? "",
-    affiliation: professor?.affiliation ?? "",
-    research: professor?.research ?? "",
-  });
-  const field = (key: keyof typeof form) => ({
-    value: form[key],
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm({ ...form, [key]: e.target.value }),
-    className: "w-full rounded-md border border-zinc-300 bg-transparent px-3 py-1.5 outline-none focus:border-zinc-500 dark:border-zinc-700",
-  });
-  return (
-    <details open={defaultOpen}>
-      <summary className="cursor-pointer text-zinc-500">
-        {label}：{professor ? `${professor.name}${professor.affiliation ? `（${professor.affiliation}）` : ""}` : "未设定"}
-      </summary>
-      <div className="mt-3">
-        <ProfessorPicker docId={docId} professor={professor} professors={professors} />
-      </div>
-      <form
-        className="mt-3 space-y-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          startTransition(() => setTargetProfessorAction(docId, form));
-        }}
-      >
-        <input placeholder="教授姓名" maxLength={100} {...field("name")} />
-        <input placeholder="大学・研究科・研究室" maxLength={200} {...field("affiliation")} />
-        <textarea placeholder="研究方向、近期论文（标题或摘要），AI 写计划书时会据此贴合" rows={4} maxLength={3000} {...field("research")} />
-        <button disabled={pending} className="rounded-md border border-zinc-300 px-3 py-1.5 disabled:opacity-40 dark:border-zinc-700">
-          {pending ? "保存中…" : "保存目标教授"}
-        </button>
-      </form>
-    </details>
   );
 }

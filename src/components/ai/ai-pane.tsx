@@ -297,7 +297,7 @@ function Message({ message }: { message: UIMessage }) {
   );
 }
 
-const DOC_WRITE_TOOLS = new Set(["create_document", "update_document_section", "replace_document_text", "update_document"]);
+const DOC_WRITE_TOOLS = new Set(["create_document", "update_document_section", "replace_document_text", "update_document", "propose_outline", "create_tailored_copy"]);
 
 const field = (v: unknown, key: string) => (v && typeof v === "object" && typeof (v as Record<string, unknown>)[key] === "string" ? ((v as Record<string, unknown>)[key] as string) : undefined);
 

@@ -8,7 +8,7 @@ import { docTemplate } from "@/lib/documents";
 import { letterSkeleton, MAX_SCHOOLS, PROFESSOR_STATUSES, professorToTarget, type ProfessorCandidate } from "@/lib/professors";
 import { requireUser } from "@/lib/session";
 import { assertCanSpend, recordUsageSafe } from "@/server/credits";
-import { createDocument } from "@/server/documents";
+import { createDocument, listDocuments } from "@/server/documents";
 import { answerField } from "@/lib/onboarding";
 import { getProfile } from "@/server/profile";
 import { searchProfessors, type ProfessorSearchResult } from "@/server/professor-search";
@@ -92,11 +92,14 @@ async function professorOrThrow(userId: string, id: string) {
 export async function createLetterAction(professorId: string) {
   const user = await requireUser();
   const p = await professorOrThrow(user.id, professorId);
+  // 已经有给这位教授的计划书（定制版）就直接附上
+  const plan = (await listDocuments(user.id)).find((d) => d.kind === "plan" && d.targetProfessor?.professorId === p.id);
   const doc = await createDocument(user.id, {
     kind: "letter",
     title: `套磁信 · ${p.name}`,
     markdown: letterSkeleton(p),
     targetProfessor: professorToTarget(p),
+    attachmentId: plan?.id ?? null,
   });
   redirect(`/documents/${doc.id}?ai=letter`);
 }

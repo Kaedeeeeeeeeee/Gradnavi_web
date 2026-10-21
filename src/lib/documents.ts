@@ -26,6 +26,45 @@ export type TargetProfessor = {
 
 export const MAX_DOC_LENGTH = 50_000;
 
+/** 提纲：AI 先在对话里问几个问题，再给出提纲（节标题用日文，要点用中文）；用户同意后按提纲一节一节写 */
+export type Outline = {
+  sections: { heading: string; points: string[] }[];
+  status: "proposed" | "approved";
+};
+
+/** 怎么写：和 AI 一起写（AI 起草，用户改），或者用户自己写、AI 只给意见 */
+export type WriteMode = "together" | "self";
+
+/** AI 当教授审阅时的批注类别 */
+export const COMMENT_CATEGORIES = ["logic", "novelty", "feasibility", "fit", "expression"] as const;
+export type CommentCategory = (typeof COMMENT_CATEGORIES)[number];
+export const COMMENT_CATEGORY_LABELS: Record<CommentCategory, string> = {
+  logic: "逻辑",
+  novelty: "新颖性",
+  feasibility: "可行性",
+  fit: "与教授方向",
+  expression: "表达",
+};
+/** open 待处理；suggested 已按这条生成修改建议，等用户接受；applied 已按这条改；ignored 忽略 */
+export type CommentStatus = "open" | "suggested" | "applied" | "ignored";
+
+/** 从提纲生成计划书骨架（只有标题） */
+export function outlineSkeleton(title: string, outline: Outline): string {
+  return `# ${title}\n\n${outline.sections.map((s) => `## ${s.heading}\n`).join("\n")}`;
+}
+
+/** 一份文书里每节写了没有：有提纲按提纲，没有就按正文里的 “## 标题” */
+export function sectionStatus(md: string, outline: Outline | null): { heading: string; written: boolean }[] {
+  const bodies = sectionBodies(md);
+  const headings = outline?.status === "approved" ? outline.sections.map((s) => s.heading) : [...bodies.keys()];
+  return headings.map((heading) => ({ heading, written: (bodies.get(heading) ?? "").length > 0 }));
+}
+
+/** 正文是否还是空的（只有标题，没有任何内容） */
+export function isBlankDoc(md: string): boolean {
+  return md.split("\n").every((l) => !l.trim() || /^#{1,6}\s/.test(l));
+}
+
 type Template = { title: string; markdown: string };
 
 const section = (headings: string[]) => headings.map((h) => `## ${h}\n`).join("\n");

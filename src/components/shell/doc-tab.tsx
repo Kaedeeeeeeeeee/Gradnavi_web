@@ -1,10 +1,9 @@
 import { DocumentEditor } from "@/app/(app)/documents/[id]/editor";
 import { createLetterAction, createPlanAction } from "@/app/(app)/professors/actions";
-import { detectPlanField } from "@/lib/documents";
-import { answerField, decideTrack } from "@/lib/onboarding";
+import { decideTrack } from "@/lib/onboarding";
 import { describeProfessor, PROFESSOR_STATUS_LABELS, professorAffiliation } from "@/lib/professors";
 import type { DocTab } from "@/lib/shell";
-import { getDocument } from "@/server/documents";
+import { getDocumentBundle, listDocuments } from "@/server/documents";
 import { getProfile } from "@/server/profile";
 import { getSavedProfessor, listSavedProfessors } from "@/server/professors";
 import { TaskDetail } from "@/components/tasks/task-detail";
@@ -27,8 +26,9 @@ export async function renderDocTab(userId: string, tab: DocTab | null): Promise<
 }
 
 async function documentTab(userId: string, id: string) {
-  const [doc, profile, professors] = await Promise.all([getDocument(userId, id), getProfile(userId), listSavedProfessors(userId)]);
-  if (!doc) return { title: null, node: null };
+  const [bundle, profile, professors, docs] = await Promise.all([getDocumentBundle(userId, id), getProfile(userId), listSavedProfessors(userId), listDocuments(userId)]);
+  if (!bundle) return { title: null, node: null };
+  const { doc } = bundle;
   const onboarding = profile?.onboarding;
   const linked = professors.find((p) => p.id === doc.targetProfessor?.professorId);
   return {
@@ -44,11 +44,22 @@ async function documentTab(userId: string, id: string) {
             markdown: doc.markdown,
             version: doc.version,
             targetProfessor: doc.targetProfessor,
+            zh: doc.zh,
+            outline: doc.outline,
+            writeMode: doc.writeMode,
           }}
-          planField={detectPlanField(doc.markdown, answerField(onboarding) ?? "humanities")}
           track={onboarding ? decideTrack(onboarding) : null}
           professors={professors.map((p) => ({ id: p.id, label: `${p.name}（${p.university}）` }))}
           linkedStatus={linked?.status ?? null}
+          suggestions={bundle.suggestions.map((s) => ({ id: s.id, op: s.op, zh: s.zh, summary: s.summary, source: s.source }))}
+          comments={bundle.comments.map((c) => ({ id: c.id, quote: c.quote, body: c.body, category: c.category, status: c.status }))}
+          parent={bundle.parent && { ...bundle.parent, version: doc.parentVersion }}
+          copies={bundle.copies.map((c) => ({ id: c.id, title: c.title, professorName: c.targetProfessor?.name ?? null, parentVersion: c.parentVersion }))}
+          attachment={bundle.attachment}
+          plans={docs
+            .filter((d) => d.kind === "plan")
+            .map((d) => ({ id: d.id, title: d.title, professorId: d.targetProfessor?.professorId ?? null, isCopy: !!d.parentId }))}
+          versionCount={bundle.versionCount}
         />
       </div>
     ),
