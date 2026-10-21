@@ -4,9 +4,10 @@ import { Markdown } from "@tiptap/markdown";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useAiBeforeSend, useAiPageContent, useAskAi } from "@/components/ai/page-context";
+import { useShell } from "@/components/shell/app-shell";
+import { takeAutoAsk } from "@/components/shell/pending-ask";
 import { copyText } from "@/lib/browser";
 import { describeDocument, DOC_KIND_LABELS, planProgress, type DocKind, type TargetProfessor } from "@/lib/documents";
 import type { Field, Track } from "@/lib/onboarding";
@@ -39,8 +40,6 @@ type Props = {
   professors: ProfessorOption[];
   /** 关联教授在清单里的联系状态 */
   linkedStatus: ProfessorStatus | null;
-  /** 进入页面后自动让 AI 做的事（从找教授页“写套磁信”进来） */
-  autoAsk: "letter" | null;
 };
 
 const AUTOSAVE_MS = 1500;
@@ -49,9 +48,9 @@ const PAGE_CONTENT_LIMIT = 18000;
 
 type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error";
 
-export function DocumentEditor({ doc, planField, track, professors, linkedStatus, autoAsk }: Props) {
+export function DocumentEditor({ doc, planField, track, professors, linkedStatus }: Props) {
   const askAi = useAskAi();
-  const router = useRouter();
+  const { closeTab } = useShell();
   const [markdown, setMarkdown] = useState(doc.markdown);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   // 冲突时服务器上的最新版本（通常是 AI 刚改过）
@@ -155,18 +154,15 @@ export function DocumentEditor({ doc, planField, track, professors, linkedStatus
   const header = describeDocument(doc);
   const progressLine = progress ? `\n带写进度：${progress.steps.map((s) => `${s.label}${s.done ? "✓" : "…"}`).join(" → ")}` : "";
   const body = markdown.length > PAGE_CONTENT_LIMIT ? `${markdown.slice(0, PAGE_CONTENT_LIMIT)}\n\n（后文省略，用 read_document 读取全文）` : markdown;
-  useAiPageContent(`${header}${progressLine}\n\n---\n${body}`);
+  useAiPageContent(`${header}${progressLine}\n\n---\n${body}`, "doc");
 
-  // 只触发一次，然后去掉地址里的 ?ai=，刷新页面不会重复让 AI 写
-  const autoAsked = useRef(false);
+  // 从找教授页“写套磁信”进来时让 AI 写初稿（只触发一次）
   useEffect(() => {
-    if (!autoAsk || !editor || autoAsked.current) return;
-    autoAsked.current = true;
-    router.replace(`/documents/${doc.id}`, { scroll: false });
+    if (!editor || takeAutoAsk(doc.id) !== "letter") return;
     askAi(
       `请给目标教授 ${doc.targetProfessor?.name ?? ""} 写这封套磁信的日文初稿，直接写进当前文书（整篇替换）。根据我的 user.md 和教授的研究方向，说明我为什么对教授的研究感兴趣、我的背景和研究计划概要，并提到附上研究计划书（草稿）。缺少关键信息（如姓名、研究计划）时先用占位符，写完告诉我需要补充什么。`,
     );
-  }, [autoAsk, editor, askAi, router, doc.id, doc.targetProfessor?.name]);
+  }, [editor, askAi, doc.id, doc.targetProfessor?.name]);
 
   const selection = useEditorState({
     editor,
@@ -272,7 +268,13 @@ export function DocumentEditor({ doc, planField, track, professors, linkedStatus
           <button onClick={exportPdf} className="rounded-md border border-zinc-300 px-3 py-1.5 dark:border-zinc-700">
             导出 PDF
           </button>
-          <form action={deleteDocumentAction.bind(null, doc.id)} onSubmit={(e) => !confirm("确定删除这份文书？") && e.preventDefault()}>
+          <form
+            action={async () => {
+              await deleteDocumentAction(doc.id);
+              closeTab(`doc:${doc.id}`);
+            }}
+            onSubmit={(e) => !confirm("确定删除这份文书？") && e.preventDefault()}
+          >
             <button className="rounded-md px-3 py-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950">删除</button>
           </form>
         </div>

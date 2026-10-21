@@ -2,24 +2,44 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
-// 页面向 AI 侧边栏提供“当前页面”信息（路径、页面内容如编辑器里的文档），AI 回答时能看到。
-// 页面用法：在客户端组件里调用 useAiPageContent(文本)。
+// 页面向 AI 对话栏提供“当前页面”信息（路径、页面内容如编辑器里的文档），AI 回答时能看到。
+// 页面用法：在客户端组件里调用 useAiPageContent(文本)；文稿栏里的内容（编辑器）用 useAiPageContent(文本, "doc")。
+// 工作台栏和文稿栏同时打开时，两边的内容都发给 AI，文稿在前。
 // 页面还可以：
 //   - 用 useAskAi() 让侧边栏代用户发一条消息（如“改写选中段落”按钮）
 //   - 用 useAiBeforeSend(fn) 在消息发出前先做一件事（如编辑器先保存，AI 才能读到最新内容）
 
-type PageInfo = { path: string; title?: string; content?: string };
+type PageInfo = { path: string; title?: string; content?: string; workPath?: string };
+type Slot = "work" | "doc";
+/** 文稿栏当前标签：路径（如 /documents/<id>）和标题；栏收起时为空 */
+type DocInfo = { path: string; title: string } | null;
+
+// 接口限制 20000 字
+const CONTENT_LIMIT = 19000;
 type AskListener = (text: string) => void;
 type BeforeSend = () => Promise<void>;
 
 function createPageStore() {
-  let info: PageInfo = { path: "/" };
+  let workPath = "/";
+  let doc: DocInfo = null;
+  const content: Record<Slot, string | undefined> = { work: undefined, doc: undefined };
   let beforeSend: BeforeSend | undefined;
   const askListeners = new Set<AskListener>();
   return {
-    get: (): PageInfo => ({ ...info, title: typeof document === "undefined" ? undefined : document.title }),
-    set: (patch: Partial<PageInfo>) => {
-      info = { ...info, ...patch };
+    get: (): PageInfo => {
+      const title = typeof document === "undefined" ? undefined : document.title;
+      if (!doc) return { path: workPath, title, content: content.work };
+      const parts = [content.doc, content.work && `=== 左侧工作台页面的内容 ===\n${content.work}`].filter(Boolean);
+      return { path: doc.path, title: doc.title, workPath, content: parts.join("\n\n").slice(0, CONTENT_LIMIT) || undefined };
+    },
+    setWorkPath: (path: string) => {
+      workPath = path;
+    },
+    setDoc: (next: DocInfo) => {
+      doc = next;
+    },
+    setContent: (slot: Slot, text: string | undefined) => {
+      content[slot] = text;
     },
     setBeforeSend: (fn: BeforeSend | undefined) => {
       beforeSend = fn;
@@ -52,12 +72,12 @@ export function usePageStore() {
   return store;
 }
 
-export function useAiPageContent(content: string | undefined) {
+export function useAiPageContent(content: string | undefined, slot: Slot = "work") {
   const store = usePageStore();
   useEffect(() => {
-    store.set({ content });
-    return () => store.set({ content: undefined });
-  }, [store, content]);
+    store.setContent(slot, content);
+    return () => store.setContent(slot, undefined);
+  }, [store, content, slot]);
 }
 
 export function useAiBeforeSend(fn: BeforeSend) {

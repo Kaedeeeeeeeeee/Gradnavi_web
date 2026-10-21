@@ -1,0 +1,440 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { usePageStore } from "@/components/ai/page-context";
+import {
+  activeTab,
+  applyPreset,
+  closeTab as closeTabIn,
+  collapsePane,
+  currentPreset,
+  expandPane,
+  LAYOUT_COOKIE,
+  MAX_TABS,
+  openTab as openTabIn,
+  PANE_LABELS,
+  PANES,
+  PRESET_LABELS,
+  serializeLayout,
+  serializeTabs,
+  tabKey,
+  TABS_COOKIE,
+  type DocTab,
+  type Layout,
+  type PaneId,
+  type Preset,
+  type Tabs,
+} from "@/lib/shell";
+
+// 三栏外壳：工作台 | 文稿/浏览 | AI 对话，三栏平级、同时打开。
+// - 栏间拖动调宽；每栏可放大（其余收成竖条）或收起成 52px 竖条，竖条上显示未读/待确认标记
+// - 顶栏三个布局预设；布局和文稿栏标签存在 cookie 里，下次打开保持原样
+// - 窄屏（<1024px）只显示一栏，底部标签切换
+// 文稿栏当前标签的内容由服务器渲染（layout 读 cookie），切换标签 = 写 cookie + router.refresh()。
+
+const MIN_PANE_PX = 280;
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
+function writeCookie(name: string, value: string) {
+  document.cookie = `${name}=${value}; path=/; max-age=${COOKIE_MAX_AGE}; samesite=lax`;
+}
+
+const narrowQuery = "(max-width: 1023.98px)";
+function subscribeNarrow(cb: () => void) {
+  const mq = window.matchMedia(narrowQuery);
+  mq.addEventListener("change", cb);
+  return () => mq.removeEventListener("change", cb);
+}
+const useNarrow = () =>
+  useSyncExternalStore(
+    subscribeNarrow,
+    () => window.matchMedia(narrowQuery).matches,
+    () => false,
+  );
+
+type Badge = number | boolean;
+
+type ShellApi = {
+  layout: Layout;
+  tabs: Tabs;
+  openTab: (tab: DocTab) => void;
+  closeTab: (key: string) => void;
+  renameTab: (key: string, title: string) => void;
+  expand: (pane: PaneId) => void;
+  /** 这一栏用户现在看得见（宽屏：没收起；窄屏：当前标签） */
+  isVisible: (pane: PaneId) => boolean;
+  setBadge: (pane: PaneId, badge: Badge) => void;
+};
+
+const ShellContext = createContext<ShellApi | null>(null);
+
+export function useShell() {
+  const shell = useContext(ShellContext);
+  if (!shell) throw new Error("需要在 AppShell 内使用");
+  return shell;
+}
+
+/** 文稿栏里网页标签和 AI 等用的路径（发给 AI 作为“当前页面”） */
+function tabPath(tab: DocTab) {
+  if (tab.kind === "doc") return `/documents/${tab.id}`;
+  if (tab.kind === "professor") return `/professors/${tab.id}`;
+  return "/web";
+}
+
+type Props = {
+  initialLayout: Layout;
+  initialTabs: Tabs;
+  /** 服务器渲染的是哪个标签（与 initialTabs.active 一致时内容才是新的） */
+  docKey: string | null;
+  /** 服务器读到的标签真实标题（文书改名后同步到标签上）；null = 已删除 */
+  docTitle: string | null;
+  doc: React.ReactNode;
+  ai: React.ReactNode;
+  topRight: React.ReactNode;
+  children: React.ReactNode;
+};
+
+export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai, topRight, children }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const pageStore = usePageStore();
+  const narrow = useNarrow();
+  const [layout, setLayout] = useState(initialLayout);
+  const [tabs, setTabs] = useState(initialTabs);
+  const [badges, setBadges] = useState<Record<PaneId, Badge>>({ work: false, doc: false, ai: false });
+  const [lastPane, setLastPane] = useState<PaneId>(initialTabs.active ? "doc" : "work");
+  const [dragging, setDragging] = useState(false);
+  const [refreshing, startRefresh] = useTransition();
+  const paneRefs = useRef<Record<PaneId, HTMLElement | null>>({ work: null, doc: null, ai: null });
+
+  useEffect(() => {
+    if (!dragging) writeCookie(LAYOUT_COOKIE, serializeLayout(layout));
+  }, [layout, dragging]);
+
+  const updateTabs = useCallback(
+    (next: Tabs, refresh: boolean) => {
+      setTabs(next);
+      writeCookie(TABS_COOKIE, serializeTabs(next));
+      if (refresh) startRefresh(() => router.refresh());
+    },
+    [router],
+  );
+
+  const isVisible = useCallback((pane: PaneId) => (narrow ? layout.mobile === pane : !layout.collapsed[pane]), [narrow, layout]);
+
+  const api = useMemo<ShellApi>(
+    () => ({
+      layout,
+      tabs,
+      openTab: (tab) => {
+        if (tab.kind === "web" && tab.url.length > 500) {
+          window.open(tab.url, "_blank", "noopener");
+          return;
+        }
+        const next = openTabIn(tabs, tab);
+        updateTabs(next, next.active !== tabs.active || next.tabs.length !== tabs.tabs.length);
+        setLayout((l) => expandPane(l, "doc"));
+        setLastPane("doc");
+      },
+      closeTab: (key) => {
+        const next = closeTabIn(tabs, key);
+        updateTabs(next, next.active !== tabs.active);
+      },
+      renameTab: (key, title) => {
+        if (!tabs.tabs.some((t) => tabKey(t) === key && t.title !== title)) return;
+        updateTabs({ ...tabs, tabs: tabs.tabs.map((t) => (tabKey(t) === key ? { ...t, title } : t)) }, false);
+      },
+      expand: (pane) => setLayout((l) => expandPane(l, pane)),
+      isVisible,
+      setBadge: (pane, badge) => setBadges((b) => (b[pane] === badge ? b : { ...b, [pane]: badge })),
+    }),
+    [layout, tabs, updateTabs, isVisible],
+  );
+
+  // 告诉 AI 用户正在看什么：工作台栏的页面 + 文稿栏的当前标签（栏收起时不算）
+  const current = activeTab(tabs);
+  // 窄屏上用户切到 AI 标签问的通常就是刚才看的文稿，所以窄屏一直算可见
+  const docVisible = narrow || !layout.collapsed.doc;
+  useEffect(() => {
+    pageStore.setWorkPath(pathname);
+  }, [pageStore, pathname]);
+  useEffect(() => {
+    pageStore.setDoc(
+      current && docVisible ? { path: tabPath(current), title: current.kind === "web" ? `${current.title}（${current.url}）`.slice(0, 200) : current.title } : null,
+    );
+  }, [pageStore, current, docVisible]);
+
+  // 服务器发现标签对应的文书已删除：关掉；改了名：同步标题
+  const { closeTab, renameTab } = api;
+  useEffect(() => {
+    if (!docKey || docKey !== tabs.active) return;
+    if (docTitle === null) closeTab(docKey);
+    else renameTab(docKey, docTitle);
+  }, [docKey, docTitle, tabs.active, closeTab, renameTab]);
+
+  function startDrag(e: React.PointerEvent<HTMLDivElement>, a: PaneId, b: PaneId) {
+    const ea = paneRefs.current[a];
+    const eb = paneRefs.current[b];
+    if (!ea || !eb) return;
+    const pa = ea.getBoundingClientRect().width;
+    const pb = eb.getBoundingClientRect().width;
+    const total = layout.weights[a] + layout.weights[b];
+    const x0 = e.clientX;
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    setDragging(true);
+    const move = (ev: PointerEvent) => {
+      const na = Math.min(Math.max(pa + ev.clientX - x0, MIN_PANE_PX), pa + pb - MIN_PANE_PX);
+      const wa = (total * na) / (pa + pb);
+      setLayout((l) => ({ ...l, weights: { ...l.weights, [a]: wa, [b]: total - wa } }));
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", up);
+      setDragging(false);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+  }
+
+  const open = PANES.filter((p) => !layout.collapsed[p]);
+  const nextOpen = (p: PaneId) => open[open.indexOf(p) + 1];
+  const preset = currentPreset(layout);
+  const choosePreset = (p: Preset) => setLayout((l) => applyPreset(l, p, p === "focus" ? lastPane : l.mobile));
+
+  const badgeOf = (pane: PaneId): Badge => (pane === "doc" && !badges.doc ? tabs.tabs.length || false : badges[pane]);
+
+  const header: Record<PaneId, React.ReactNode> = {
+    work: <WorkTabs pathname={pathname} />,
+    doc: <DocTabBar tabs={tabs} onActivate={(key) => key !== tabs.active && updateTabs({ ...tabs, active: key }, true)} onClose={closeTab} />,
+    ai: <span className="px-1 text-sm font-medium">AI 对话</span>,
+  };
+
+  const docBody =
+    tabs.active === docKey && !refreshing ? (
+      doc
+    ) : (
+      <p className="px-6 py-10 text-sm text-zinc-500">打开中…</p>
+    );
+  const body: Record<PaneId, React.ReactNode> = {
+    work: <div className="px-4 py-6">{children}</div>,
+    doc: docBody,
+    ai,
+  };
+
+  return (
+    <ShellContext value={api}>
+      <div className={`flex h-dvh flex-col ${dragging ? "cursor-col-resize select-none" : ""}`}>
+        <header className="flex items-center gap-4 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+          <Link href="/workbench" className="text-base font-semibold">
+            GradNavi
+          </Link>
+          <div className="hidden rounded-md border border-zinc-200 p-0.5 text-xs lg:flex dark:border-zinc-800">
+            {(Object.keys(PRESET_LABELS) as Preset[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => choosePreset(p)}
+                title={p === "focus" ? `放大当前栏（${PANE_LABELS[lastPane]}），其余收成竖条` : undefined}
+                className={`rounded px-2.5 py-1 ${preset === p ? "bg-zinc-200 dark:bg-zinc-700" : "text-zinc-500 hover:text-foreground"}`}
+              >
+                {PRESET_LABELS[p]}
+              </button>
+            ))}
+          </div>
+          <div className="ml-auto flex min-w-0 items-center gap-4 text-sm">{topRight}</div>
+        </header>
+
+        <div className="flex min-h-0 flex-1">
+          {PANES.map((p) => (
+            <Fragment key={p}>
+              {layout.collapsed[p] && <Rail pane={p} badge={badgeOf(p)} onOpen={() => api.expand(p)} />}
+              <section
+                ref={(el) => {
+                  paneRefs.current[p] = el;
+                }}
+                onPointerDownCapture={() => setLastPane(p)}
+                style={{ flexGrow: layout.weights[p], flexBasis: 0 }}
+                className={`min-w-0 flex-col ${layout.collapsed[p] ? "lg:hidden" : "lg:flex"} ${layout.mobile === p ? "max-lg:flex" : "max-lg:hidden"} lg:min-w-[280px] ${
+                  p !== "work" ? "lg:border-l border-zinc-200 dark:border-zinc-800" : ""
+                }`}
+                aria-label={PANE_LABELS[p]}
+              >
+                <div className="flex h-10 shrink-0 items-center gap-1 border-b border-zinc-200 pl-2 pr-1 dark:border-zinc-800">
+                  <div className="min-w-0 flex-1">{header[p]}</div>
+                  <PaneControls only={open.length === 1} onMax={() => choosePresetFor(p)} onRestore={() => choosePreset("three")} onCollapse={() => setLayout((l) => collapsePane(l, p))} />
+                </div>
+                <div className={`min-h-0 flex-1 ${p === "ai" ? "flex flex-col" : "overflow-y-auto"}`}>{body[p]}</div>
+              </section>
+              {!layout.collapsed[p] && nextOpen(p) && (
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  title="拖动调整宽度"
+                  onPointerDown={(e) => startDrag(e, p, nextOpen(p)!)}
+                  className="relative z-10 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none lg:block hover:bg-zinc-300/50 dark:hover:bg-zinc-700/50"
+                />
+              )}
+            </Fragment>
+          ))}
+        </div>
+
+        <nav className="flex shrink-0 border-t border-zinc-200 lg:hidden dark:border-zinc-800">
+          {PANES.map((p) => {
+            const badge = badgeOf(p);
+            return (
+              <button
+                key={p}
+                onClick={() => setLayout((l) => ({ ...l, mobile: p }))}
+                className={`relative flex-1 py-2.5 text-sm ${layout.mobile === p ? "font-medium" : "text-zinc-500"}`}
+              >
+                {PANE_LABELS[p]}
+                {layout.mobile !== p && badge ? <BadgeDot badge={badge} className="ml-1" /> : null}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+    </ShellContext>
+  );
+
+  function choosePresetFor(p: PaneId) {
+    setLastPane(p);
+    setLayout((l) => applyPreset(l, "focus", p));
+  }
+}
+
+function PaneControls({ only, onMax, onRestore, onCollapse }: { only: boolean; onMax: () => void; onRestore: () => void; onCollapse: () => void }) {
+  const cls = "rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-foreground dark:hover:bg-zinc-800";
+  return (
+    <div className="hidden shrink-0 items-center lg:flex">
+      {only ? (
+        <button onClick={onRestore} className={cls} title="还原成三栏">
+          还原
+        </button>
+      ) : (
+        <>
+          <button onClick={onMax} className={cls} title="放大这一栏，其余收成竖条" aria-label="放大">
+            ⤢
+          </button>
+          <button onClick={onCollapse} className={cls} title="收起成竖条" aria-label="收起">
+            —
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Rail({ pane, badge, onOpen }: { pane: PaneId; badge: Badge; onOpen: () => void }) {
+  return (
+    <button
+      onClick={onOpen}
+      title={`展开${PANE_LABELS[pane]}`}
+      className={`hidden w-[52px] shrink-0 flex-col items-center gap-2 py-3 text-sm text-zinc-500 hover:bg-zinc-50 hover:text-foreground lg:flex dark:hover:bg-zinc-900 ${
+        pane !== "work" ? "border-l border-zinc-200 dark:border-zinc-800" : ""
+      }`}
+    >
+      {badge ? <BadgeDot badge={badge} /> : null}
+      <span className="[writing-mode:vertical-rl] tracking-widest">{PANE_LABELS[pane]}</span>
+    </button>
+  );
+}
+
+function BadgeDot({ badge, className = "" }: { badge: Badge; className?: string }) {
+  if (typeof badge === "number")
+    return <span className={`inline-flex min-w-5 justify-center rounded-full bg-zinc-200 px-1.5 text-xs tabular-nums text-foreground dark:bg-zinc-700 ${className}`}>{badge}</span>;
+  return <span className={`inline-block size-2 rounded-full bg-blue-600 ${className}`} aria-label="有新内容" />;
+}
+
+const WORK_TABS = [
+  { href: "/workbench", label: "今天" },
+  { href: "/schools", label: "研究科" },
+  { href: "/professors", label: "教授" },
+  { href: "/documents", label: "文书" },
+  { href: "/calendar", label: "日历" },
+];
+
+function WorkTabs({ pathname }: { pathname: string }) {
+  return (
+    <nav className="flex gap-0.5 overflow-x-auto text-sm">
+      {WORK_TABS.map((t) => {
+        const active = pathname === t.href || pathname.startsWith(`${t.href}/`);
+        return (
+          <Link
+            key={t.href}
+            href={t.href}
+            className={`shrink-0 rounded px-2 py-1 ${active ? "bg-zinc-200 font-medium dark:bg-zinc-700" : "text-zinc-500 hover:text-foreground"}`}
+          >
+            {t.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+const TAB_ICONS: Record<DocTab["kind"], string> = { doc: "文", professor: "教", web: "网" };
+
+function DocTabBar({ tabs, onActivate, onClose }: { tabs: Tabs; onActivate: (key: string) => void; onClose: (key: string) => void }) {
+  if (!tabs.tabs.length) return <span className="px-1 text-sm font-medium">文稿 / 浏览</span>;
+  return (
+    <div className="flex gap-0.5 overflow-x-auto text-sm" role="tablist">
+      {tabs.tabs.map((t) => {
+        const key = tabKey(t);
+        const active = key === tabs.active;
+        return (
+          <div
+            key={key}
+            role="tab"
+            aria-selected={active}
+            className={`group flex max-w-48 shrink-0 items-center rounded ${active ? "bg-zinc-200 dark:bg-zinc-700" : "text-zinc-500 hover:text-foreground"}`}
+          >
+            <button onClick={() => onActivate(key)} className="flex min-w-0 items-center gap-1.5 py-1 pl-2" title={t.kind === "web" ? t.url : t.title}>
+              <span className="text-[10px] text-zinc-400">{TAB_ICONS[t.kind]}</span>
+              <span className="truncate">{t.title || "（无标题）"}</span>
+            </button>
+            <button onClick={() => onClose(key)} className="px-1.5 py-1 text-zinc-400 hover:text-foreground" aria-label={`关闭 ${t.title}`}>
+              ×
+            </button>
+          </div>
+        );
+      })}
+      {tabs.tabs.length >= MAX_TABS && <span className="self-center px-1 text-xs text-zinc-400">最多 {MAX_TABS} 个</span>}
+    </div>
+  );
+}
+
+/** 在文稿栏打开的链接：点击开标签，不跳页；href 留作新窗口打开 / 无 JS 时的退路 */
+export function OpenTabLink({ tab, href, className, children }: { tab: DocTab; href: string; className?: string; children: React.ReactNode }) {
+  const { openTab } = useShell();
+  return (
+    <a
+      href={href}
+      className={className}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        openTab(tab);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+/** 路由 /documents/[id] 用：进入时在文稿栏打开这份文书，地址改回 /documents */
+export function OpenTabOnMount({ tab, replaceWith }: { tab: DocTab; replaceWith: string }) {
+  const { openTab } = useShell();
+  const done = useRef(false);
+  useEffect(() => {
+    if (done.current) return;
+    done.current = true;
+    window.history.replaceState(null, "", replaceWith);
+    openTab(tab);
+  }, [openTab, tab, replaceWith]);
+  return null;
+}
