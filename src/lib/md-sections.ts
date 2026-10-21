@@ -44,3 +44,31 @@ export function getSection(md: string, heading: string): string {
   const found = findSection(lines, heading);
   return found ? lines.slice(found.start + 1, found.end).join("\n").trim() : "";
 }
+
+/** 删掉整节（含标题行），没有这一节时原样返回 */
+export function removeSection(md: string, heading: string): string {
+  const lines = md.split("\n");
+  const found = findSection(lines, heading);
+  if (!found) return md;
+  const rest = [...lines.slice(0, found.start), ...lines.slice(found.end)];
+  return rest.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "") + "\n";
+}
+
+/** 一次修改某节前后的内容，用于撤销（before 为 null 表示这一节原来不存在） */
+export type SectionChange = { section: string; before: string | null; after: string; content: string };
+
+/**
+ * 撤销一次分节修改：这一节没再被改过就恢复原样；改过的话只删掉这次写入的内容。
+ * 这次写入的内容已经不在了返回 null。
+ */
+export function undoSectionChange(md: string, change: SectionChange): string | null {
+  const exists = listSections(md).includes(change.section.trim());
+  const current = getSection(md, change.section);
+  if (exists && current === change.after.trim()) {
+    return change.before === null ? removeSection(md, change.section) : upsertSection(md, change.section, change.before, "replace");
+  }
+  const content = change.content.trim();
+  if (!exists || !content || !current.includes(content)) return null;
+  const rest = current.replace(content, "").replace(/\n{3,}/g, "\n\n").trim();
+  return rest ? upsertSection(md, change.section, rest, "replace") : removeSection(md, change.section);
+}

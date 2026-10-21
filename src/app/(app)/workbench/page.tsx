@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { addDays, monthGrid, parseMonth, todayJst } from "@/lib/calendar";
+import { profileScores } from "@/lib/aspirations";
 import { decideTrack, PATH_LABELS, suggestPath, TRACK_LABELS } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
 import { briefing, groupTasks, keyDates, weekEnd } from "@/lib/tasks";
@@ -70,7 +71,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
     if (t?.status === "done") return [];
     return [{ ...al, changes: diffGuideEvents(al.previous, al.events), task: t ? { id: t.id, title: t.title, started: started.has(t.id) } : null }];
   });
-  const path = answers.path === "unsure" ? `${PATH_LABELS[suggestPath(answers)]}（建议，待确认）` : PATH_LABELS[answers.path];
+  const path = answers.path === "unsure" ? `${PATH_LABELS[suggestPath(answers, profileScores(profile.markdown, answers).jlpt)]}（建议，待确认）` : PATH_LABELS[answers.path];
   const end = weekEnd(today);
 
   return (

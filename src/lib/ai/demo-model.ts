@@ -33,7 +33,7 @@ export function demoReply(prompt: LanguageModelV4Prompt): Reply {
 
   const remember = /^记住[:：]\s*([\s\S]+)$/.exec(text);
   if (remember) {
-    return { toolName: "update_user_md", input: { section: "偏好与备注", content: `- ${remember[1]}`, mode: "append" } };
+    return { toolName: "update_user_md", input: { section: "偏好与备注", content: `- ${remember[1]}`, mode: "append", note: remember[1].slice(0, 60) } };
   }
   const todo = /^待办[:：]\s*([\s\S]+)$/.exec(text);
   if (todo) return { toolName: "add_todos", input: { items: [{ title: todo[1].slice(0, 100) }] } };

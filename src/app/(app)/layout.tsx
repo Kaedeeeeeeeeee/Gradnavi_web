@@ -39,7 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const topRight = (
     <>
       <Link href="/profile" className={link}>
-        我的档案
+        AI 对你的了解
       </Link>
       <Link href="/feedback" className={link}>
         反馈

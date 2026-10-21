@@ -69,6 +69,16 @@ export async function saveMessages(conversationId: string, messages: UIMessage[]
   });
 }
 
+/** 新开一段通用对话，第一条是 AI 按模板生成的消息（不调用 AI），可附快捷回复按钮 */
+export async function startConversation(userId: string, opening: { text: string; quickReplies: string[] }) {
+  const id = crypto.randomUUID();
+  await db.insert(aiConversation).values({ id, userId });
+  const parts: UIMessage["parts"] = [{ type: "text", text: opening.text }];
+  if (opening.quickReplies.length) parts.push({ type: "data-quickReplies", data: opening.quickReplies });
+  await saveMessages(id, [{ id: crypto.randomUUID(), role: "assistant", parts }]);
+  return id;
+}
+
 /** 已经聊过的任务（任务卡上显示「继续和 AI 做」） */
 export async function listTaskConversationIds(userId: string) {
   const rows = await db

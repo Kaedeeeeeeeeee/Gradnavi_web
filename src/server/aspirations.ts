@@ -1,6 +1,5 @@
 import "server-only";
-import { nextDeadline, parseScores, requirementGaps, type AspirationView, type ProfessorView, type Scores, type SchoolView } from "@/lib/aspirations";
-import { getSection } from "@/lib/md-sections";
+import { nextDeadline, profileScores, requirementGaps, type AspirationView, type ProfessorView, type Scores, type SchoolView } from "@/lib/aspirations";
 import { getProfile } from "./profile";
 import { linkProfessorsToSchools, listSavedProfessors, type SavedProfessorRow } from "./professors";
 import { listWatchedSchools } from "./schools";
@@ -10,12 +9,10 @@ import { listWatchedSchools } from "./schools";
 
 type WatchedSchool = Awaited<ReturnType<typeof listWatchedSchools>>[number];
 
-/** 用户现在的语言成绩：user.md「语言成绩」一节（AI 会随时更新）+ 问卷答案，取最好的 */
+/** 用户现在的语言成绩 */
 export async function userScores(userId: string): Promise<Scores> {
   const profile = await getProfile(userId);
-  const md = profile?.markdown ?? "";
-  const answers = profile?.onboarding;
-  return parseScores([getSection(md, "语言成绩"), answers?.japanese, answers?.english].filter(Boolean).join("\n"));
+  return profileScores(profile?.markdown ?? "", profile?.onboarding);
 }
 
 export function toProfessorView(p: SavedProfessorRow): ProfessorView {

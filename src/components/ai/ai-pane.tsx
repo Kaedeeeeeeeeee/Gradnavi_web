@@ -5,6 +5,7 @@ import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { undoMemory } from "@/app/(app)/actions";
 import { openTaskConversationAction } from "@/app/(app)/workbench/actions";
 import { useShell } from "@/components/shell/app-shell";
 import { TOOL_META } from "@/lib/ai/tool-meta";
@@ -20,8 +21,7 @@ const WORK_PAGE_LABELS: [string, string][] = [
   ["/workbench", "主页"],
   ["/aspirations", "志愿"],
   ["/documents", "文书列表"],
-  ["/profile", "我的档案"],
-  ["/onboarding", "新用户引导"],
+  ["/profile", "AI 对你的了解"],
 ];
 
 type Props = {
@@ -200,6 +200,10 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
     setInput("");
   }
 
+  // AI 的最后一条消息带的快捷回复（如做完问卷后的开场消息），点一下就代用户发出
+  const last = messages.at(-1);
+  const quickReplies = last?.role === "assistant" ? last.parts.flatMap((p) => (p.type === "data-quickReplies" && Array.isArray(p.data) ? (p.data as string[]) : [])) : [];
+
   const tab = active;
   const docShown = tab && tab.kind !== "task" && shell.isVisible("doc");
   const workLabel = WORK_PAGE_LABELS.find(([p]) => pathname === p || pathname.startsWith(`${p}/`))?.[1];
@@ -248,13 +252,26 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
         )}
         {messages.length === 0 && !conv.task && (
           <div className="space-y-2 text-zinc-500">
-            <p>我能看到你的档案（user.md）、左边工作台的页面和中间打开的文稿，可以帮你记录信息、拆分任务、一起写文书。</p>
+            <p>我能看到我对你的了解（user.md）、左边工作台的页面和中间打开的文稿，可以帮你记录信息、拆分任务、一起写文书。</p>
             <p>试试：「我下一步该做什么？」</p>
           </div>
         )}
         {messages.map((m) => (
           <Message key={m.id} message={m} />
         ))}
+        {quickReplies.length > 0 && status === "ready" && (
+          <div className="flex flex-wrap gap-2">
+            {quickReplies.map((q) => (
+              <button
+                key={q}
+                onClick={() => void send(q)}
+                className="rounded-full border border-zinc-300 px-3 py-1 text-xs hover:border-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
         {status === "submitted" && <p className="text-zinc-400">思考中…</p>}
         {error && <p className="text-red-600">出错了：{error.message || "请稍后再试"}</p>}
         <div ref={bottomRef} />
@@ -296,6 +313,8 @@ function Message({ message }: { message: UIMessage }) {
     <div className="space-y-2">
       {message.parts.map((part, i) => {
         if (part.type === "text") return <div key={i} className="whitespace-pre-wrap leading-relaxed">{part.text}</div>;
+        if (isToolUIPart(part) && getToolName(part) === "update_user_md" && part.state === "output-available")
+          return <MemoryLine key={i} input={part.input} output={part.output} />;
         if (isToolUIPart(part))
           return <ToolChip key={i} name={getToolName(part)} state={part.state} input={part.input} output={part.state === "output-available" ? part.output : undefined} />;
         return null;
@@ -339,15 +358,54 @@ function ToolChip({ name, state, input, output }: { name: string; state: string;
     <div className="inline-flex items-center gap-2 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-500 dark:border-zinc-700">
       <span>{failed ? "✗" : done ? "✓" : "…"}</span>
       <span>AI {label}</span>
-      {done && name === "update_user_md" && (
-        <Link href="/profile" className="underline">
-          查看
-        </Link>
-      )}
       {target && (
         <button onClick={() => openTab(target)} className="underline hover:text-foreground">
           查看 →
         </button>
+      )}
+    </div>
+  );
+}
+
+type SectionChange = { section: string; before: string | null; after: string; content: string };
+
+/** AI 记进 user.md 的一条信息：「已记住：TOEFL 72 分」+ 撤销 */
+function MemoryLine({ input, output }: { input: unknown; output: unknown }) {
+  const router = useRouter();
+  const [state, setState] = useState<"idle" | "undoing" | "undone" | "gone">("idle");
+  const change = output && typeof output === "object" ? ((output as { change?: SectionChange }).change ?? null) : null;
+  const note = field(input, "note") || field(input, "section") || "你的信息";
+
+  async function undo() {
+    if (!change) return;
+    setState("undoing");
+    const ok = await undoMemory(change).catch(() => false);
+    setState(ok ? "undone" : "gone");
+    router.refresh();
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
+      <span className={state === "undone" ? "line-through" : ""}>
+        {state === "undone" ? "已撤销" : "已记住"}：{note}
+      </span>
+      {state === "gone" ? (
+        <span>
+          档案里已经没有这条了，可以在
+          <Link href="/profile" className="mx-0.5 underline">
+            AI 对你的了解
+          </Link>
+          里修改
+        </span>
+      ) : state !== "undone" && change ? (
+        <button onClick={undo} disabled={state === "undoing"} className="underline hover:text-foreground disabled:opacity-40">
+          撤销
+        </button>
+      ) : null}
+      {state !== "gone" && (
+        <Link href="/profile" className="hover:text-foreground">
+          查看
+        </Link>
       )}
     </div>
   );
