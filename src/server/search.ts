@@ -1,4 +1,5 @@
 import "server-only";
+import type { UsageMeter } from "@/lib/credits";
 import { env } from "@/lib/env";
 import { parseSearchResponse, type SearchResult } from "@/lib/search";
 
@@ -28,16 +29,20 @@ async function call(path: "search" | "fetch", body: unknown): Promise<unknown> {
   throw new Error("检索服务繁忙，请稍后再试");
 }
 
-export async function webSearch(query: string, count = 8): Promise<SearchResult[]> {
-  return parseSearchResponse(await call("search", { query, count }));
+/** meter：传入时记一次检索调用，用于 credit 计费和成本统计 */
+export async function webSearch(query: string, count = 8, meter?: UsageMeter): Promise<SearchResult[]> {
+  const json = await call("search", { query, count });
+  meter?.addSearch();
+  return parseSearchResponse(json);
 }
 
 const FETCH_LIMIT = 15_000;
 
 /** 抓取网页正文（Markdown），截断以控制 token */
-export async function fetchPage(url: string): Promise<{ url: string; content: string }> {
+export async function fetchPage(url: string, meter?: UsageMeter): Promise<{ url: string; content: string }> {
   if (!/^https?:\/\//.test(url)) throw new Error("只支持 http(s) 链接");
   const json = (await call("fetch", { url })) as Record<string, unknown>;
+  meter?.addFetch();
   const data = (json.data && typeof json.data === "object" ? json.data : json) as Record<string, unknown>;
   const content = [data.content, data.markdown, data.text].find((v): v is string => typeof v === "string" && v.length > 0);
   if (!content) throw new Error("没有抓到页面内容");

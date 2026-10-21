@@ -1,6 +1,7 @@
-import { boolean, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { GuideEvent } from "../lib/admissions";
 import type { CalendarKind } from "../lib/calendar";
+import type { Feature, LedgerKind } from "../lib/credits";
 import type { DocKind, TargetProfessor } from "../lib/documents";
 import type { ProfessorStatus, SourceLink } from "../lib/professors";
 import type { OnboardingAnswers } from "../lib/onboarding";
@@ -288,4 +289,81 @@ export const schoolWatch = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.schoolId] }), index("school_watch_school_idx").on(t.schoolId)],
+);
+
+// ---------- 第 6 步：credit 计量、内测 ----------
+
+/** 每个用户的 credit 余额。第一次用到时创建并发放注册赠送（见 src/server/credits.ts） */
+export const creditAccount = pgTable("credit_account", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  balance: integer("balance").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** credit 流水：每次余额变动一笔。以后接 Stripe 充值时 kind = topup，externalRef 填支付单号 */
+export const creditLedger = pgTable(
+  "credit_ledger",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<LedgerKind>().notNull(),
+    /** 正数为增加，负数为扣除 */
+    delta: integer("delta").notNull(),
+    balanceAfter: integer("balance_after").notNull(),
+    note: text("note"),
+    usageId: text("usage_id").references(() => aiUsage.id, { onDelete: "set null" }),
+    externalRef: text("external_ref"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("credit_ledger_user_idx").on(t.userId, t.createdAt), uniqueIndex("credit_ledger_external_ref_idx").on(t.externalRef)],
+);
+
+/** 每次 AI 操作的用量和我们付出的成本（含不扣 credit 的系统任务，userId 为空） */
+export const aiUsage = pgTable(
+  "ai_usage",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    feature: text("feature").$type<Feature>().notNull(),
+    model: text("model").notNull(),
+    /** 对话 ID 等，便于追溯 */
+    refId: text("ref_id"),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    searchCalls: integer("search_calls").notNull().default(0),
+    fetchCalls: integer("fetch_calls").notNull().default(0),
+    costUsd: doublePrecision("cost_usd").notNull().default(0),
+    credits: integer("credits").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ai_usage_created_idx").on(t.createdAt), index("ai_usage_user_idx").on(t.userId, t.createdAt)],
+);
+
+/** 内测邀请名单：SIGNUP_MODE=invite 时只有名单内（或 ADMIN_EMAILS）的新邮箱能注册 */
+export const betaInvite = pgTable("beta_invite", {
+  email: text("email").primaryKey(),
+  note: text("note"),
+  invitedBy: text("invited_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** 内测反馈 */
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    message: text("message").notNull(),
+    page: text("page"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("feedback_created_idx").on(t.createdAt)],
 );

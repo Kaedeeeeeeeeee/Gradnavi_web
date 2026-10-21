@@ -3,9 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { UsageMeter } from "@/lib/credits";
 import { docTemplate } from "@/lib/documents";
 import { letterSkeleton, MAX_SCHOOLS, PROFESSOR_STATUSES, professorToTarget, type ProfessorCandidate } from "@/lib/professors";
 import { requireUser } from "@/lib/session";
+import { assertCanSpend, recordUsageSafe } from "@/server/credits";
 import { createDocument } from "@/server/documents";
 import { getProfile } from "@/server/profile";
 import { searchProfessors, type ProfessorSearchResult } from "@/server/professor-search";
@@ -22,14 +24,19 @@ const searchSchema = z.object({
 export async function searchProfessorsAction(
   input: z.infer<typeof searchSchema>,
 ): Promise<({ ok: true } & ProfessorSearchResult) | { ok: false; error: string }> {
-  await requireUser();
+  const user = await requireUser();
   const parsed = searchSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "输入有误" };
+  const meter = new UsageMeter();
   try {
-    return { ok: true, ...(await searchProfessors(parsed.data)) };
+    await assertCanSpend(user.id);
+    return { ok: true, ...(await searchProfessors(parsed.data, meter)) };
   } catch (error) {
     console.error("[professor-search]", error);
     return { ok: false, error: error instanceof Error ? error.message : "检索失败，请稍后再试" };
+  } finally {
+    // 检索失败也要结算已经成功的检索调用
+    await recordUsageSafe({ userId: user.id, feature: "professor_search", meter, note: parsed.data.keywords.slice(0, 100) });
   }
 }
 

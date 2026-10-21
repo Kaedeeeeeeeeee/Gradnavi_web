@@ -19,8 +19,10 @@ import {
   type ParsedGuide,
 } from "@/lib/admissions";
 import { todayJst } from "@/lib/calendar";
+import { UsageMeter } from "@/lib/credits";
 import { env } from "@/lib/env";
 import { sendMail } from "@/lib/mail";
+import { recordUsageSafe } from "./credits";
 import { fetchPage } from "./search";
 import { addTodos } from "./todos";
 
@@ -94,22 +96,23 @@ ${source.slice(0, PROMPT_TEXT_LIMIT)}
 ${linkList ? `\n链接：\n${linkList}` : ""}`;
 }
 
-async function askGuide(school: School, source: string, links: PageLink[]): Promise<ParsedGuide | null> {
-  const { text } = await generateText({ model: getChatModel(), prompt: extractionPrompt(school, source, links) });
+async function askGuide(school: School, source: string, links: PageLink[], meter: UsageMeter): Promise<ParsedGuide | null> {
+  const { text, totalUsage } = await generateText({ model: getChatModel(), prompt: extractionPrompt(school, source, links) });
+  meter.addTokens(totalUsage);
   return parseGuideReply(text);
 }
 
 /** AI 抽取日程。页面上没有日期时，再读一次要项 PDF（DeepSeek 抓取服务） */
-async function extractGuide(school: School, page: LoadedPage): Promise<ParsedGuide | null> {
+async function extractGuide(school: School, page: LoadedPage, meter: UsageMeter): Promise<ParsedGuide | null> {
   if (page.kind === "pdf") {
-    const { content } = await fetchPage(school.url);
-    return askGuide(school, content, []);
+    const { content } = await fetchPage(school.url, meter);
+    return askGuide(school, content, [], meter);
   }
-  const first = await askGuide(school, page.text, page.links);
+  const first = await askGuide(school, page.text, page.links, meter);
   if (first?.events.length || !first?.pdfUrl) return first;
   if (!page.links.some((l) => l.url === first.pdfUrl)) return first;
-  const { content } = await fetchPage(first.pdfUrl);
-  const second = await askGuide(school, content, []);
+  const { content } = await fetchPage(first.pdfUrl, meter);
+  const second = await askGuide(school, content, [], meter);
   return second && second.events.length ? { ...second, pdfUrl: first.pdfUrl } : first;
 }
 
@@ -188,7 +191,11 @@ export async function checkSchool(school: School): Promise<CheckResult> {
       await done({ lastError: "页面有变化，但服务器未配置 DEEPSEEK_API_KEY，暂时无法解析日程" });
       return { status: "skipped" };
     }
-    const parsed = await extractGuide(school, page);
+    // 系统任务：只记成本（ai_usage，userId 为空），不扣任何用户的 credit
+    const meter = new UsageMeter();
+    const parsed = await extractGuide(school, page, meter).finally(() =>
+      recordUsageSafe({ userId: null, feature: "admission_monitor", meter, refId: school.id }),
+    );
     if (!parsed?.admissionYear || !parsed.events.length) {
       await done({ contentHash: page.fingerprint, changedAt: new Date(), lastError: "页面上没有找到明确的入试日程（要项可能还没公开，或链接不是募集要项页面）" });
       return { status: "no_dates" };

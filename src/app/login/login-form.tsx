@@ -24,7 +24,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
     const { error } = await authClient.emailOtp.sendVerificationOtp({ email, type: "sign-in" });
     setPending(false);
     if (error) {
-      setError(error.status === 429 ? "发送太频繁，请稍后再试" : "验证码发送失败，请检查邮箱地址");
+      setError(error.status === 429 ? "发送太频繁，请稍后再试" : error.status === 403 && error.message ? error.message : "验证码发送失败，请检查邮箱地址");
       return;
     }
     setStep("otp");

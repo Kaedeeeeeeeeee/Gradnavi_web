@@ -2,6 +2,7 @@ import "server-only";
 import { generateText } from "ai";
 import { getChatModel, isDemoMode } from "@/lib/ai/model";
 import { buildSearchQueries, demoCandidates, MAX_CANDIDATES, parseCandidates, type ProfessorCandidate, type SearchInput } from "@/lib/professors";
+import type { UsageMeter } from "@/lib/credits";
 import type { SearchResult } from "@/lib/search";
 import { webSearch } from "./search";
 
@@ -39,11 +40,12 @@ function buildPrompt(input: SearchInput, results: SearchResult[]) {
 ${list}`;
 }
 
-export async function searchProfessors(input: SearchInput): Promise<ProfessorSearchResult> {
+/** meter：记录检索次数和 token，调用方负责结算（recordUsage） */
+export async function searchProfessors(input: SearchInput, meter?: UsageMeter): Promise<ProfessorSearchResult> {
   if (isDemoMode()) return { candidates: demoCandidates(input), demo: true, searched: 0 };
 
   const queries = buildSearchQueries(input);
-  const settled = await Promise.allSettled(queries.map((q) => webSearch(q, PER_QUERY)));
+  const settled = await Promise.allSettled(queries.map((q) => webSearch(q, PER_QUERY, meter)));
   const seen = new Set<string>();
   const results: SearchResult[] = [];
   for (const s of settled) {
@@ -61,7 +63,8 @@ export async function searchProfessors(input: SearchInput): Promise<ProfessorSea
   }
 
   const top = results.slice(0, MAX_RESULTS_FOR_AI);
-  const { text } = await generateText({ model: getChatModel(), prompt: buildPrompt(input, top) });
+  const { text, totalUsage } = await generateText({ model: getChatModel(), prompt: buildPrompt(input, top) });
+  meter?.addTokens(totalUsage);
   return {
     candidates: parseCandidates(
       text,

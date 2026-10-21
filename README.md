@@ -47,6 +47,19 @@ npm run dev            # http://localhost:3000
 - 每次检查先直接抓页面，只对入试相关的行和链接算指纹（`src/lib/admissions.ts`）；没变化就结束，不花钱。变了才调用一次 AI 抽取日程（页面没日期时再读一次要项 PDF），日程有变化才邮件 + Todo 通知关注的用户。系统任务，不扣用户 credit。
 - 日历里：最新要项的日程都已过去时，整体顺延一年显示为“仮・基于 X 年度”；新年度要项解析出来后自动变成正式日程。
 
+## Credit 计量
+
+- 每个用户一个余额（`credit_account`），每次变动记一笔流水（`credit_ledger`：注册赠送 / 管理员发放 / 使用；以后接 Stripe 用 `topup` + `external_ref`）。第一次用到时开户并发放 `SIGNUP_CREDITS`。
+- 计费的操作：AI 对话（`/api/chat`，含对话里的找教授、联网检索、读网页工具）、找教授页面检索。开始前余额必须 > 0，结束后按实际用量扣（`src/server/credits.ts`）。
+- 每次操作的 token、检索/抓取次数、**我们付出的成本（美元）** 和扣的 credit 记在 `ai_usage`；募集要项监控也记成本，但 `user_id` 为空、不扣 credit。
+- 成本 = token × 价格表 + 检索/抓取次数 × 单价，credit = ⌈成本 × `CREDITS_PER_USD` × `CREDIT_MARKUP`⌉。价格都在环境变量里（见 `.env.example`），核对 DeepSeek 账单后直接改。
+- 用户在「credit」页看余额和使用记录；`ADMIN_EMAILS` 里的邮箱在 `/admin` 看成本统计（今天 / 7 天 / 全部、按功能、按用户、逐条调用）、发 credit。
+
+## 内测
+
+- `SIGNUP_MODE=invite`：只有 `/admin` 邀请名单里的新邮箱（和 `ADMIN_EMAILS`）能收到验证码注册；已注册用户不受影响。`open` 为开放注册。
+- 顶栏「反馈」页收集反馈，在 `/admin` 查看。
+
 ## AI 工具
 
 用户能做的事 AI 也能做：读写逻辑都在 `src/server/`，页面的 server action 和 AI 工具调用同一套函数。
