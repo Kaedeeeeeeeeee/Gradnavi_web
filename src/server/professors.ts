@@ -118,9 +118,10 @@ export async function updateSavedProfessor(userId: string, id: string, patch: Pr
     throw new Error("没有关注这个研究科，先用 watch_school 关注");
   const { followUpDate, ...rest } = patch;
   const set: Partial<typeof savedProfessor.$inferInsert> = { ...rest, updatedAt: new Date() };
-  if (followUpDate !== undefined && followUpDate !== current.followUpDate) {
-    if (by === "ai") set.proposedFollowUp = { date: followUpDate };
-    else Object.assign(set, { followUpDate, proposedFollowUp: null });
+  if (followUpDate !== undefined) {
+    // 用户自己定了跟进日（哪怕和原来一样）就算处理过 AI 的提议，提议一并清掉
+    if (by === "user") Object.assign(set, { followUpDate, proposedFollowUp: null });
+    else if (followUpDate !== current.followUpDate) set.proposedFollowUp = { date: followUpDate };
   }
   const [row] = await db
     .update(savedProfessor)
