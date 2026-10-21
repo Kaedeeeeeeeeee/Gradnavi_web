@@ -211,14 +211,14 @@ export function OnboardingWizard({ questions, initial }: { questions: Question[]
 
       {done && (
         <div className="space-y-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-          <p className="font-medium">都填好了。点击下方按钮生成你的档案和路线图。</p>
+          <p className="font-medium">都填好了。点击下方按钮生成你的档案和第一步任务。</p>
           <p className="text-sm text-zinc-500">想改哪个回答，点一下上面对应的气泡就行。</p>
           <button
             onClick={submit}
             disabled={pending}
             className="rounded-md bg-foreground px-4 py-2 text-sm text-background disabled:opacity-40"
           >
-            {pending ? "生成中…" : "生成我的路线图"}
+            {pending ? "生成中…" : "开始"}
           </button>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gte, isNotNull, lte } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, isNull, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { calendarEvent, savedProfessor, todo } from "@/db/schema";
 import { overlaps, sortItems, type CalendarItem, type CalendarKind } from "@/lib/calendar";
@@ -65,7 +65,7 @@ export async function listCalendar(userId: string, from: string, to: string, tod
     db
       .select()
       .from(todo)
-      .where(and(eq(todo.userId, userId), isNotNull(todo.dueDate), gte(todo.dueDate, from), lte(todo.dueDate, to))),
+      .where(and(eq(todo.userId, userId), isNull(todo.dismissedAt), isNotNull(todo.dueDate), gte(todo.dueDate, from), lte(todo.dueDate, to))),
     db
       .select()
       .from(savedProfessor)

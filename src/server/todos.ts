@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, max } from "drizzle-orm";
+import { and, asc, eq, isNull, max } from "drizzle-orm";
 import { db } from "@/db";
 import { todo } from "@/db/schema";
 import { getDocument } from "./documents";
@@ -22,7 +22,8 @@ async function checkLinks(userId: string, links: { professorId?: string | null; 
 }
 
 export async function listTodos(userId: string, opts: { includeDone?: boolean } = {}) {
-  const where = opts.includeDone ? eq(todo.userId, userId) : and(eq(todo.userId, userId), eq(todo.done, false));
+  const visible = and(eq(todo.userId, userId), isNull(todo.dismissedAt));
+  const where = opts.includeDone ? visible : and(visible, eq(todo.done, false));
   return db.select().from(todo).where(where).orderBy(asc(todo.done), asc(todo.sortOrder), asc(todo.createdAt));
 }
 
@@ -70,7 +71,15 @@ export async function updateTodo(
   return row ?? null;
 }
 
+/** 流程任务只标记为已删除，免得按进度对账时又加回来 */
 export async function deleteTodo(userId: string, id: string) {
-  const rows = await db.delete(todo).where(and(eq(todo.id, id), eq(todo.userId, userId))).returning({ id: todo.id });
-  return rows.length > 0;
+  const mine = and(eq(todo.id, id), eq(todo.userId, userId));
+  const [row] = await db.select({ stepKey: todo.stepKey }).from(todo).where(mine);
+  if (!row) return false;
+  if (row.stepKey) {
+    await db.update(todo).set({ dismissedAt: new Date(), updatedAt: new Date() }).where(mine);
+    return true;
+  }
+  await db.delete(todo).where(mine);
+  return true;
 }

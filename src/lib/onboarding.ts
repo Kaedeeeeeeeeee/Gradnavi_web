@@ -1,4 +1,4 @@
-// 引导问卷：问题定义 + 由答案生成初版 user.md 和路线图（纯函数，前后端共用）
+// 引导问卷：问题定义 + 由答案生成初版 user.md（纯函数，前后端共用）。「下一步」任务见 next-steps.ts
 
 export type Field = "humanities" | "sciences";
 /** 问卷里的学科选择：other = 用户自己填了更具体的领域（存在 fieldDetail） */
@@ -197,11 +197,11 @@ export function decideTrack(a: Pick<OnboardingAnswers, "planStatus">): Track {
 }
 
 /** JLPT N1/N2 视为日语基本够用 */
-function hasStrongJapanese(japanese: string) {
+export function hasStrongJapanese(japanese: string) {
   return /N\s*[12]\b/i.test(japanese) && !/备考|在考|准备|目标/.test(japanese);
 }
 
-function hasEnglishScore(english: string) {
+export function hasEnglishScore(english: string) {
   return /\d{2,}/.test(english);
 }
 
@@ -211,55 +211,6 @@ export function suggestPath(a: OnboardingAnswers): Exclude<PathChoice, "unsure">
   if (a.status === "日本研究生在读") return "master";
   if (answerField(a) === "humanities" && !hasStrongJapanese(a.japanese)) return "kenkyusei";
   return "master";
-}
-
-export type RoadmapItem = { title: string; note?: string };
-
-export function buildRoadmap(a: OnboardingAnswers): RoadmapItem[] {
-  const path = a.path === "unsure" ? suggestPath(a) : a.path;
-  const items: RoadmapItem[] = [];
-
-  if (a.path === "unsure") {
-    items.push({
-      title: `确认申请路径（建议：${PATH_LABELS[path]}）`,
-      note: "可以在右侧问 AI 两条路的区别和适合人群",
-    });
-  }
-
-  if (decideTrack(a) === "professor_first") {
-    items.push(
-      { title: "确定 3–5 所目标大学和研究科" },
-      { title: "筛选 5–10 位候选教授", note: "看研究方向是否和自己的兴趣有交集" },
-      { title: "阅读候选教授近 3 年的论文，记下研究课题" },
-      { title: "结合教授方向写研究计划书草稿", note: "第一封邮件最好附上草稿，空手问课题容易被忽略" },
-      { title: "写套磁信，附计划书草稿联系教授" },
-    );
-  } else {
-    items.push(
-      { title: "把现有研究计划整理成计划书初稿" },
-      { title: "和 AI 一起打磨计划书：问题意识、先行研究、研究方法" },
-      { title: "按计划书匹配 5–10 位教授" },
-      { title: "写套磁信，附计划书联系教授" },
-    );
-  }
-
-  if (path === "kenkyusei") items.push({ title: "查目标大学研究生（旁听生）的出愿时间和材料要求" });
-  if (path === "master") items.push({ title: "查目标研究科修士课程的募集要项（出愿期、考试科目）" });
-  if (path === "doctor") {
-    items.push(
-      { title: "整理已有研究成果（硕士论文、发表论文、学会报告）" },
-      { title: "查目标研究科博士课程的募集要项" },
-    );
-  }
-
-  if (!hasStrongJapanese(a.japanese)) {
-    items.push({ title: "制定日语学习计划，目标 JLPT N2 以上", note: "文科多数研究科要求 N1 或同等水平" });
-  }
-  if (answerField(a) === "sciences" && !hasEnglishScore(a.english)) {
-    items.push({ title: "准备 TOEFL 或 TOEIC", note: "理科很多研究科用英语成绩代替英语笔试" });
-  }
-
-  return items;
 }
 
 const line = (label: string, value: string) => `- ${label}：${value.trim() || "（未填）"}`;

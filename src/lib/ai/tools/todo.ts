@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { syncNextSteps } from "@/server/next-steps";
 import { addTodos, deleteTodo, listTodos, updateTodo } from "@/server/todos";
 import { defineTool } from "./registry";
 
@@ -15,9 +16,10 @@ const dateSchema = z
 
 export const listTodosTool = defineTool({
   name: "list_todos",
-  description: "列出用户的 Todo。默认只列未完成的。",
+  description: "列出用户的 Todo。默认只列未完成的。auto 为 true 的是系统按进度自动管理的流程任务。",
   inputSchema: z.object({ includeDone: z.boolean().default(false) }),
   execute: async ({ includeDone }, { userId }) => {
+    await syncNextSteps(userId);
     const rows = await listTodos(userId, { includeDone });
     return rows.map((t) => ({
       id: t.id,
@@ -27,6 +29,7 @@ export const listTodosTool = defineTool({
       dueDate: t.dueDate,
       professorId: t.professorId,
       documentId: t.documentId,
+      auto: !!t.stepKey,
     }));
   },
 });
