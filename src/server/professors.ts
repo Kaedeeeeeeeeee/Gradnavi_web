@@ -3,7 +3,7 @@ import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { graduateSchool, savedProfessor, schoolWatch } from "@/db/schema";
 import { matchSchool } from "@/lib/aspirations";
-import type { PaperRef, ProfessorCandidate, ProfessorStatus, SourceLink } from "@/lib/professors";
+import { stripUniversity, type PaperRef, type ProfessorCandidate, type ProfessorStatus, type SourceLink } from "@/lib/professors";
 
 // 志愿里的教授（加入志愿 = 收藏）的读写。志愿页面、找教授结果（用户）和 AI 工具都走这里。
 
@@ -53,7 +53,7 @@ export async function saveProfessor(userId: string, input: ProfessorInput) {
   const info = {
     name: input.name.trim(),
     university: input.university.trim(),
-    department: input.department?.trim() || null,
+    department: stripUniversity(input.department, input.university) ?? null,
     lab: input.lab?.trim() || null,
     research: input.research?.trim() || null,
     papers: input.papers ?? [],

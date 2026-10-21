@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { professorSearch } from "@/db/schema";
 import { getChatModel, isDemoMode } from "@/lib/ai/model";
 import {
+  buildMoreQueries,
   buildPaperQueries,
   buildSearchQueries,
   candidateCount,
@@ -44,10 +45,12 @@ function userContext(input: SearchInput) {
 ${input.preference ? `用户追加的要求：${input.preference}\n` : ""}${input.profile ? `\n用户档案摘要（user.md，含用户说过不合适的教授和原因，请避开同类）：\n${input.profile}\n` : ""}`;
 }
 
-function buildPrompt(input: SearchInput, results: SearchResult[], count: number) {
+function buildPrompt(input: SearchInput, results: SearchResult[], count: number, exclude: ProfessorCandidate[]) {
   return `用户想申请日本大学院，正在找导师。
 ${userContext(input)}
-下面是检索结果。请从中找出与研究方向相关、在目标校任职、能指导研究生的教员（教授、准教授、讲师），最多 ${count} 位（用户要的就是这么多，不要多给），按适合程度排序。
+下面是检索结果。请从中找出与研究方向相关、在目标校任职、能指导研究生的教员（教授、准教授、讲师），${count} 位（用户要的就是这么多：符合条件的尽量给满，但不要多给，也不要硬凑不相关的人），按适合程度排序。${
+    exclude.length ? `\n已经选出的这几位不要再列：${exclude.map((c) => `${c.name}（${c.university}）`).join("、")}` : ""
+  }
 
 要求：
 - 只根据检索结果写，不要补充检索结果里没有的信息；查不到的字段留空（null）。
@@ -116,29 +119,52 @@ function dedupe(results: SearchResult[]) {
   return results.filter((r) => !seen.has(r.url) && !!seen.add(r.url));
 }
 
-/** meter：记录检索次数和 token，调用方负责结算（recordUsage） */
+async function searchAll(queries: string[], meter?: UsageMeter) {
+  const settled = await Promise.allSettled(queries.map((q) => webSearch(q, PER_QUERY, meter)));
+  const results = dedupe(settled.flatMap((s) => (s.status === "fulfilled" ? s.value : [])));
+  const failed = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
+  return { results, failed };
+}
+
+async function pickCandidates(input: SearchInput, results: SearchResult[], count: number, exclude: ProfessorCandidate[], meter?: UsageMeter) {
+  const top = results.slice(0, MAX_RESULTS_FOR_AI);
+  const { text, totalUsage } = await generateText({ model: getChatModel(), prompt: buildPrompt(input, top, count, exclude) });
+  meter?.addTokens(totalUsage);
+  const taken = new Set(exclude.map(candidateKey));
+  return parseCandidates(
+    text,
+    top.map((r) => ({ title: r.title, url: r.url })),
+    count + exclude.length,
+  )
+    .filter((c) => !taken.has(candidateKey(c)))
+    .slice(0, count);
+}
+
+/**
+ * meter：记录检索次数和 token，调用方负责结算（recordUsage）。
+ * 第一轮凑不够用户要的人数时，换一组更宽的检索词再找一次（只补差的人数）。
+ */
 export async function searchProfessors(input: SearchInput, meter?: UsageMeter): Promise<ProfessorSearchResult> {
   if (isDemoMode()) return { candidates: demoCandidates(input).slice(0, candidateCount(input)), demo: true, searched: 0 };
 
   const count = candidateCount(input);
   const queries = buildSearchQueries(input);
-  const settled = await Promise.allSettled(queries.map((q) => webSearch(q, PER_QUERY, meter)));
-  const results = dedupe(settled.flatMap((s) => (s.status === "fulfilled" ? s.value : [])));
-  if (!results.length) {
-    const failed = settled.find((s) => s.status === "rejected");
-    if (failed) throw failed.reason;
-    return { candidates: [], demo: false, searched: queries.length };
+  const first = await searchAll(queries, meter);
+  let searched = queries.length;
+  let candidates = first.results.length ? await pickCandidates(input, first.results, count, [], meter) : [];
+
+  if (candidates.length < count) {
+    const more = buildMoreQueries(input);
+    const second = await searchAll(more, meter);
+    searched += more.length;
+    const seen = new Set(first.results.map((r) => r.url));
+    const fresh = [...second.results.filter((r) => !seen.has(r.url)), ...first.results];
+    if (second.results.length) candidates = [...candidates, ...(await pickCandidates(input, fresh, count - candidates.length, candidates, meter))];
+    if (!first.results.length && !second.results.length && (first.failed || second.failed)) throw (first.failed ?? second.failed)!.reason;
   }
 
-  const top = results.slice(0, MAX_RESULTS_FOR_AI);
-  const { text, totalUsage } = await generateText({ model: getChatModel(), prompt: buildPrompt(input, top, count) });
-  meter?.addTokens(totalUsage);
-  const candidates = parseCandidates(
-    text,
-    top.map((r) => ({ title: r.title, url: r.url })),
-    count,
-  );
-  return { candidates: await addRecentPapers(input, candidates, meter), demo: false, searched: queries.length + candidates.flatMap(buildPaperQueries).length };
+  searched += candidates.flatMap(buildPaperQueries).length;
+  return { candidates: await addRecentPapers(input, candidates, meter), demo: false, searched };
 }
 
 export type SearchRow = typeof professorSearch.$inferSelect;
