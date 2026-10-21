@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { detectPlanField } from "@/lib/documents";
-import { decideTrack } from "@/lib/onboarding";
+import { answerField, decideTrack } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
 import { getDocument } from "@/server/documents";
 import { getProfile } from "@/server/profile";
@@ -33,7 +33,7 @@ export default async function DocumentPage({ params, searchParams }: PageProps<"
         version: doc.version,
         targetProfessor: doc.targetProfessor,
       }}
-      planField={detectPlanField(doc.markdown, onboarding?.field ?? "humanities")}
+      planField={detectPlanField(doc.markdown, answerField(onboarding) ?? "humanities")}
       track={onboarding ? decideTrack(onboarding) : null}
       professors={professors.map((p) => ({ id: p.id, label: `${p.name}（${p.university}）` }))}
       linkedStatus={linked?.status ?? null}

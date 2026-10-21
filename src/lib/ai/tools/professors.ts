@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { MAX_SCHOOLS, PROFESSOR_STATUSES } from "@/lib/professors";
+import { answerField } from "@/lib/onboarding";
 import { getProfile } from "@/server/profile";
 import { searchProfessors } from "@/server/professor-search";
 import { listSavedProfessors, saveProfessor, updateSavedProfessor } from "@/server/professors";
@@ -20,7 +21,7 @@ export const searchProfessorsTool = defineTool({
     field: z.enum(["humanities", "sciences"]).optional(),
   }),
   execute: async ({ keywords, schools, field }, { userId, meter }) => {
-    const f = field ?? (await getProfile(userId))?.onboarding?.field;
+    const f = field ?? answerField((await getProfile(userId))?.onboarding);
     return searchProfessors({ keywords, schools, field: f }, meter);
   },
 });

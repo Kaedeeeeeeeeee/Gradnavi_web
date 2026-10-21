@@ -10,6 +10,7 @@ const EMPTY: OnboardingAnswers = {
   major: "",
   gpa: "",
   field: "humanities",
+  fieldDetail: "",
   path: "unsure",
   planStatus: "none",
   direction: "",
@@ -20,9 +21,26 @@ const EMPTY: OnboardingAnswers = {
   notes: "",
 };
 
-function display(q: Question, value: string) {
-  if (q.kind === "choice") return q.options.find((o) => o.value === value)?.label ?? value;
+/** 选择题当前是否选的“自己填写”，是的话返回填写内容 */
+function otherText(q: Question, answers: OnboardingAnswers): string | null {
+  if (q.kind !== "choice" || !q.other) return null;
+  const value = String(answers[q.key] ?? "");
+  if (q.other.detailKey) return value === q.other.value ? String(answers[q.other.detailKey] ?? "") : null;
+  return value && !q.options.some((o) => o.value === value) ? value : null;
+}
+
+function display(q: Question, answers: OnboardingAnswers) {
+  const value = String(answers[q.key] ?? "");
+  if (q.kind === "choice") return otherText(q, answers) ?? q.options.find((o) => o.value === value)?.label ?? value;
   return value.trim() || "（跳过）";
+}
+
+/** 进入某题时输入框的初始内容 */
+function initialDraft(q: Question | undefined, answers: OnboardingAnswers) {
+  if (!q) return "";
+  if (q.kind === "choice") return otherText(q, answers) ?? "";
+  const own = String(answers[q.key] ?? "");
+  return own.trim() || !q.prefillFrom ? own : String(answers[q.prefillFrom] ?? "");
 }
 
 export function OnboardingWizard({ questions, initial }: { questions: Question[]; initial: OnboardingAnswers | null }) {
@@ -30,27 +48,32 @@ export function OnboardingWizard({ questions, initial }: { questions: Question[]
   const [step, setStep] = useState(0);
   // 回头修改某个回答后，直接跳回之前到过的最远一题
   const [reached, setReached] = useState(0);
-  const [draft, setDraft] = useState(() => (initial ? String(initial[questions[0].key]) : ""));
+  const [draft, setDraft] = useState(() => initialDraft(questions[0], initial ?? EMPTY));
+  // 选择题里“自己填写”的输入框是否展开
+  const [otherOpen, setOtherOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
 
   const current = questions[step];
   const done = step >= questions.length;
 
-  function answer(value: string) {
+  function answer(value: string, extra: Partial<OnboardingAnswers> = {}) {
     if (!current) return;
-    const next = { ...answers, [current.key]: value.trim() };
+    const next = { ...answers, ...extra, [current.key]: value.trim() };
     setAnswers(next);
     const nextStep = Math.max(step + 1, reached);
     setStep(nextStep);
     setReached(nextStep);
-    setDraft(questions[nextStep] ? String(next[questions[nextStep].key]) : "");
+    setOtherOpen(false);
+    setDraft(initialDraft(questions[nextStep], next));
   }
 
   function goBack(to: number) {
     setReached(Math.max(reached, step));
     setStep(to);
-    setDraft(String(answers[questions[to].key]));
+    const q = questions[to];
+    setOtherOpen(otherText(q, answers) !== null);
+    setDraft(initialDraft(q, answers));
   }
 
   function submit() {
@@ -76,7 +99,7 @@ export function OnboardingWizard({ questions, initial }: { questions: Question[]
             title="修改这个回答"
             className="ml-auto block rounded-lg bg-zinc-100 px-3 py-2 text-left text-sm whitespace-pre-wrap hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
           >
-            {display(q, String(answers[q.key]))}
+            {display(q, answers)}
           </button>
         </div>
       ))}
@@ -99,7 +122,7 @@ export function OnboardingWizard({ questions, initial }: { questions: Question[]
               {current.options.map((o) => (
                 <button
                   key={o.value}
-                  onClick={() => answer(o.value)}
+                  onClick={() => answer(o.value, current.other?.detailKey ? { [current.other.detailKey]: "" } : {})}
                   className={`rounded-md border px-3 py-2 text-left text-sm hover:border-zinc-500 ${
                     answers[current.key] === o.value && initial ? "border-zinc-500" : "border-zinc-300 dark:border-zinc-700"
                   }`}
@@ -108,6 +131,43 @@ export function OnboardingWizard({ questions, initial }: { questions: Question[]
                   {o.hint && <span className="block text-xs text-zinc-500">{o.hint}</span>}
                 </button>
               ))}
+              {current.other &&
+                (otherOpen ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const { value, detailKey } = current.other!;
+                      const text = draft.trim().slice(0, 100);
+                      if (!text) return;
+                      if (detailKey) answer(value ?? "other", { [detailKey]: text });
+                      else answer(text);
+                    }}
+                    className="flex gap-2"
+                  >
+                    <input
+                      autoFocus
+                      value={draft}
+                      maxLength={100}
+                      onChange={(e) => setDraft(e.target.value)}
+                      placeholder={current.other.placeholder}
+                      className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!draft.trim()}
+                      className="rounded-md bg-foreground px-4 py-1.5 text-sm text-background disabled:opacity-40"
+                    >
+                      下一步
+                    </button>
+                  </form>
+                ) : (
+                  <button
+                    onClick={() => setOtherOpen(true)}
+                    className="rounded-md border border-dashed border-zinc-300 px-3 py-2 text-left text-sm hover:border-zinc-500 dark:border-zinc-700"
+                  >
+                    {current.other.label}
+                  </button>
+                ))}
             </div>
           ) : (
             <form

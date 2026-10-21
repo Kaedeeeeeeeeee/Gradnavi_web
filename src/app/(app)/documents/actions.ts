@@ -7,6 +7,7 @@ import { docTemplate, MAX_DOC_LENGTH } from "@/lib/documents";
 import { requireUser } from "@/lib/session";
 import { createDocument, deleteDocument, updateDocument } from "@/server/documents";
 import { professorToTarget } from "@/lib/professors";
+import { answerField } from "@/lib/onboarding";
 import { getProfile } from "@/server/profile";
 import { getSavedProfessor, updateSavedProfessor } from "@/server/professors";
 
@@ -18,7 +19,7 @@ const fieldSchema = z.enum(["humanities", "sciences"]);
 export async function createDocumentAction(kind: string, field?: string) {
   const user = await requireUser();
   const k = kindSchema.parse(kind);
-  const f = fieldSchema.optional().parse(field) ?? (await getProfile(user.id))?.onboarding?.field;
+  const f = fieldSchema.optional().parse(field) ?? answerField((await getProfile(user.id))?.onboarding);
   const template = docTemplate(k, f);
   const doc = await createDocument(user.id, { kind: k, ...template });
   redirect(`/documents/${doc.id}`);

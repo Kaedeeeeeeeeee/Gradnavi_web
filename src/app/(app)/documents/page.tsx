@@ -2,6 +2,7 @@ import Link from "next/link";
 import { DOC_KIND_LABELS } from "@/lib/documents";
 import { requireUser } from "@/lib/session";
 import { listDocuments } from "@/server/documents";
+import { answerField } from "@/lib/onboarding";
 import { getProfile } from "@/server/profile";
 import { createDocumentAction } from "./actions";
 
@@ -12,7 +13,7 @@ const fmt = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "
 export default async function DocumentsPage() {
   const user = await requireUser();
   const [docs, profile] = await Promise.all([listDocuments(user.id), getProfile(user.id)]);
-  const field = profile?.onboarding?.field ?? "humanities";
+  const field = answerField(profile?.onboarding) ?? "humanities";
 
   const newButtons = [
     { label: `研究计划书（${field === "sciences" ? "理科" : "文科"}模板）`, action: createDocumentAction.bind(null, "plan", field) },

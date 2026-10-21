@@ -1,5 +1,6 @@
 import { splitSchools } from "@/lib/professors";
 import { requireUser } from "@/lib/session";
+import { answerField } from "@/lib/onboarding";
 import { getProfile } from "@/server/profile";
 import { listSavedProfessors } from "@/server/professors";
 import { ProfessorsView } from "./professors-view";
@@ -14,9 +15,9 @@ export default async function ProfessorsPage() {
   return (
     <ProfessorsView
       defaults={{
-        keywords: answers?.direction ?? "",
+        keywords: answers?.direction || answers?.fieldDetail || "",
         schools: splitSchools(answers?.targetSchools ?? "").join("、"),
-        field: answers?.field ?? "humanities",
+        field: answerField(answers) ?? "humanities",
       }}
       saved={saved.map((p) => ({
         id: p.id,
