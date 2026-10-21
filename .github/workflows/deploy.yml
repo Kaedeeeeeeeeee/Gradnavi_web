@@ -1,0 +1,27 @@
+name: Deploy
+
+# 手动触发：登录服务器，拉取指定镜像并重启。
+# 需要在仓库 Settings → Secrets 中配置 DEPLOY_HOST、DEPLOY_USER、DEPLOY_SSH_KEY。
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 镜像标签（commit SHA 或 latest）
+        default: latest
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd ~/gradnavi
+            export WEB_IMAGE=ghcr.io/kaedeeeeeeeeee/gradnavi_web:${{ inputs.tag }}
+            docker compose pull web
+            docker compose up -d
+            docker image prune -f
