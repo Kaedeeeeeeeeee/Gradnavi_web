@@ -4,11 +4,20 @@ import { Markdown } from "@tiptap/markdown";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useAiBeforeSend, useAiPageContent, useAskAi } from "@/components/ai/page-context";
 import { describeDocument, DOC_KIND_LABELS, planProgress, type DocKind, type TargetProfessor } from "@/lib/documents";
 import type { Field, Track } from "@/lib/onboarding";
-import { deleteDocumentAction, renameDocumentAction, saveDocumentAction, setTargetProfessorAction } from "../actions";
+import { PROFESSOR_STATUS_LABELS, type ProfessorStatus } from "@/lib/professors";
+import {
+  deleteDocumentAction,
+  linkProfessorAction,
+  markLetterSentAction,
+  renameDocumentAction,
+  saveDocumentAction,
+  setTargetProfessorAction,
+} from "../actions";
 
 type Doc = {
   id: string;
@@ -19,7 +28,19 @@ type Doc = {
   targetProfessor: TargetProfessor | null;
 };
 
-type Props = { doc: Doc; planField: Field; track: Track | null };
+type ProfessorOption = { id: string; label: string };
+
+type Props = {
+  doc: Doc;
+  planField: Field;
+  track: Track | null;
+  /** 教授清单，用来选目标教授 */
+  professors: ProfessorOption[];
+  /** 关联教授在清单里的联系状态 */
+  linkedStatus: ProfessorStatus | null;
+  /** 进入页面后自动让 AI 做的事（从找教授页“写套磁信”进来） */
+  autoAsk: "letter" | null;
+};
 
 const AUTOSAVE_MS = 1500;
 // 发给 AI 的页面内容上限（接口限制 20000 字），更长时 AI 用 read_document 读全文
@@ -27,8 +48,9 @@ const PAGE_CONTENT_LIMIT = 18000;
 
 type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error";
 
-export function DocumentEditor({ doc, planField, track }: Props) {
+export function DocumentEditor({ doc, planField, track, professors, linkedStatus, autoAsk }: Props) {
   const askAi = useAskAi();
+  const router = useRouter();
   const [markdown, setMarkdown] = useState(doc.markdown);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   // 冲突时服务器上的最新版本（通常是 AI 刚改过）
@@ -134,6 +156,17 @@ export function DocumentEditor({ doc, planField, track }: Props) {
   const body = markdown.length > PAGE_CONTENT_LIMIT ? `${markdown.slice(0, PAGE_CONTENT_LIMIT)}\n\n（后文省略，用 read_document 读取全文）` : markdown;
   useAiPageContent(`${header}${progressLine}\n\n---\n${body}`);
 
+  // 只触发一次，然后去掉地址里的 ?ai=，刷新页面不会重复让 AI 写
+  const autoAsked = useRef(false);
+  useEffect(() => {
+    if (!autoAsk || !editor || autoAsked.current) return;
+    autoAsked.current = true;
+    router.replace(`/documents/${doc.id}`, { scroll: false });
+    askAi(
+      `请给目标教授 ${doc.targetProfessor?.name ?? ""} 写这封套磁信的日文初稿，直接写进当前文书（整篇替换）。根据我的 user.md 和教授的研究方向，说明我为什么对教授的研究感兴趣、我的背景和研究计划概要，并提到附上研究计划书（草稿）。缺少关键信息（如姓名、研究计划）时先用占位符，写完告诉我需要补充什么。`,
+    );
+  }, [autoAsk, editor, askAi, router, doc.id, doc.targetProfessor?.name]);
+
   const selection = useEditorState({
     editor,
     selector: ({ editor: e }) => {
@@ -179,7 +212,12 @@ export function DocumentEditor({ doc, planField, track }: Props) {
           track={track}
           onAsk={(text) => askAi(text)}
           docId={doc.id}
+          professors={professors}
         />
+      )}
+
+      {doc.kind === "letter" && (
+        <LetterPanel docId={doc.id} professor={doc.targetProfessor} professors={professors} linkedStatus={linkedStatus} editor={editor} />
       )}
 
       {conflict && (
@@ -323,12 +361,14 @@ function PlanGuide({
   track,
   onAsk,
   docId,
+  professors,
 }: {
   progress: Progress;
   professor: TargetProfessor | null;
   track: Track | null;
   onAsk: (text: string) => void;
   docId: string;
+  professors: ProfessorOption[];
 }) {
   const next = progress.next;
   const needProfessor = track === "professor_first" && !professor;
@@ -366,15 +406,117 @@ function PlanGuide({
       </div>
       {needProfessor && (
         <p className="text-amber-700 dark:text-amber-400">
-          你目前的路线是“先找教授”：计划书最好贴合目标教授的近期研究。先在下面填上目标教授（找教授功能上线后可直接从教授清单选择）。
+          你目前的路线是“先找教授”：计划书最好贴合目标教授的近期研究。先从教授清单选择目标教授（还没有的话去
+          <Link href="/professors" className="underline">
+            找教授
+          </Link>
+          ），或在下面手动填写。
         </p>
       )}
-      <ProfessorForm docId={docId} professor={professor} defaultOpen={needProfessor} />
+      <ProfessorForm key={professorKey(professor)} docId={docId} professor={professor} professors={professors} defaultOpen={needProfessor} />
     </div>
   );
 }
 
-function ProfessorForm({ docId, professor, defaultOpen }: { docId: string; professor: TargetProfessor | null; defaultOpen: boolean }) {
+// 目标教授变了（例如从清单里选了另一位）时重新挂载表单，让输入框显示新的信息
+const professorKey = (p: TargetProfessor | null) => (p ? `${p.professorId ?? ""}:${p.name}` : "none");
+
+/** 套磁信：收件教授、一键复制（用户用自己的邮箱发送）、发送后标记状态 */
+function LetterPanel({
+  docId,
+  professor,
+  professors,
+  linkedStatus,
+  editor,
+}: {
+  docId: string;
+  professor: TargetProfessor | null;
+  professors: ProfessorOption[];
+  linkedStatus: ProfessorStatus | null;
+  editor: Editor | null;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const professorId = professor?.professorId;
+
+  async function copy() {
+    if (!editor) return;
+    await navigator.clipboard.writeText(editor.getText({ blockSeparator: "\n" }));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border border-zinc-200 p-4 text-sm dark:border-zinc-800">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-zinc-500">GradNavi 不代发邮件：复制全文后用你自己的邮箱发送。</span>
+        <button onClick={copy} className="ml-auto rounded-md bg-foreground px-3 py-1.5 text-background">
+          {copied ? "已复制" : "复制全文"}
+        </button>
+        {professorId &&
+          (linkedStatus === "to_contact" ? (
+            <button
+              disabled={pending}
+              onClick={() => startTransition(() => markLetterSentAction(docId, professorId))}
+              className="rounded-md border border-zinc-300 px-3 py-1.5 disabled:opacity-40 dark:border-zinc-700"
+            >
+              我已发送，标记为“已发套磁”
+            </button>
+          ) : (
+            linkedStatus && <span className="text-zinc-500">教授状态：{PROFESSOR_STATUS_LABELS[linkedStatus]}</span>
+          ))}
+      </div>
+      <ProfessorForm key={professorKey(professor)} docId={docId} professor={professor} professors={professors} defaultOpen={!professor} label="收件教授" />
+    </div>
+  );
+}
+
+function ProfessorPicker({ docId, professor, professors }: { docId: string; professor: TargetProfessor | null; professors: ProfessorOption[] }) {
+  const [pending, startTransition] = useTransition();
+  if (!professors.length) {
+    return (
+      <p className="text-zinc-500">
+        教授清单还是空的，可以先去
+        <Link href="/professors" className="underline">
+          找教授
+        </Link>
+        并收藏，或在下面手动填写。
+      </p>
+    );
+  }
+  return (
+    <label className="flex flex-wrap items-center gap-2">
+      <span className="text-zinc-500">从教授清单选择</span>
+      <select
+        value={professor?.professorId ?? ""}
+        disabled={pending}
+        onChange={(e) => e.target.value && startTransition(() => linkProfessorAction(docId, e.target.value))}
+        className="min-w-0 max-w-full rounded-md border border-zinc-300 bg-transparent px-2 py-1 dark:border-zinc-700"
+      >
+        <option value="">{professor && !professor.professorId ? "（手动填写）" : "请选择"}</option>
+        {professors.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function ProfessorForm({
+  docId,
+  professor,
+  professors,
+  defaultOpen,
+  label = "目标教授",
+}: {
+  docId: string;
+  professor: TargetProfessor | null;
+  professors: ProfessorOption[];
+  defaultOpen: boolean;
+  label?: string;
+}) {
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState({
     name: professor?.name ?? "",
@@ -389,8 +531,11 @@ function ProfessorForm({ docId, professor, defaultOpen }: { docId: string; profe
   return (
     <details open={defaultOpen}>
       <summary className="cursor-pointer text-zinc-500">
-        目标教授：{professor ? `${professor.name}${professor.affiliation ? `（${professor.affiliation}）` : ""}` : "未设定"}
+        {label}：{professor ? `${professor.name}${professor.affiliation ? `（${professor.affiliation}）` : ""}` : "未设定"}
       </summary>
+      <div className="mt-3">
+        <ProfessorPicker docId={docId} professor={professor} professors={professors} />
+      </div>
       <form
         className="mt-3 space-y-2"
         onSubmit={(e) => {

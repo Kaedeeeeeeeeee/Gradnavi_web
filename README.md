@@ -14,7 +14,7 @@ npm run dev            # http://localhost:3000
 ```
 
 - 未配置 `SMTP_URL` 时，登录验证码会打印在 `npm run dev` 的终端里。
-- 未配置 `DEEPSEEK_API_KEY` 时，AI 侧边栏使用演示模型（固定回复，不花钱）：发送「记住：……」会写入 user.md，「待办：……」会添加 Todo，用来测试工具调用链路。
+- 未配置 `DEEPSEEK_API_KEY` 时，AI 侧边栏使用演示模型（固定回复，不花钱）：发送「记住：……」会写入 user.md，「待办：……」会添加 Todo，「找教授：关键词」会返回示例教授，用来测试工具调用链路；找教授页面也返回明确标注的示例数据。
 - 服务启动时会自动执行数据库迁移。
 - 改了 `src/db/schema.ts` 之后运行 `npm run db:generate` 生成迁移文件并提交（CI 会检查）。
 
