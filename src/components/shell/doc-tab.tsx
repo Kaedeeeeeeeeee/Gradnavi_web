@@ -121,6 +121,7 @@ async function searchTab(userId: string, id: string) {
         ? {
             name: school.name,
             contact: contactLabel(school.requirements),
+            contactRule: school.requirements?.contact || school.requirements?.contactNote ? contactLabel(school.requirements) : null,
             language: languageLabel(school.requirements),
             deadline: deadline ? { date: deadline.date, tentative: deadline.tentative } : null,
           }

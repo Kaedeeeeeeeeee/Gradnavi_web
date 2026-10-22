@@ -38,6 +38,40 @@ export type SearchInput = {
   count?: number;
 };
 
+/** 卡片上那一排明确的链接 */
+export const PROFESSOR_LINK_KINDS = ["researchmap", "lab", "homepage", "kaken", "admission"] as const;
+export type ProfessorLinkKind = (typeof PROFESSOR_LINK_KINDS)[number];
+export const PROFESSOR_LINK_LABELS: Record<ProfessorLinkKind, string> = {
+  researchmap: "researchmap",
+  lab: "研究室主页",
+  homepage: "个人主页",
+  kaken: "KAKEN 科研费",
+  admission: "研究科招生页",
+};
+
+/** 科研费（KAKEN）课题 */
+export type GrantRef = { title: string; years?: string; url?: string };
+
+/** 第二轮按教授单独检索补充的信息。查不到的字段不写（卡片上显示「未查到」），链接只认检索结果里出现过的 */
+export type ProfessorDetails = {
+  /** 职位：教授 / 准教授 / 讲师 / 助教 */
+  position?: string;
+  links?: Partial<Record<ProfessorLinkKind, string>>;
+  /** 出生年（来源里写明时） */
+  birthYear?: number;
+  /** 来源里关于退休的说法（「2027年3月定年退職予定」等） */
+  retirementNote?: string;
+  grants?: GrantRef[];
+  /** 研究室里中国留学生的情况（来源里写明时） */
+  chineseStudents?: string;
+  /** 公开的联系方式（邮箱、联系表单、「先通过研究科教务联系」等） */
+  contact?: string;
+  /** 研究科对「出愿前联系教授」的规定（检索结果里看到时） */
+  contactRule?: string;
+  /** 官方页面（researchmap 个人页、大学 / 研究室主页）上的本人照片；source 是照片所在的页面 */
+  photo?: { url: string; source: string };
+};
+
 /** 检索候选（还没收藏） */
 export type ProfessorCandidate = {
   name: string;
@@ -52,6 +86,7 @@ export type ProfessorCandidate = {
   paperRefs?: PaperRef[];
   acceptsInternational?: string;
   sources: SourceLink[];
+  details?: ProfessorDetails;
 };
 
 export const MAX_SCHOOLS = 5;
@@ -84,16 +119,64 @@ export function buildSearchQueries({ keywords, schools }: SearchInput): string[]
 }
 
 /**
- * 每位候选再单独搜一次论文：教员名单和个人页上通常没有论文，researchmap 的业绩页、CiNii、KAKEN 才有。
- * 姓名加引号精确匹配，带上大学避免同名。
+ * 每位候选再单独检索一次：教员名单和个人页上通常没有论文、职位、科研费，
+ * researchmap 的业绩页、KAKEN、研究室主页才有。姓名加引号精确匹配，带上大学避免同名。
  */
 export function buildPaperQueries(c: Pick<ProfessorCandidate, "name" | "university">): string[] {
   const name = c.name.replace(/[\s　]/g, "");
-  return [`"${name}" ${c.university} 論文`, `${name} 論文 業績 site:researchmap.jp`];
+  return [`"${name}" ${c.university} 論文`, `${name} 論文 業績 site:researchmap.jp`, `${name} site:kaken.nii.ac.jp`, `"${name}" ${c.university} 研究室 留学生`];
+}
+
+/** 研究科的招生页（每个研究科搜一次，几位候选同一研究科时共用） */
+export function buildAdmissionQuery(c: Pick<ProfessorCandidate, "university" | "department">): string | null {
+  const dept = stripUniversity(c.department, c.university)?.split(/[\s　]/)[0];
+  return dept ? `${c.university} ${dept} 入試 募集要項 外国人留学生` : null;
+}
+
+/** 链接查不到时的检索入口（不是编造的个人页，只是站内搜索） */
+export function profileSearchUrl(kind: "researchmap" | "kaken", name: string) {
+  const q = encodeURIComponent(name.replace(/[\s　]/g, ""));
+  return kind === "researchmap" ? `https://researchmap.jp/researchers?name=${q}` : `https://kaken.nii.ac.jp/ja/search/?kw=${q}`;
+}
+
+/** 来源链接按网站写清楚是什么（检索结果的标题常常只是教授名字） */
+export function sourceLabel(s: SourceLink): string {
+  let host = "";
+  try {
+    host = new URL(s.url).hostname.replace(/^www\./, "");
+  } catch {
+    return s.title;
+  }
+  const site = /researchmap\.jp$/.test(host)
+    ? "researchmap"
+    : /kaken\.nii\.ac\.jp$/.test(host)
+      ? "KAKEN"
+      : /nrid\.nii\.ac\.jp$/.test(host)
+        ? "KAKEN 研究者"
+        : /ci(r)?\.nii\.ac\.jp$/.test(host)
+          ? "CiNii"
+          : /j-global\.jst\.go\.jp$/.test(host)
+            ? "J-GLOBAL"
+            : host;
+  const title = s.title.trim();
+  return title && title !== s.url ? `${site}：${title}` : site;
+}
+
+/** 国立大学常见定年 65 岁（私立多为 65–70 岁）。退休年份在 years 年内就提示 */
+export const RETIREMENT_AGE = 65;
+export function retirementInfo(d: Pick<ProfessorDetails, "birthYear" | "retirementNote"> | undefined, currentYear: number, years = 4) {
+  if (d?.retirementNote) return { text: d.retirementNote, warn: true };
+  if (!d?.birthYear) return null;
+  const retireYear = d.birthYear + RETIREMENT_AGE;
+  const warn = retireYear - currentYear <= years;
+  return {
+    text: `${d.birthYear} 年生，约 ${retireYear} 年满 ${RETIREMENT_AGE} 岁（国立大学常见定年）${warn ? "：入学前后可能退休，联系时问清能否指导到毕业" : ""}`,
+    warn,
+  };
 }
 
 // 模型偶尔把 JSON 字段名、「null」写进给用户看的文字（如「papers为空」）。含这些词的半句整句去掉
-const INTERNAL_WORDS = /\b(?:papers?|paperRefs|sources|acceptsInternational|candidates|json|null|undefined)\b|字段|为空|為空/i;
+const INTERNAL_WORDS = /\b(?:papers?|paperRefs|sources|acceptsInternational|chineseStudents|contactRule|retirementNote|birthYear|candidates|json|null|undefined)\b|字段|为空|為空/i;
 
 /** 给用户看的文字：去掉提到内部字段名的半句 */
 export function cleanCopy(value: string | null | undefined): string | undefined {
@@ -204,21 +287,80 @@ function toPaperRefs(papers: z.infer<typeof paperSchema>[], byUrl: Map<string, S
     .map((p) => ({ title: p.title, ...(p.year ? { year: p.year } : {}), ...(p.url && byUrl.has(p.url) ? { url: p.url } : {}) }));
 }
 
+const grantSchema = z.object({ title: text(300), years: text(40).nullish(), url: z.string().nullish() });
+
 const paperReplySchema = z.object({
   index: z.coerce.number().int(),
   papers: z.array(paperSchema).max(5).default([]),
   fit: text(1000).nullish(),
+  position: text(40).nullish().catch(null),
+  links: z.record(z.string(), z.string().nullish()).nullish().catch(null),
+  birthYear: z.coerce.number().int().min(1930).max(2000).nullish().catch(null),
+  retirementNote: text(200).nullish().catch(null),
+  grants: z.array(grantSchema).max(6).nullish().catch(null),
+  acceptsInternational: text(200).nullish().catch(null),
+  chineseStudents: text(200).nullish().catch(null),
+  contact: text(200).nullish().catch(null),
+  contactRule: text(200).nullish().catch(null),
+  photo: z.object({ url: z.string(), source: z.string() }).nullish().catch(null),
 });
 
+/** 照片只认官方页面里出现过的图片网址（https），来源页必须是 researchmap 或大学（.ac.jp）的页面 */
+function toPhoto(photo: { url: string; source: string } | null | undefined, allowed: (u: string) => boolean) {
+  const raw = photo?.url?.trim();
+  const source = allowedUrl(photo?.source, allowed);
+  if (!raw || !source || !allowed(raw)) return undefined;
+  try {
+    // 页面里常是相对路径（/img/yamada.jpg），按来源页补全
+    const url = new URL(raw, source);
+    if (url.protocol !== "https:" || !/(^|\.)researchmap\.jp$|\.ac\.jp$/.test(new URL(source).hostname)) return undefined;
+    return { url: url.toString(), source };
+  } catch {
+    return undefined;
+  }
+}
+
+/** 链接只认检索结果（或抓到的页面正文）里逐字出现过的 URL */
+function allowedUrl(url: string | null | undefined, allowed: (u: string) => boolean) {
+  const u = url?.trim();
+  return u && /^https?:\/\//.test(u) && allowed(u) ? u : undefined;
+}
+
+function toDetails(d: z.infer<typeof paperReplySchema>, allowed: (u: string) => boolean): ProfessorDetails | undefined {
+  const links: Partial<Record<ProfessorLinkKind, string>> = {};
+  for (const kind of PROFESSOR_LINK_KINDS) {
+    const url = allowedUrl(d.links?.[kind], allowed);
+    if (url) links[kind] = url;
+  }
+  const grants = (d.grants ?? [])
+    .filter((g) => g.title)
+    .slice(0, 3)
+    .map((g) => ({ title: g.title, ...(g.years ? { years: g.years } : {}), ...(allowedUrl(g.url, allowed) ? { url: allowedUrl(g.url, allowed) } : {}) }));
+  const details: ProfessorDetails = {
+    ...(d.position ? { position: d.position } : {}),
+    ...(Object.keys(links).length ? { links } : {}),
+    ...(d.birthYear ? { birthYear: d.birthYear } : {}),
+    ...(cleanCopy(d.retirementNote) ? { retirementNote: cleanCopy(d.retirementNote) } : {}),
+    ...(grants.length ? { grants } : {}),
+    ...(cleanCopy(d.chineseStudents) ? { chineseStudents: cleanCopy(d.chineseStudents) } : {}),
+    ...(cleanCopy(d.contact) ? { contact: cleanCopy(d.contact) } : {}),
+    ...(cleanCopy(d.contactRule) ? { contactRule: cleanCopy(d.contactRule) } : {}),
+    ...(toPhoto(d.photo, allowed) ? { photo: toPhoto(d.photo, allowed) } : {}),
+  };
+  return Object.keys(details).length ? details : undefined;
+}
+
 /**
- * 第二轮（按教授单独搜论文）的结果合并进候选：查到论文就换上（链接同样只认检索结果里的 URL），
- * fit 换成引用这些论文的说法。index 从 1 开始，对应传给 AI 的候选顺序。
+ * 第二轮（按教授单独检索）的结果合并进候选：查到论文就换上，fit 换成引用这些论文的说法，
+ * 再补上职位、链接、科研费、留学生、联系方式等（链接同样只认检索结果里的 URL，pages 是抓到的页面正文）。
+ * index 从 1 开始，对应传给 AI 的候选顺序。
  */
-export function mergePaperReply(reply: string, candidates: ProfessorCandidate[], sources: SourceLink[]): ProfessorCandidate[] {
+export function mergePaperReply(reply: string, candidates: ProfessorCandidate[], sources: SourceLink[], pages: string[] = []): ProfessorCandidate[] {
   const json = extractJson(reply);
   const raw = Array.isArray(json) ? json : json && typeof json === "object" && "candidates" in json ? (json as { candidates: unknown }).candidates : null;
   if (!Array.isArray(raw)) return candidates;
   const byUrl = new Map(sources.map((s) => [s.url, s]));
+  const allowed = (u: string) => byUrl.has(u) || pages.some((p) => p.includes(u));
   const out = [...candidates];
   for (const item of raw) {
     const parsed = paperReplySchema.safeParse(item);
@@ -227,10 +369,14 @@ export function mergePaperReply(reply: string, candidates: ProfessorCandidate[],
     if (!out[i]) continue;
     const paperRefs = toPaperRefs(parsed.data.papers, byUrl);
     const fit = cleanCopy(parsed.data.fit);
+    const accepts = cleanCopy(parsed.data.acceptsInternational);
+    const details = toDetails(parsed.data, allowed);
     out[i] = {
       ...out[i],
       ...(paperRefs.length ? { paperRefs, papers: paperRefs.map(paperLabel) } : {}),
       ...(fit ? { fit } : {}),
+      ...(accepts ? { acceptsInternational: accepts } : {}),
+      ...(details ? { details: { ...out[i].details, ...details } } : {}),
     };
   }
   return out;
@@ -289,15 +435,21 @@ export function letterSkeleton(p: ProfessorInfo) {
 
 /** 给 AI 和页面用的一行摘要 */
 export function describeProfessor(
-  p: ProfessorInfo & { id?: string; status?: ProfessorStatus; note?: string | null; followUpDate?: string | null; fit?: string | null },
+  p: ProfessorInfo & { id?: string; status?: ProfessorStatus; note?: string | null; followUpDate?: string | null; fit?: string | null; details?: ProfessorDetails | null },
 ) {
-  const parts = [`${p.name}（${professorAffiliation(p)}）`];
+  const d = p.details;
+  const parts = [`${p.name}（${professorAffiliation(p)}${d?.position ? ` ${d.position}` : ""}）`];
   if (p.id) parts.push(`ID：${p.id}`);
   if (p.status) parts.push(`联系状态：${PROFESSOR_STATUS_LABELS[p.status]}`);
   if (p.followUpDate) parts.push(`跟进：${p.followUpDate}`);
   if (p.research) parts.push(`研究：${p.research.slice(0, 200)}`);
   if (p.fit) parts.push(`为什么适合：${p.fit.slice(0, 200)}`);
   if (p.note) parts.push(`备注：${p.note.slice(0, 100)}`);
+  if (d?.birthYear || d?.retirementNote) parts.push(`定年：${d.retirementNote ?? `${d.birthYear} 年生`}`);
+  if (d?.grants?.length) parts.push(`科研费：${d.grants.map((g) => `${g.title}${g.years ? `（${g.years}）` : ""}`).join("、").slice(0, 200)}`);
+  if (d?.chineseStudents) parts.push(`中国留学生：${d.chineseStudents}`);
+  if (d?.contact) parts.push(`联系方式：${d.contact}`);
+  if (d?.contactRule) parts.push(`事前联系：${d.contactRule}`);
   return parts.join("；");
 }
 
@@ -320,6 +472,14 @@ export function demoCandidates({ keywords, schools }: SearchInput): ProfessorCan
       ],
       acceptsInternational: "研究室主页写明接收留学生，有研究生制度（演示）",
       sources: [{ title: "示例来源（演示模式）", url: "https://researchmap.jp/" }],
+      details: {
+        position: "教授",
+        links: { researchmap: "https://researchmap.jp/", kaken: "https://kaken.nii.ac.jp/" },
+        birthYear: 1961,
+        grants: [{ title: `${kw}の国際比較研究（演示）`, years: "2024–2027" }],
+        chineseStudents: "研究室成员页列出 2 名中国留学生（演示）",
+        contactRule: "出愿前需取得指导教员的内诺（演示）",
+      },
     },
     {
       name: `佐藤 花子（示例${i * 2 + 2}）`,

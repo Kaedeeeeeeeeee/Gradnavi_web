@@ -7,9 +7,9 @@ import { useAiPageContent, useAskAi } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { btn } from "@/components/tasks/task-ui";
 import { formatDate } from "@/lib/calendar";
-import type { AspirationView, ProfessorView, SchoolView } from "@/lib/aspirations";
+import { contactLabel, type AspirationView, type ProfessorView, type SchoolView } from "@/lib/aspirations";
 import { professorAffiliation } from "@/lib/professors";
-import { ContactStepper, FindSchoolButton, FollowUp, Gaps, PaperList, PasteReply, SchoolFacts, SourceLinks, Tentative } from "./aspiration-ui";
+import { ContactStepper, FindSchoolButton, FollowUp, Gaps, PaperList, PasteReply, ProfessorAvatar, ProfessorFacts, SchoolFacts, SourceLinks, Tentative } from "./aspiration-ui";
 
 // 文稿栏里的一条志愿：左边教授这边（为什么适合、近期论文、联系进度、回信），右边研究科这边（入试要点、日程、差距）。
 // 只有研究科的志愿用 SchoolAspirationDetail：研究科这边 + 让 AI 在这个研究科找教授。
@@ -31,8 +31,16 @@ export function AspirationDetail({ a, documents, aiText }: Props) {
   return (
     <div className="@container mx-auto max-w-4xl space-y-6 px-6 py-8">
       <div className="space-y-2">
-        <h1 className="page-title">{p.name}</h1>
-        <p className="text-sm text-muted">{professorAffiliation(p)}</p>
+        <div className="flex items-center gap-3">
+          <ProfessorAvatar name={p.name} photo={p.details?.photo} size={56} />
+          <div className="min-w-0">
+            <h1 className="page-title">{p.name}</h1>
+            <p className="text-sm text-muted">
+              {professorAffiliation(p)}
+              {p.details?.position && ` · ${p.details.position}`}
+            </p>
+          </div>
+        </div>
         <ContactStepper id={p.id} status={p.status} />
       </div>
 
@@ -50,7 +58,7 @@ export function AspirationDetail({ a, documents, aiText }: Props) {
             <h3 className="text-xs text-muted">近期论文</h3>
             <PaperList refs={p.paperRefs} papers={p.papers} />
           </div>
-          {p.acceptsInternational && <p className="text-sm text-muted">留学生：{p.acceptsInternational}</p>}
+          <ProfessorFacts name={p.name} details={p.details} acceptsInternational={p.acceptsInternational} contactRule={s?.requirements?.contact || s?.requirements?.contactNote ? contactLabel(s.requirements) : null} />
           <SourceLinks sources={p.sources} />
           <FollowUp professor={p} />
           <Note professor={p} />

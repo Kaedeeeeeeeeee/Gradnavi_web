@@ -4,7 +4,11 @@ import { demoReply } from "../ai/demo-model";
 import { describeDocument } from "../documents";
 import {
   buildMoreQueries,
+  buildAdmissionQuery,
   buildPaperQueries,
+  profileSearchUrl,
+  retirementInfo,
+  sourceLabel,
   buildSearchQueries,
   candidateCount,
   cleanCopy,
@@ -131,9 +135,68 @@ test("给用户看的文字里不出现内部字段名", () => {
   assert.equal(c.acceptsInternational, undefined);
 });
 
-test("每位候选单独搜论文：姓名精确匹配 + 大学，另搜 researchmap 业绩", () => {
+test("每位候选单独检索：论文、researchmap 业绩、KAKEN、研究室；研究科招生页按研究科搜", () => {
   const qs = buildPaperQueries({ name: "山田 太郎", university: "東京大学" });
-  assert.deepEqual(qs, ['"山田太郎" 東京大学 論文', "山田太郎 論文 業績 site:researchmap.jp"]);
+  assert.deepEqual(qs, [
+    '"山田太郎" 東京大学 論文',
+    "山田太郎 論文 業績 site:researchmap.jp",
+    "山田太郎 site:kaken.nii.ac.jp",
+    '"山田太郎" 東京大学 研究室 留学生',
+  ]);
+  assert.equal(buildAdmissionQuery({ university: "東京大学", department: "東京大学 教育学研究科 総合教育科学専攻" }), "東京大学 教育学研究科 入試 募集要項 外国人留学生");
+  assert.equal(buildAdmissionQuery({ university: "東京大学" }), null);
+});
+
+test("补充信息合并：链接只认检索结果或 researchmap 页面里出现过的，查不到的字段不写", () => {
+  const base = [{ name: "山田太郎", university: "例大学", research: "语料库", papers: [], paperRefs: [], sources: [sources[0]] }];
+  const found = [{ title: "KAKEN", url: "https://kaken.nii.ac.jp/grant/KAKENHI-PROJECT-1/" }];
+  const page = "研究室ホームページ https://lab.example.ac.jp/yamada/ 所属 教授";
+  const reply = JSON.stringify({
+    candidates: [
+      {
+        index: 1,
+        papers: [],
+        position: "准教授",
+        links: { researchmap: "https://researchmap.jp/fake", lab: "https://lab.example.ac.jp/yamada/", kaken: "https://kaken.nii.ac.jp/grant/KAKENHI-PROJECT-1/", admission: null },
+        birthYear: "1962",
+        retirementNote: null,
+        grants: [{ title: "コーパス研究", years: "2023–2026", url: "https://kaken.nii.ac.jp/grant/KAKENHI-PROJECT-1/" }, { title: "", years: null }],
+        chineseStudents: "chineseStudents 为空",
+        contact: "研究室主页有联系邮箱 yamada@example.ac.jp",
+        contactRule: null,
+        photo: { url: "/img/yamada.jpg", source: "https://kaken.nii.ac.jp/grant/KAKENHI-PROJECT-1/" },
+      },
+      { index: 2 },
+    ],
+  });
+  const [a] = mergePaperReply(reply, base, found, [page]);
+  // 照片：来源页要是 researchmap 或大学页面，图片网址要在页面全文里出现过
+  const lab = [{ title: "山田研究室", url: "https://www.example.ac.jp/yamada/" }];
+  const photoReply = (url: string) => JSON.stringify({ candidates: [{ index: 1, photo: { url, source: "https://www.example.ac.jp/yamada/" } }] });
+  const labPage = '<img src="/img/yamada.jpg">';
+  assert.deepEqual(mergePaperReply(photoReply("/img/yamada.jpg"), base, lab, [labPage])[0].details?.photo, {
+    url: "https://www.example.ac.jp/img/yamada.jpg",
+    source: "https://www.example.ac.jp/yamada/",
+  });
+  assert.equal(mergePaperReply(photoReply("https://images.example.com/guess.jpg"), base, lab, [labPage])[0].details, undefined);
+  assert.deepEqual(a.details, {
+    position: "准教授",
+    links: { lab: "https://lab.example.ac.jp/yamada/", kaken: "https://kaken.nii.ac.jp/grant/KAKENHI-PROJECT-1/" },
+    birthYear: 1962,
+    grants: [{ title: "コーパス研究", years: "2023–2026", url: "https://kaken.nii.ac.jp/grant/KAKENHI-PROJECT-1/" }],
+    contact: "研究室主页有联系邮箱 yamada@example.ac.jp",
+  });
+});
+
+test("来源链接写明网站；定年按 65 岁推算，快退休时提示", () => {
+  assert.equal(sourceLabel({ title: "Hofmeyr Michael", url: "https://researchmap.jp/hofmeyr" }), "researchmap：Hofmeyr Michael");
+  assert.equal(sourceLabel({ title: "https://www.example.ac.jp/x", url: "https://www.example.ac.jp/x" }), "example.ac.jp");
+  assert.equal(sourceLabel({ title: "研究者", url: "https://nrid.nii.ac.jp/ja/nrid/1/" }), "KAKEN 研究者：研究者");
+  assert.equal(retirementInfo(undefined, 2026), null);
+  assert.equal(retirementInfo({ birthYear: 1962 }, 2026)?.warn, true);
+  assert.equal(retirementInfo({ birthYear: 1975 }, 2026)?.warn, false);
+  assert.deepEqual(retirementInfo({ birthYear: 1975, retirementNote: "2027年3月定年退職予定" }, 2026), { text: "2027年3月定年退職予定", warn: true });
+  assert.equal(profileSearchUrl("kaken", "山田 太郎"), "https://kaken.nii.ac.jp/ja/search/?kw=%E5%B1%B1%E7%94%B0%E5%A4%AA%E9%83%8E");
 });
 
 test("论文检索结果合并进候选：只认检索到的链接，查不到的保留原样", () => {

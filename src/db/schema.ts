@@ -7,7 +7,7 @@ import type { DocOp, SuggestionSource, SuggestionStatus } from "../lib/doc-ops";
 import type { VersionTrigger } from "../lib/doc-history";
 import type { ZhEntry } from "../lib/doc-zh";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import type { PaperRef, ProfessorCandidate, ProfessorStatus, SourceLink } from "../lib/professors";
+import type { PaperRef, ProfessorCandidate, ProfessorDetails, ProfessorStatus, SourceLink } from "../lib/professors";
 import type { OnboardingAnswers } from "../lib/onboarding";
 import type { TaskChange, TaskStatus, TaskStep } from "../lib/tasks";
 
@@ -304,6 +304,8 @@ export const savedProfessor = pgTable(
     /** 是否招外国留学生/研究生，查不到时为空 */
     acceptsInternational: text("accepts_international"),
     sources: jsonb("sources").$type<SourceLink[]>().notNull().default([]),
+    /** 职位、链接、科研费、留学生情况、联系方式等（找教授第二轮检索补充的） */
+    details: jsonb("details").$type<ProfessorDetails>(),
     status: text("status").$type<ProfessorStatus>().notNull().default("to_contact"),
     note: text("note"),
     /** 跟进日期，显示在日历上 */

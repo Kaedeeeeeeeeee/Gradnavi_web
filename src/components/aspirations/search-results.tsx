@@ -7,7 +7,7 @@ import { useShell } from "@/components/shell/app-shell";
 import { btn, primaryBtn } from "@/components/tasks/task-ui";
 import { formatDate } from "@/lib/calendar";
 import { PROFESSOR_STATUS_LABELS, professorAffiliation, type ProfessorCandidate, type ProfessorStatus } from "@/lib/professors";
-import { PaperList, SourceLinks, Tentative } from "./aspiration-ui";
+import { PaperList, ProfessorAvatar, ProfessorFacts, SourceLinks, Tentative } from "./aspiration-ui";
 
 // 文稿栏里的找教授结果：AI 在对话里检索的这一轮候选。用户点「加入志愿」或「不合适」（顺手说原因，记进 user.md），
 // 想调整就在右侧对话里接着说，AI 再搜一轮，这里换成新结果。
@@ -18,7 +18,7 @@ export type CandidateView = {
   saved: { id: string; status: ProfessorStatus } | null;
   rejected: string | null;
   /** 所在研究科系统里已有时的要点 */
-  school: { name: string; contact: string; language: string; deadline: { date: string; tentative: boolean } | null } | null;
+  school: { name: string; contact: string; contactRule: string | null; language: string; deadline: { date: string; tentative: boolean } | null } | null;
 };
 
 type Props = {
@@ -88,9 +88,15 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
 
   return (
     <li className={`space-y-2.5 rounded-xl border p-4 ${c.saved ? "border-ok/40" : "border-line"} ${dim ? "opacity-60" : ""}`}>
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="font-medium">{p.name}</span>
-        <span className="text-sm text-muted">{professorAffiliation(p)}</span>
+      <div className="flex items-center gap-3">
+        <ProfessorAvatar name={p.name} photo={p.details?.photo} />
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <span className="font-medium">{p.name}</span>
+          <span className="text-sm text-muted">
+            {professorAffiliation(p)}
+            {p.details?.position && ` · ${p.details.position}`}
+          </span>
+        </div>
       </div>
       {p.fit && (
         <p className="text-sm">
@@ -104,7 +110,7 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
         <PaperList refs={p.paperRefs ?? []} papers={p.papers} />
         {!p.papers.length && <p className="text-sm text-muted">没查到近期论文，可以在研究室主页或 researchmap 上看</p>}
       </div>
-      <p className="text-sm text-muted">留学生 / 研究生制度：{p.acceptsInternational || "未查到，以研究室主页为准"}</p>
+      <ProfessorFacts name={p.name} details={p.details} acceptsInternational={p.acceptsInternational} contactRule={c.school?.contactRule} />
       {c.school && (
         <p className="text-sm text-muted">
           研究科（{c.school.name}）：{c.school.contact} · {c.school.language}

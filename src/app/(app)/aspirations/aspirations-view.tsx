@@ -1,6 +1,6 @@
 "use client";
 
-import { ContactStatusSelect, Tentative } from "@/components/aspirations/aspiration-ui";
+import { ContactStatusSelect, ProfessorAvatar, Tentative } from "@/components/aspirations/aspiration-ui";
 import { useAiPageContent, useAskAi } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { btn } from "@/components/tasks/task-ui";
@@ -97,7 +97,8 @@ function AspirationTile({ a }: { a: AspirationView }) {
   const open = () => (p ? openTab({ kind: "professor", id: p.id, title: p.name }) : openTab({ kind: "school", id: s!.id, title: `${s!.university} ${s!.name}` }));
   return (
     <li className={`card flex flex-col ${p?.status === "dropped" ? "opacity-60" : ""}`}>
-      <div className="flex items-start gap-2 px-4 pt-3.5">
+      <div className="flex items-center gap-2 px-4 pt-3.5">
+        {p && <ProfessorAvatar name={p.name} photo={p.details?.photo} size={28} />}
         <button onClick={open} className="min-w-0 flex-1 text-left font-medium hover:underline">
           {p ? p.name : `${s!.university} ${s!.name}`}
         </button>

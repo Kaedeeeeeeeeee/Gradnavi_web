@@ -28,6 +28,7 @@ export function toProfessorView(p: SavedProfessorRow): ProfessorView {
     paperRefs: p.paperRefs,
     acceptsInternational: p.acceptsInternational,
     sources: p.sources,
+    details: p.details,
     status: p.status,
     note: p.note,
     followUpDate: p.followUpDate,
