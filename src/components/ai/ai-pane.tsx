@@ -10,6 +10,7 @@ import { openTaskConversationAction } from "@/app/(app)/workbench/actions";
 import { LogoMark, useShell } from "@/components/shell/app-shell";
 import { TOOL_META } from "@/lib/ai/tool-meta";
 import { uuid } from "@/lib/browser";
+import { chatMarkdownToHtml } from "@/lib/chat-markdown";
 import { tabFocus, workFocus, type AiFocus } from "@/lib/ai-context";
 import { activeTab, type DocTab } from "@/lib/shell";
 import { usePageStore, type Hidden } from "./page-context";
@@ -301,7 +302,7 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
         <div ref={bottomRef} />
       </div>
 
-      <div className="mx-4 mb-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted" data-testid="ai-sees">
+      <div className="mx-4 mb-1.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-2 text-xs text-muted" data-testid="ai-sees">
         <span>AI 能看到：</span>
         {pills.map((p) => {
           const off = p.slot ? hidden[p.slot] : false;
@@ -363,6 +364,12 @@ function Divider({ label }: { label: string }) {
   );
 }
 
+/** AI 回答按 Markdown 显示（粗体、列表、标题、链接、表格、代码） */
+function Markdown({ text }: { text: string }) {
+  const html = useMemo(() => chatMarkdownToHtml(text), [text]);
+  return <div className="chat-prose" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
 function Message({ message }: { message: UIMessage }) {
   if (message.role === "user") {
     const text = message.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("");
@@ -375,7 +382,7 @@ function Message({ message }: { message: UIMessage }) {
         GradNavi
       </div>
       {message.parts.map((part, i) => {
-        if (part.type === "text") return <div key={i} className="whitespace-pre-wrap leading-relaxed">{part.text}</div>;
+        if (part.type === "text") return <Markdown key={i} text={part.text} />;
         if (isToolUIPart(part) && getToolName(part) === "update_user_md" && part.state === "output-available")
           return <MemoryLine key={i} input={part.input} output={part.output} />;
         if (isToolUIPart(part))
