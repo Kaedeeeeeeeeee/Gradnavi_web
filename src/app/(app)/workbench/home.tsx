@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useStartTask } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
-import { btn, CompleteButton, formatDay, ProposalButtons, StartButton, StatusChip } from "@/components/tasks/task-ui";
+import { btn, formatDay, ProposalButtons, StartButton, StatusSelect } from "@/components/tasks/task-ui";
 import { CALENDAR_KIND_LABELS, CALENDAR_KINDS, itemsOn, monthGrid, shiftMonth, type CalendarItem, type CalendarKind } from "@/lib/calendar";
-import type { Countdown, TaskView } from "@/lib/tasks";
+import { AGENDA_DAYS, type AgendaRow, type Countdown, type TaskView } from "@/lib/tasks";
 import type { GuideChange } from "@/lib/admissions";
 import { acceptAllProposalsAction, addEventAction, addTaskAction, deleteEventAction, setTaskStatusAction } from "./actions";
 
@@ -39,12 +39,11 @@ type Props = {
   countdown: Countdown[];
   alerts: GuideAlert[];
   proposals: { tasks: HomeTask[]; changes: HomeTask[]; events: ProposedEvent[]; followUps: ProposedFollowUp[] };
-  week: HomeTask[];
-  later: HomeTask[];
+  /** 待办和日程：近 7 天的（含没有截止日、已过期的任务）和更远的 */
+  near: AgendaRow<HomeTask>[];
+  far: AgendaRow<HomeTask>[];
   done: HomeTask[];
-  milestones: CalendarItem[];
   calendar: CalendarItem[];
-  upcoming: CalendarItem[];
 };
 
 const WEEKDAY_NAMES = ["日", "一", "二", "三", "四", "五", "六"];
@@ -65,43 +64,9 @@ export function Home(p: Props) {
       {proposalCount > 0 && <Proposals {...p.proposals} count={proposalCount} />}
 
       <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
-        <div className="space-y-6">
-          <section className="card">
-            <div className="card-head">
-              <h2 className="card-title">本周</h2>
-              {p.week.length > 0 && <span className="text-xs text-muted tabular-nums">{p.week.length} 项</span>}
-            </div>
-            {p.week.length === 0 ? (
-              <p className="px-4 py-4 text-sm text-muted">这周没有待办了。可以在右边问 AI 接下来做什么。</p>
-            ) : (
-              <ul className="divide-y divide-line px-3">
-                {p.week.map((t) => (
-                  <TaskCard key={t.id} task={t} today={p.today} />
-                ))}
-              </ul>
-            )}
-            <div className="card-foot px-2">
-              <AddTaskForm />
-            </div>
-          </section>
+        <Agenda near={p.near} far={p.far} done={p.done} today={p.today} />
 
-          <Later tasks={p.later} milestones={p.milestones} />
-
-          {p.done.length > 0 && (
-            <details className="text-sm">
-              <summary className="cursor-pointer text-muted">已完成 {p.done.length} 项</summary>
-              <ul className="mt-2 space-y-1">
-                {p.done.map((t) => (
-                  <li key={t.id}>
-                    <TaskTitle task={t} className="text-faint line-through hover:text-foreground" />
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </div>
-
-        <MonthCalendar today={p.today} month={p.month} items={p.calendar} upcoming={p.upcoming} />
+        <MonthCalendar today={p.today} month={p.month} items={p.calendar} />
       </div>
     </div>
   );
@@ -266,83 +231,100 @@ function TaskTitle({ task, className = "" }: { task: Pick<TaskView, "id" | "titl
   );
 }
 
-function TaskCard({ task, today }: { task: HomeTask; today: string }) {
-  const { openTab } = useShell();
-  const steps = task.steps.length ? `${task.steps.filter((s) => s.done).length}/${task.steps.length}` : null;
-  const overdue = task.dueDate && task.dueDate < today;
+/** 待办和日程：任务和有日期的日程合成一个列表，默认只看近 7 天，展开看更远的 */
+function Agenda({ near, far, done, today }: { near: AgendaRow<HomeTask>[]; far: AgendaRow<HomeTask>[]; done: HomeTask[]; today: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const row = (r: AgendaRow<HomeTask>) => (r.task ? <TaskRow key={r.task.id} task={r.task} today={today} /> : <EventRow key={r.item.key} item={r.item} today={today} />);
   return (
-    <li className="space-y-1 px-1 py-2.5">
-      <div className="flex items-start gap-2">
-        <TaskTitle task={task} className="min-w-0 flex-1 font-medium hover:underline" />
-        <StatusChip status={task.status} />
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-        {task.dueDate && <span className={`tabular-nums ${overdue ? "text-danger" : ""}`}>截止 {formatDay(task.dueDate)}</span>}
-        {task.proposedChange && (
-          <span className="rounded border border-dashed border-line-strong px-1">AI 提议改到 {task.proposedChange.dueDate ? formatDay(task.proposedChange.dueDate) : "不设截止日"}</span>
-        )}
-        {task.link && <span className="truncate">{task.link}</span>}
-        {steps && <span className="tabular-nums">子步骤 {steps}</span>}
-        <span className="ml-auto flex items-center gap-1.5">
-          {task.status === "review" ? (
-            <>
-              <button
-                onClick={() =>
-                  task.documentId ? openTab({ kind: "doc", id: task.documentId, title: "草稿" }) : openTab({ kind: "task", id: task.id, title: task.title })
-                }
-                className={btn}
-              >
-                {task.documentId ? "查看草稿" : "查看"}
-              </button>
-              <CompleteButton id={task.id} label="确认完成" />
-            </>
-          ) : (
-            <>
-              <StartButton task={task} started={task.started} />
-              <CompleteButton id={task.id} />
-            </>
-          )}
+    <section className="card self-start">
+      <div className="card-head">
+        <h2 className="card-title">待办和日程</h2>
+        <span className="text-xs text-muted tabular-nums">
+          近 {AGENDA_DAYS} 天 {near.length} 项{far.length > 0 && ` · 更远 ${far.length} 项`}
         </span>
       </div>
-    </li>
+      {near.length === 0 ? (
+        <p className="px-4 py-4 text-sm text-muted">近 {AGENDA_DAYS} 天没有待办和日程。可以在右边问 AI 接下来做什么。</p>
+      ) : (
+        <ul className="divide-y divide-line px-4">{near.map(row)}</ul>
+      )}
+      {expanded && far.length > 0 && (
+        <>
+          <p className="section-title border-t border-line bg-subtle/50 px-4 py-1.5 text-xs">{AGENDA_DAYS} 天以后</p>
+          <ul className="divide-y divide-line border-t border-line px-4">{far.map(row)}</ul>
+        </>
+      )}
+      {far.length > 0 && (
+        <button onClick={() => setExpanded(!expanded)} className="card-foot block w-full text-left text-sm text-muted hover:bg-subtle hover:text-foreground">
+          {expanded ? `收起，只看近 ${AGENDA_DAYS} 天` : `展开更远的 ${far.length} 项`}
+        </button>
+      )}
+      <div className="card-foot px-2">
+        <AddTaskForm />
+      </div>
+      {done.length > 0 && (
+        <details className="card-foot text-sm">
+          <summary className="cursor-pointer py-1 text-muted hover:text-foreground">已完成 {done.length} 项</summary>
+          <ul className="divide-y divide-line">
+            {done.map((t) => (
+              <li key={t.id} className="flex items-center gap-3 py-2">
+                <TaskTitle task={t} className="min-w-0 flex-1 text-faint line-through hover:text-foreground" />
+                <StatusSelect id={t.id} status={t.status} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
   );
 }
 
-/** 之后：下周及以后的任务和官方日期（出愿截止、考试），按日期列出 */
-function Later({ tasks, milestones }: { tasks: HomeTask[]; milestones: CalendarItem[] }) {
-  type Row = { date: string; key: string; task?: HomeTask; item?: CalendarItem };
-  const rows: Row[] = [
-    ...tasks.map((t) => ({ date: t.dueDate!, key: t.id, task: t })),
-    ...milestones.map((it) => ({ date: it.date, key: it.key, item: it })),
-  ].sort((a, b) => a.date.localeCompare(b.date));
-  if (!rows.length) return null;
+/** 左边一列日期：任务是截止日（没有就空着），日程是当天或起止 */
+function DateCell({ date, endDate, today, overdue = false }: { date: string | null; endDate?: string | null; today: string; overdue?: boolean }) {
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2 className="card-title">之后</h2>
-        <span className="text-xs text-muted">下周及以后的任务和官方日期</span>
-      </div>
-      <ul className="space-y-2 px-4 py-3 text-sm">
-        {rows.map((r) => (
-          <li key={r.key} className="flex items-center gap-3">
-            <span className="w-12 shrink-0 tabular-nums text-muted">{formatDay(r.date)}</span>
-            {r.task ? (
-              <>
-                <TaskTitle task={r.task} className="min-w-0 flex-1 truncate hover:underline" />
-                <StatusChip status={r.task.status} />
-              </>
-            ) : (
-              <span className="min-w-0 flex-1">
-                <span className={`mr-1.5 rounded px-1 text-xs ${KIND_STYLES[r.item!.kind]}`}>{CALENDAR_KIND_LABELS[r.item!.kind]}</span>
-                {r.item!.tentative && <span className="mr-1 rounded border border-dashed border-warn px-1 text-xs text-warn">仮</span>}
-                {r.item!.title}
-                {r.item!.sourceUrl && <SourceLink url={r.item!.sourceUrl} />}
+    <span className={`w-14 shrink-0 pt-px text-xs tabular-nums ${overdue ? "text-danger" : date === today ? "font-medium text-accent" : "text-muted"}`}>
+      {!date ? <span className="text-faint">—</span> : date === today && !endDate ? "今天" : formatRange(date, endDate)}
+    </span>
+  );
+}
+
+function TaskRow({ task, today }: { task: HomeTask; today: string }) {
+  const { openTab } = useShell();
+  const steps = task.steps.length ? `${task.steps.filter((s) => s.done).length}/${task.steps.length}` : null;
+  const overdue = !!task.dueDate && task.dueDate < today;
+  const meta = [task.link, steps && `子步骤 ${steps}`, overdue && "已过截止日"].filter(Boolean);
+  return (
+    <li className="flex items-start gap-3 py-2.5 text-sm">
+      <DateCell date={task.dueDate} today={today} overdue={overdue} />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <TaskTitle task={task} className="font-medium hover:underline" />
+        {(meta.length > 0 || task.proposedChange) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+            {meta.map((m) => (
+              <span key={String(m)} className={m === "已过截止日" ? "text-danger" : "truncate"}>
+                {m}
               </span>
+            ))}
+            {task.proposedChange && (
+              <span className="rounded border border-dashed border-line-strong px-1">AI 提议改到 {task.proposedChange.dueDate ? formatDay(task.proposedChange.dueDate) : "不设截止日"}</span>
             )}
-          </li>
-        ))}
-      </ul>
-    </section>
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {task.status === "review" ? (
+          <button
+            onClick={() => (task.documentId ? openTab({ kind: "doc", id: task.documentId, title: "草稿" }) : openTab({ kind: "task", id: task.id, title: task.title }))}
+            className={btn}
+          >
+            {task.documentId ? "查看草稿" : "查看"}
+          </button>
+        ) : (
+          <StartButton task={task} started={task.started} />
+        )}
+        <StatusSelect id={task.id} status={task.status} />
+      </div>
+    </li>
   );
 }
 
@@ -399,7 +381,7 @@ function Dot({ item }: { item: Pick<CalendarItem, "kind" | "tentative" | "propos
   return <span className={`${base} ${DOT[item.kind]} ${item.done ? "opacity-40" : ""}`} />;
 }
 
-function MonthCalendar({ today, month, items, upcoming }: { today: string; month: string; items: CalendarItem[]; upcoming: CalendarItem[] }) {
+function MonthCalendar({ today, month, items }: { today: string; month: string; items: CalendarItem[] }) {
   const [selected, setSelected] = useState<string | null>(null);
   const weeks = monthGrid(month);
   const [y, mm] = month.split("-");
@@ -408,11 +390,10 @@ function MonthCalendar({ today, month, items, upcoming }: { today: string; month
     it.proposedChange ? [{ ...it, key: `${it.key}:change`, date: it.proposedChange.date, endDate: it.proposedChange.endDate, proposed: true }] : [],
   );
   const all = [...items, ...ghosts];
-  const list = selected ? itemsOn(all, selected) : upcoming;
+  const list = selected ? itemsOn(all, selected) : [];
 
   return (
-    <div className="space-y-6">
-      <section className="card">
+    <section className="card self-start">
         <div className="card-head text-sm">
           <h2 className="card-title">日历</h2>
           <div className="ml-auto flex items-center gap-1">
@@ -479,43 +460,39 @@ function MonthCalendar({ today, month, items, upcoming }: { today: string; month
           </span>
         </p>
 
-      </section>
-
-      <section className="card">
-        <div className="card-head">
-          <h2 className="card-title">{selected ? `${formatDay(selected)} 的日程` : "近期日程"}</h2>
-          <span className="text-xs text-muted">{selected ? "再点一次日期回到近期" : "接下来 30 天"}</span>
-        </div>
-        <div className="px-2 py-2">
-          {list.length === 0 ? (
-            <p className="px-2 py-2 text-sm text-muted">{selected ? "这天没有日程。" : "近期没有日程。"}</p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {list.map((it) => (
-                <EventRow key={it.key} item={it} />
-              ))}
-            </ul>
-          )}
-        </div>
+        {selected && (
+          <div className="border-t border-line px-4 py-2">
+            <p className="section-title py-1 text-xs">{formatDay(selected)} 的日程</p>
+            {list.length === 0 ? (
+              <p className="py-1 text-sm text-muted">这天没有日程。</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {list.map((it) => (
+                  <EventRow key={it.key} item={it} today={today} />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         <details className="card-foot text-sm">
           <summary className="cursor-pointer py-1 text-muted hover:text-foreground">＋ 添加日程</summary>
           <AddEventForm key={selected ?? month} defaultDate={selected ?? (month === today.slice(0, 7) ? today : `${month}-01`)} />
         </details>
-      </section>
-    </div>
+    </section>
   );
 }
 
-function EventRow({ item: it }: { item: CalendarItem }) {
+function EventRow({ item: it, today }: { item: CalendarItem; today: string }) {
   const { openTab } = useShell();
   const [pending, startTransition] = useTransition();
   const proposalKind = it.source === "todo" ? "task" : it.source === "event" ? "event" : it.source === "professor" ? "professor" : null;
   const isProposal = it.proposed || it.proposedChange;
   return (
-    <li className={`group space-y-0.5 rounded-md px-2 py-1.5 ${isProposal ? "border border-dashed border-line-strong" : ""}`}>
+    <li className="group flex items-start gap-3 py-2.5 text-sm">
+      <DateCell date={it.date} endDate={it.endDate} today={today} />
+      <div className="min-w-0 flex-1 space-y-0.5">
       <div className="flex items-start gap-2">
-        <span className="w-16 shrink-0 tabular-nums text-muted">{formatRange(it.date, it.endDate)}</span>
         <span className="min-w-0 flex-1">
           <span className={`mr-1.5 rounded px-1 text-xs ${KIND_STYLES[it.kind]}`}>{CALENDAR_KIND_LABELS[it.kind]}</span>
           {it.tentative && <span className="mr-1 rounded border border-dashed border-warn px-1 text-xs text-warn">仮</span>}
@@ -538,13 +515,14 @@ function EventRow({ item: it }: { item: CalendarItem }) {
           </button>
         )}
       </div>
-      {it.note && <p className="pl-[4.5rem] text-xs text-muted">{it.note}</p>}
+      {it.note && <p className="text-xs text-muted">{it.note}</p>}
       {isProposal && proposalKind && it.sourceId && (
-        <div className="flex flex-wrap items-center gap-2 pl-[4.5rem] text-xs text-muted">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <span>{it.proposed && !it.proposedChange ? "AI 提议" : `AI 提议改到 ${it.proposedChange ? formatRange(it.proposedChange.date, it.proposedChange.endDate) : ""}`}</span>
           <ProposalButtons kind={proposalKind} id={it.sourceId} date={it.proposedChange?.date ?? it.date} />
         </div>
       )}
+      </div>
     </li>
   );
 }

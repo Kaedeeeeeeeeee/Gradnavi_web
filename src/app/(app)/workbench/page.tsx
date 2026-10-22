@@ -3,7 +3,7 @@ import { addDays, monthGrid, parseMonth, todayJst } from "@/lib/calendar";
 import { profileScores } from "@/lib/aspirations";
 import { decideTrack, PATH_LABELS, suggestPath, TRACK_LABELS } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
-import { briefing, groupTasks, keyDates, weekEnd } from "@/lib/tasks";
+import { agenda, briefing, groupTasks, keyDates } from "@/lib/tasks";
 import { listCalendar, listProposedEvents } from "@/server/calendar";
 import { listTaskConversationIds } from "@/server/conversations";
 import { listDocuments } from "@/server/documents";
@@ -20,7 +20,7 @@ export const metadata = { title: "主页 · GradNavi" };
 /** 新募集要项公布后在主页提醒多少天 */
 const ALERT_DAYS = 30;
 
-// 主页：今日简报（含关键日期倒计时）| 本周 / 之后的任务 + 月历。AI 的提议在最上面，同意后才生效。
+// 主页：今日简报（含关键日期倒计时）| 待办和日程（近 7 天，可展开更远）+ 月历。AI 的提议在最上面，同意后才生效。
 export default async function WorkbenchPage({ searchParams }: PageProps<"/workbench">) {
   const user = await requireUser();
   const profile = await getProfile(user.id);
@@ -33,7 +33,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
   const weeks = monthGrid(month);
   const gridFrom = weeks[0][0].date;
   const gridTo = weeks.at(-1)![6].date;
-  // 之后的里程碑和倒计时看一年
+  // 待办和日程展开后、倒计时都看一年
   const horizon = addDays(today, 365);
 
   await syncNextSteps(user.id);
@@ -72,7 +72,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
     return [{ ...al, changes: diffGuideEvents(al.previous, al.events), task: t ? { id: t.id, title: t.title, started: started.has(t.id) } : null }];
   });
   const path = answers.path === "unsure" ? `${PATH_LABELS[suggestPath(answers, profileScores(profile.markdown, answers).jlpt)]}（建议，待确认）` : PATH_LABELS[answers.path];
-  const end = weekEnd(today);
+  const { near, far } = agenda(tasks.map(toHome), calendar, today);
 
   return (
     <Home
@@ -88,13 +88,10 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
         events: proposedEvents.map((e) => ({ id: e.id, title: e.title, date: e.date, endDate: e.endDate, change: e.proposedChange, isNew: e.proposed })),
         followUps: followUps.map((p) => ({ id: p.id, name: p.name, date: p.followUpDate, proposed: p.proposedFollowUp!.date })),
       }}
-      week={groups.week.map(toHome)}
-      later={groups.later.map(toHome)}
+      near={near}
+      far={far.filter((r) => !r.date || r.date <= horizon)}
       done={groups.done.map(toHome)}
-      // 之后：本周以后的官方日期（出愿截止、考试），和任务一起按日期列出
-      milestones={calendar.filter((it) => it.source === "guide" && it.kind !== "other" && it.date > end && it.date <= horizon)}
       calendar={calendar.filter((it) => it.date <= gridTo && (it.endDate ?? it.date) >= gridFrom)}
-      upcoming={calendar.filter((it) => (it.endDate ?? it.date) >= today && it.date <= addDays(today, 30) && !it.done)}
     />
   );
 }

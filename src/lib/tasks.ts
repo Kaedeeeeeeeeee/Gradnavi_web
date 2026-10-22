@@ -1,5 +1,5 @@
-// 任务（主页待办）：状态、子步骤、本周/之后分组、今日简报、「让 AI 开始」的开场消息（纯函数，前后端共用）。
-// 不设「阶段」：长期视角靠「之后」的里程碑列表、日历和关键日期倒计时。
+// 任务（主页待办）：状态、子步骤、本周/之后分组、待办和日程列表、今日简报、「让 AI 开始」的开场消息（纯函数，前后端共用）。
+// 不设「阶段」：长期视角靠待办和日程里展开的更远条目、日历和关键日期倒计时。
 
 import { addDays, daysBetween, type CalendarItem } from "./calendar";
 
@@ -74,6 +74,36 @@ export function groupTasks(tasks: TaskView[], today: string) {
     week: open.filter((t) => !t.dueDate || t.dueDate <= end).sort(compareTasks),
     later: open.filter((t) => t.dueDate && t.dueDate > end).sort((a, b) => a.dueDate!.localeCompare(b.dueDate!) || compareTasks(a, b)),
     done: real.filter((t) => t.status === "done"),
+  };
+}
+
+/** 主页「待办和日程」默认显示几天内的（含今天） */
+export const AGENDA_DAYS = 7;
+
+export type AgendaRow<T extends TaskView> = { date: string | null } & ({ task: T; item?: undefined } | { item: CalendarItem; task?: undefined });
+
+/**
+ * 主页「待办和日程」：任务和日程合成一个按日期排的列表。
+ * - near：今天起 AGENDA_DAYS 天内的，加上没有截止日、已过期的未完成任务
+ * - far：更远的（不限天数），默认折叠
+ * 日程里由任务截止日生成的条目（source = todo）不重复列；已完成的任务和 AI 提议的新任务不在这里。
+ */
+export function agenda<T extends TaskView>(tasks: T[], items: CalendarItem[], today: string, days = AGENDA_DAYS) {
+  const last = addDays(today, days - 1);
+  const rows: AgendaRow<T>[] = [
+    ...tasks.filter((t) => !t.proposed && t.status !== "done").map((task) => ({ date: task.dueDate, task })),
+    ...items.filter((it) => it.source !== "todo" && !it.done && (it.endDate ?? it.date) >= today).map((item) => ({ date: item.date, item })),
+  ];
+  // 没有截止日的任务排在今天；同一天任务在前（按状态），日程在后
+  rows.sort(
+    (a, b) =>
+      (a.date ?? today).localeCompare(b.date ?? today) ||
+      (a.task ? 0 : 1) - (b.task ? 0 : 1) ||
+      (a.task && b.task ? compareTasks(a.task, b.task) : 0),
+  );
+  return {
+    near: rows.filter((r) => !r.date || r.date <= last),
+    far: rows.filter((r) => r.date && r.date > last),
   };
 }
 
