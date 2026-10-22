@@ -12,13 +12,16 @@ import { TOOL_META } from "@/lib/ai/tool-meta";
 import { uuid } from "@/lib/browser";
 import { chatMarkdownToHtml } from "@/lib/chat-markdown";
 import { tabFocus, workFocus, type AiFocus } from "@/lib/ai-context";
+import { parseQuotes } from "@/lib/quotes";
 import { activeTab, type DocTab } from "@/lib/shell";
-import { usePageStore, type Hidden } from "./page-context";
+import { AddToChatButton, QuoteChips, QuoteMarkers, SentQuotes } from "./add-to-chat";
+import { usePageStore, useQuotes, type Hidden } from "./page-context";
 
 // 三栏里的 AI 对话栏。顶部写这是任务对话还是通用对话；输入框上面一行写 AI 现在能看到什么（可以点掉）。
 // 一个任务一段对话：文稿栏切到任务详情、或点任务卡「让 AI 开始」时，切到这个任务专属的对话；
 // 「让 AI 开始」且这段对话还是空的，就代用户发出开场消息。主页上的通用对话另算。
 // 通用对话里用户换了打开的东西（志愿、文书、页面），聊天里插一行灰色分隔「你打开了 …」，快捷回复也跟着换。
+// 选中文字「加入对话」的引用显示成输入框里的编号标签，随用户下一条消息作为 data-quotes 部分一起发出（见 add-to-chat.tsx）。
 
 type Props = {
   initialConversationId: string | null;
@@ -103,14 +106,20 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
 
   const busy = status === "submitted" || status === "streaming";
 
-  async function send(text: string) {
+  const quotes = useQuotes();
+
+  async function send(text: string, withQuotes = false) {
+    // 引用在等待 beforeSend 前取出并清空，免得用户这时又加一段被一起清掉
+    const attached = withQuotes ? quotes.map(({ text: t, source }) => ({ text: t, source })) : [];
+    if (attached.length) pageStore.clearQuotes();
     // 先让页面做准备（如编辑器保存未保存的修改），AI 才能读到最新内容
     try {
       await pageStore.runBeforeSend();
     } catch (e) {
       console.error("[ai-sidebar] beforeSend", e);
     }
-    sendMessage({ text });
+    if (attached.length) sendMessage({ role: "user", parts: [{ type: "data-quotes", data: attached }, { type: "text", text }] });
+    else sendMessage({ text });
   }
 
   // 页面上的按钮（如“AI 改写选中内容”）通过 useAskAi 代用户发消息
@@ -192,7 +201,7 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
     e.preventDefault();
     const text = input.trim();
     if (!text || busy) return;
-    void send(text);
+    void send(text, true);
     setInput("");
   }
 
@@ -323,10 +332,13 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
         })}
         <span className="rounded-full bg-subtle px-2 py-px">你的档案</span>
       </div>
+      <AddToChatButton />
+      <QuoteMarkers quotes={quotes} />
       <form
         onSubmit={submit}
         className="mx-3 mb-3 rounded-xl border border-line-strong bg-surface shadow-[0_1px_3px_rgb(15_15_15/0.06)] transition-[border-color,box-shadow] focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15"
       >
+        <QuoteChips quotes={quotes} onRemove={pageStore.removeQuote} />
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -334,7 +346,7 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) submit(e);
           }}
           rows={3}
-          placeholder="输入问题，Enter 发送，Shift+Enter 换行"
+          placeholder={quotes.length ? "想让 AI 对引用的内容做什么？Enter 发送" : "输入问题，Enter 发送，Shift+Enter 换行"}
           className="block w-full resize-none bg-transparent px-3 pt-2.5 text-sm outline-none placeholder:text-faint"
         />
         <div className="flex justify-end px-2 pb-2">
@@ -373,10 +385,16 @@ function Markdown({ text }: { text: string }) {
 function Message({ message }: { message: UIMessage }) {
   if (message.role === "user") {
     const text = message.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("");
-    return <div className="ml-auto w-fit max-w-[85%] rounded-xl bg-subtle px-3 py-2 whitespace-pre-wrap">{text}</div>;
+    const quotes = parseQuotes(message.parts.flatMap((p) => (p.type === "data-quotes" ? [p.data] : []))[0]);
+    return (
+      <div className="space-y-1.5">
+        <SentQuotes quotes={quotes} />
+        <div className="ml-auto w-fit max-w-[85%] rounded-xl bg-subtle px-3 py-2 whitespace-pre-wrap">{text}</div>
+      </div>
+    );
   }
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-quote-source="AI 的回复">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-muted">
         <LogoMark className="size-[18px] rounded-[4px] text-[10px]" />
         GradNavi
