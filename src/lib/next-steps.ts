@@ -13,7 +13,7 @@ export type StepState = {
   scores: Scores;
   /** 关注的研究科数量（志愿里的研究科，含只有研究科的志愿） */
   schoolCount: number;
-  professors: { id: string; name: string; status: ProfessorStatus; followUpDate?: string | null; schoolId?: string | null }[];
+  professors: { id: string; name: string; status: ProfessorStatus; followUpDate?: string | null; schoolId?: string | null; schoolKnown?: boolean }[];
   documents: { id: string; kind: DocKind; professorId?: string | null }[];
   /** 已经勾掉的流程任务 key。用户手动勾掉也算这一步做完了，后面的步骤照常出现 */
   doneKeys: Set<string>;
@@ -96,7 +96,8 @@ export function planNextSteps(s: StepState): StepPlan {
     const who = `${p.name}教授`;
 
     // 教授和研究科一起看：教授想收、但研究科难考也不行
-    step(key("school"), !!p.schoolId, {
+    // 只关联了研究科不算查清：研究科的入试要点（要不要先联系教授、考试科目、语言要求）记下来了才算
+    step(key("school"), !!p.schoolId && !!p.schoolKnown, {
       title: `查清${who}所在研究科怎么考`,
       note: "要不要先联系教授、考试科目、语言要求、出愿截止；AI 可以帮你查募集要项并关注",
       professorId: p.id,

@@ -8,7 +8,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { undoMemory } from "@/app/(app)/actions";
 import { openTaskConversationAction } from "@/app/(app)/workbench/actions";
 import { LogoMark, useShell } from "@/components/shell/app-shell";
-import { TOOL_META, toolChipText } from "@/lib/ai/tool-meta";
+import { endedWithoutAnswer, TOOL_META, toolChipText, toolGroupSummary } from "@/lib/ai/tool-meta";
 import { uuid } from "@/lib/browser";
 import { chatMarkdownToHtml } from "@/lib/chat-markdown";
 import { tabFocus, workFocus, type AiFocus } from "@/lib/ai-context";
@@ -307,8 +307,10 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
             ))}
           </div>
         )}
-        {status === "submitted" && <p className="text-faint">思考中…</p>}
-        {error && <p className="text-danger">出错了：{error.message || "请稍后再试"}</p>}
+        {busy && <WorkingLine />}
+        {!busy && (error || (messages.at(-1)?.role === "assistant" && endedWithoutAnswer(messages.at(-1)!.parts))) && (
+          <StoppedNotice error={error ? error.message || "请稍后再试" : null} onContinue={() => void send(CONTINUE_TEXT)} />
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -400,14 +402,107 @@ function Message({ message }: { message: UIMessage }) {
         <LogoMark className="size-[18px] rounded-[4px] text-[10px]" />
         GradNavi
       </div>
-      {message.parts.map((part, i) => {
-        if (part.type === "text") return <Markdown key={i} text={part.text} />;
+      {groupParts(message.parts).map((seg) => {
+        if (seg.kind === "tools") return <ToolGroup key={seg.key} parts={seg.parts} />;
+        const part = seg.part;
+        if (part.type === "text") return <Markdown key={seg.key} text={part.text} />;
         if (isToolUIPart(part) && getToolName(part) === "update_user_md" && part.state === "output-available")
-          return <MemoryLine key={i} input={part.input} output={part.output} />;
-        if (isToolUIPart(part))
-          return <ToolChip key={i} name={getToolName(part)} state={part.state} input={part.input} output={part.state === "output-available" ? part.output : undefined} />;
+          return <MemoryLine key={seg.key} input={part.input} output={part.output} />;
+        if (isToolUIPart(part)) return <PartChip key={seg.key} part={part} />;
         return null;
       })}
+    </div>
+  );
+}
+
+type Part = UIMessage["parts"][number];
+type ToolPart = Parameters<typeof getToolName>[0];
+type Segment = { kind: "part"; key: number; part: Part } | { kind: "tools"; key: number; parts: ToolPart[] };
+
+/** 只读的查询类工具（检索、读网页、查看志愿……）连在一起时归成一组，可以折叠；改了东西的工具（加入志愿、写文书）总是单独显示 */
+const isLookup = (p: Part): p is ToolPart => isToolUIPart(p) && TOOL_META[getToolName(p)]?.mutates === false;
+
+function groupParts(parts: Part[]): Segment[] {
+  const out: Segment[] = [];
+  parts.forEach((part, i) => {
+    if (part.type === "step-start" || (part.type === "text" && !part.text.trim())) return;
+    const last = out.at(-1);
+    if (isLookup(part)) {
+      if (last?.kind === "tools") last.parts.push(part);
+      else out.push({ kind: "tools", key: i, parts: [part] });
+    } else out.push({ kind: "part", key: i, part });
+  });
+  return out;
+}
+
+const COLLAPSE_AT = 3;
+
+function PartChip({ part }: { part: ToolPart }) {
+  return <ToolChip name={getToolName(part)} state={part.state} input={part.input} output={part.state === "output-available" ? part.output : undefined} />;
+}
+
+/** 一串查询折叠成一行「查了资料：检索 9 次，读了 1 个网页 ▸」，点开看每一条；正在进行的那条一直显示在下面 */
+function ToolGroup({ parts }: { parts: ToolPart[] }) {
+  const [open, setOpen] = useState(false);
+  const isFinished = (p: ToolPart) => p.state === "output-available" || p.state === "output-error";
+  const finished = parts.filter(isFinished);
+  const running = parts.filter((p) => !isFinished(p));
+  if (parts.length < COLLAPSE_AT) return parts.map((p) => <PartChip key={p.toolCallId} part={p} />);
+  return (
+    <div className="space-y-1.5">
+      {finished.length > 0 && (
+        <button
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex max-w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs text-muted hover:bg-subtle"
+        >
+          <span className="text-ok">✓</span>
+          <span className="min-w-0">
+            查了资料：{toolGroupSummary(finished.map((p) => getToolName(p)))}
+            {finished.some((p) => p.state === "output-error") && <span className="text-danger">（有 {finished.filter((p) => p.state === "output-error").length} 次没成功）</span>}
+          </span>
+          <span className={`shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
+        </button>
+      )}
+      {open && (
+        <div className="space-y-1.5 border-l border-line pl-3">
+          {finished.map((p) => (
+            <PartChip key={p.toolCallId} part={p} />
+          ))}
+        </div>
+      )}
+      {running.map((p) => (
+        <PartChip key={p.toolCallId} part={p} />
+      ))}
+    </div>
+  );
+}
+
+const CONTINUE_TEXT = "继续。先把刚才查到的整理成结论；还没查清的部分再接着查。";
+
+/** 这轮 AI 还在跑：回复最下面一直显示，直到这轮结束 */
+function WorkingLine() {
+  const sec = useElapsed(true);
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted" role="status">
+      <Dots />
+      <span>AI 正在工作{sec >= 20 ? "，查资料可能要一两分钟" : ""}</span>
+      <span className="tabular-nums text-faint">{sec} 秒</span>
+    </div>
+  );
+}
+
+/** 这轮结束了但没写出结论（步数用完、被停止、出错）：说清楚停了，给「继续」 */
+function StoppedNotice({ error, onContinue }: { error: string | null; onContinue: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-warn-soft px-3 py-2 text-xs">
+      <span className="min-w-0 flex-1 text-warn">
+        {error ? `出错了：${error}。` : "AI 这轮查到这里停了，还没写出结论。"}
+        <span className="text-muted">点「继续」，AI 会接着刚才查到的内容往下做。</span>
+      </span>
+      <button onClick={onContinue} className="btn-primary shrink-0 px-3 py-1 text-xs">
+        继续
+      </button>
     </div>
   );
 }

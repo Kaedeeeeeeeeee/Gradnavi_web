@@ -26,6 +26,11 @@ export const maxDuration = 60;
 // 只保留最近的若干条消息发给模型，控制 token 费用
 const HISTORY_LIMIT = 30;
 
+// 一轮最多几步（每步可以并行调用多个工具）。最后一步不给工具，让 AI 一定写出文字回答，不会查完资料就没下文
+const MAX_STEPS = 10;
+const WRAP_UP =
+  "\n\n【本轮工具次数已用完】不要再调用工具。根据目前查到的内容直接回答：先写已经查清的结论（附出处链接），再列还没查到的部分和下一步建议，最后告诉用户可以说「继续」让你接着查。";
+
 const bodySchema = z.object({
   conversationId: z.string().uuid(),
   /** 新开任务对话时带上任务 ID（一个任务一段对话） */
@@ -82,15 +87,17 @@ export async function POST(req: Request) {
   const messages = await validateUIMessages({ messages: [...history, userMessage], tools });
 
   const today = new Intl.DateTimeFormat("zh-CN", { dateStyle: "full", timeZone: "Asia/Tokyo" }).format(new Date());
+  const instructions = buildSystemPrompt({ userMd: await getUserMd(userId), page, today, task });
   const result = streamText({
     model: getChatModel(),
-    instructions: buildSystemPrompt({ userMd: await getUserMd(userId), page, today, task }),
+    instructions,
     messages: await convertToModelMessages(messages.slice(-HISTORY_LIMIT), {
       tools,
       convertDataPart: (part) => (part.type === "data-quotes" ? { type: "text", text: quotesForModel(parseQuotes(part.data)) } : undefined),
     }),
     tools,
-    stopWhen: isStepCount(6),
+    stopWhen: isStepCount(MAX_STEPS),
+    prepareStep: ({ stepNumber }) => (stepNumber === MAX_STEPS - 1 ? { toolChoice: "none", instructions: instructions + WRAP_UP } : {}),
     onStepEnd: (step) => meter.addTokens(step.usage),
     onEnd: () => settle(),
     onAbort: () => settle(),
