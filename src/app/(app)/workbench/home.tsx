@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useStartTask } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
-import { btn, formatDay, ProposalButtons, StartButton, StatusSelect } from "@/components/tasks/task-ui";
+import { btn, formatDay, primaryBtn, ProposalButtons, StartButton, StatusSelect } from "@/components/tasks/task-ui";
 import { DateInput } from "@/components/ui/date-input";
 import { CALENDAR_KIND_LABELS, CALENDAR_KINDS, itemsOn, monthGrid, shiftMonth, type CalendarItem, type CalendarKind } from "@/lib/calendar";
 import { AGENDA_DAYS, type AgendaRow, type Countdown, type TaskView } from "@/lib/tasks";
@@ -39,9 +39,12 @@ type Props = {
   briefing: string[];
   countdown: Countdown[];
   alerts: GuideAlert[];
+  /** 待你确认的任务（和 AI 的提议一起放在「等你处理」） */
+  review: HomeTask[];
   proposals: { tasks: HomeTask[]; changes: HomeTask[]; events: ProposedEvent[]; followUps: ProposedFollowUp[] };
-  /** 待办和日程：近 7 天的（含没有截止日、已过期的任务）和更远的 */
+  /** 待办和日程：近 7 天有日期的（含已过期的任务）、没有日期的任务、更远的 */
   near: AgendaRow<HomeTask>[];
+  undated: HomeTask[];
   far: AgendaRow<HomeTask>[];
   done: HomeTask[];
   /** 全部任务，日历里点某天时，待办也显示状态和「让 AI 开始」 */
@@ -64,10 +67,10 @@ export function Home(p: Props) {
       {p.alerts.map((a) => (
         <GuideAlertCard key={`${a.schoolId}:${a.admissionYear}`} alert={a} />
       ))}
-      {proposalCount > 0 && <Proposals {...p.proposals} count={proposalCount} />}
+      {proposalCount + p.review.length > 0 && <Awaiting review={p.review} {...p.proposals} proposalCount={proposalCount} today={p.today} />}
 
       <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
-        <Agenda near={p.near} far={p.far} done={p.done} today={p.today} />
+        <Agenda near={p.near} undated={p.undated} far={p.far} done={p.done} today={p.today} />
 
         <MonthCalendar today={p.today} month={p.month} items={p.calendar} tasks={p.tasks} />
       </div>
@@ -158,18 +161,48 @@ function GuideAlertCard({ alert: a }: { alert: GuideAlert }) {
   );
 }
 
-function Proposals({ tasks, changes, events, followUps, count }: Props["proposals"] & { count: number }) {
+/**
+ * 等你处理：待你确认的任务和 AI 的提议都是「等你点一下」，放在一个虚线框里。
+ * 提议仍然是虚线、仍然要用户点同意才生效；待你确认的任务仍然只有用户能标完成。
+ */
+function Awaiting({ review, tasks, changes, events, followUps, proposalCount, today }: Props["proposals"] & { review: HomeTask[]; proposalCount: number; today: string }) {
   const [pending, startTransition] = useTransition();
+  const { openTab } = useShell();
   return (
     <section className="space-y-1 rounded-xl border border-dashed border-line-strong px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="section-title text-foreground">AI 的提议</h2>
-        <span className="text-xs text-muted">{count} 项，同意后才会正式加进任务和日历</span>
-        <button disabled={pending} onClick={() => startTransition(() => acceptAllProposalsAction())} className={`${btn} ml-auto`}>
-          全部同意
-        </button>
+        <h2 className="section-title text-foreground">等你处理</h2>
+        <span className="text-xs text-muted">{review.length + proposalCount} 项 · 点一下就好；AI 的提议同意后才会加进任务和日历</span>
+        {proposalCount > 1 && (
+          <button disabled={pending} onClick={() => startTransition(() => acceptAllProposalsAction())} className={`${btn} ml-auto`}>
+            全部同意提议
+          </button>
+        )}
       </div>
       <ul className="divide-y divide-line text-sm">
+        {review.map((t) => (
+          <li key={t.id} className="agenda-row py-2">
+            <span className="ar-date pt-px text-xs text-warn">待你确认</span>
+            <span className="ar-title min-w-0">
+              <span className="ar-inline-date mr-1.5 rounded bg-warn-soft px-1 text-xs text-warn">待你确认</span>
+              <TaskTitle task={t} className="hover:underline" />
+            </span>
+            <span className="ar-status" />
+            <span className="ar-meta flex flex-wrap gap-x-3 text-xs text-muted">
+              <span>AI 做好了，看一下结果</span>
+              {t.link && <span className="truncate">{t.link}</span>}
+              {t.dueDate && <DateText date={t.dueDate} today={today} overdue={t.dueDate < today} />}
+            </span>
+            <span className="ar-action">
+              <button
+                onClick={() => (t.documentId ? openTab({ kind: "doc", id: t.documentId, title: "草稿" }) : openTab({ kind: "task", id: t.id, title: t.title }))}
+                className={t === review[0] ? primaryBtn : btn}
+              >
+                {t.documentId ? "看草稿" : "看看"}
+              </button>
+            </span>
+          </li>
+        ))}
         {tasks.map((t) => (
           <ProposalRow key={t.id} label="新任务" title={<TaskTitle task={t} className="hover:underline" />} when={t.dueDate && `截止 ${formatDay(t.dueDate)}`}>
             <ProposalButtons kind="task" id={t.id} date={t.dueDate} />
@@ -242,26 +275,33 @@ function TaskTitle({ task, className = "" }: { task: Pick<TaskView, "id" | "titl
   );
 }
 
-/** 待办和日程：任务和有日期的日程合成一个列表，默认只看近 7 天，展开看更远的 */
-function Agenda({ near, far, done, today }: { near: AgendaRow<HomeTask>[]; far: AgendaRow<HomeTask>[]; done: HomeTask[]; today: string }) {
+/** 「随时可以做」默认露几条 */
+const UNDATED_SHOWN = 2;
+
+/** 待办和日程：有日期的按日期排在上（默认近 7 天，展开看更远），没有日期的任务收在下面 */
+function Agenda({ near, undated, far, done, today }: { near: AgendaRow<HomeTask>[]; undated: HomeTask[]; far: AgendaRow<HomeTask>[]; done: HomeTask[]; today: string }) {
   const [expanded, setExpanded] = useState(false);
+  const [allUndated, setAllUndated] = useState(false);
   const row = (r: AgendaRow<HomeTask>) => (r.task ? <TaskRow key={r.task.id} task={r.task} today={today} /> : <EventRow key={r.item.key} item={r.item} today={today} />);
+  const shownUndated = allUndated ? undated : undated.slice(0, UNDATED_SHOWN);
+  const group = "section-title border-t border-line bg-subtle/50 px-4 py-1.5 text-xs";
   return (
     <section className="@container card self-start">
       <div className="card-head">
         <h2 className="card-title">待办和日程</h2>
         <span className="text-xs text-muted tabular-nums">
-          近 {AGENDA_DAYS} 天 {near.length} 项{far.length > 0 && ` · 更远 ${far.length} 项`}
+          近 {AGENDA_DAYS} 天 {near.length} 项{undated.length > 0 && ` · 没日期 ${undated.length} 项`}
+          {far.length > 0 && ` · 更远 ${far.length} 项`}
         </span>
       </div>
       {near.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-muted">近 {AGENDA_DAYS} 天没有待办和日程。可以在右边问 AI 接下来做什么。</p>
+        <p className="px-4 py-4 text-sm text-muted">近 {AGENDA_DAYS} 天没有到期的待办和日程。</p>
       ) : (
         <ul className="divide-y divide-line px-4">{near.map(row)}</ul>
       )}
       {expanded && far.length > 0 && (
         <>
-          <p className="section-title border-t border-line bg-subtle/50 px-4 py-1.5 text-xs">{AGENDA_DAYS} 天以后</p>
+          <p className={group}>{AGENDA_DAYS} 天以后</p>
           <ul className="divide-y divide-line border-t border-line px-4">{far.map(row)}</ul>
         </>
       )}
@@ -269,6 +309,21 @@ function Agenda({ near, far, done, today }: { near: AgendaRow<HomeTask>[]; far: 
         <button onClick={() => setExpanded(!expanded)} className="card-foot block w-full text-left text-sm text-muted hover:bg-subtle hover:text-foreground">
           {expanded ? `收起，只看近 ${AGENDA_DAYS} 天` : `展开更远的 ${far.length} 项`}
         </button>
+      )}
+      {undated.length > 0 && (
+        <>
+          <p className={group}>随时可以做（没有日期）· {undated.length} 项</p>
+          <ul className="divide-y divide-line border-t border-line px-4">
+            {shownUndated.map((t) => (
+              <TaskRow key={t.id} task={t} today={today} />
+            ))}
+          </ul>
+          {undated.length > UNDATED_SHOWN && (
+            <button onClick={() => setAllUndated(!allUndated)} className="card-foot block w-full text-left text-sm text-muted hover:bg-subtle hover:text-foreground">
+              {allUndated ? "收起" : `展开其余 ${undated.length - UNDATED_SHOWN} 项`}
+            </button>
+          )}
+        </>
       )}
       <div className="card-foot px-2">
         <AddTaskForm />

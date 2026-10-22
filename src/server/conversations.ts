@@ -2,7 +2,7 @@ import "server-only";
 import type { UIMessage } from "ai";
 import { and, asc, desc, eq, isNotNull, isNull, max, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { aiConversation, aiMessage } from "@/db/schema";
+import { aiConversation, aiMessage, aiToolCall } from "@/db/schema";
 
 /** 最近的通用对话（主页上的，不属于任何任务） */
 export async function getLatestConversation(userId: string) {
@@ -86,4 +86,13 @@ export async function listTaskConversationIds(userId: string) {
     .from(aiConversation)
     .where(and(eq(aiConversation.userId, userId), isNotNull(aiConversation.todoId)));
   return new Set(rows.map((r) => r.todoId!));
+}
+
+/** 一段对话里的工具调用（按时间），任务「待你确认」时列出 AI 做了什么 */
+export async function listToolCalls(conversationId: string) {
+  return db
+    .select({ toolName: aiToolCall.toolName, input: aiToolCall.input, output: aiToolCall.output, ok: aiToolCall.ok })
+    .from(aiToolCall)
+    .where(eq(aiToolCall.conversationId, conversationId))
+    .orderBy(asc(aiToolCall.createdAt));
 }
