@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addDays, formatDate, isIsoDate, itemsOn, monthGrid, overlaps, parseMonth, shiftMonth, shiftYears, todayJst, type CalendarItem } from "../calendar";
+import { addDays, cellLabel, formatDate, isIsoDate, parseWeek, weeksFrom, itemsOn, monthGrid, overlaps, parseMonth, shiftMonth, shiftYears, todayJst, type CalendarItem } from "../calendar";
 
 test("isIsoDate 拒绝不存在的日期", () => {
   assert.equal(isIsoDate("2026-02-28"), true);
@@ -43,4 +43,17 @@ test("跨天日程在区间内每天都显示", () => {
 test("formatDate：全站统一的「10/24 周六」，不是今年的带年份", () => {
   assert.equal(formatDate("2026-10-24", "2026-10-22"), "10/24 周六");
   assert.equal(formatDate("2027-01-15", "2026-10-22"), "2027/1/15 周五");
+});
+
+test("3 周视图从这周一开始；格子短标题：要项去掉研究科名，跨天只写头尾", () => {
+  const weeks = weeksFrom("2026-10-22");
+  assert.equal(weeks.length, 3);
+  assert.equal(weeks[0][0].date, "2026-10-19");
+  assert.equal(weeks[2][6].date, "2026-11-08");
+  assert.equal(parseWeek("bad", "2026-10-22"), "2026-10-19");
+  const guide = { title: "東京大学 経済学研究科 出願期間", date: "2026-10-22", endDate: "2026-11-05", source: "guide" as const };
+  assert.equal(cellLabel(guide, "2026-10-22"), "東京 出願期間");
+  assert.equal(cellLabel(guide, "2026-10-30"), null);
+  assert.equal(cellLabel(guide, "2026-11-05"), "東京 出願期間 截止");
+  assert.equal(cellLabel({ title: "说明会", date: "2026-10-25", source: "event" }, "2026-10-25"), "说明会");
 });
