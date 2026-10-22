@@ -171,6 +171,30 @@ body {
     outline: none;
   }
 
+  /* 板块：主页上的本周、日历等，一块一个容器，顶部一条标题栏 */
+  .card {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .card-head {
+    display: flex;
+    min-height: 2.75rem;
+    align-items: center;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--line);
+    padding: 0.5rem 1rem;
+  }
+  .card-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+  .card-foot {
+    border-top: 1px solid var(--line);
+    padding: 0.5rem 1rem;
+  }
+
   /* 页面标题：像 Notion 的页面名，大而粗 */
   .page-title {
     font-size: 1.75rem;

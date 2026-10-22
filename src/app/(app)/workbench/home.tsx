@@ -57,27 +57,32 @@ function formatToday(date: string) {
 export function Home(p: Props) {
   const proposalCount = p.proposals.tasks.length + p.proposals.changes.length + p.proposals.events.length + p.proposals.followUps.length;
   return (
-    <div className="@container mx-auto max-w-5xl space-y-8">
+    <div className="@container mx-auto max-w-5xl space-y-6">
       <Briefing today={p.today} lines={p.briefing} countdown={p.countdown} profileLine={p.profileLine} />
       {p.alerts.map((a) => (
         <GuideAlertCard key={`${a.schoolId}:${a.admissionYear}`} alert={a} />
       ))}
       {proposalCount > 0 && <Proposals {...p.proposals} count={proposalCount} />}
 
-      <div className="grid gap-8 @3xl:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
-        <div className="space-y-8">
-          <section className="space-y-2">
-            <h2 className="section-title">本周</h2>
+      <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
+        <div className="space-y-6">
+          <section className="card">
+            <div className="card-head">
+              <h2 className="card-title">本周</h2>
+              {p.week.length > 0 && <span className="text-xs text-muted tabular-nums">{p.week.length} 项</span>}
+            </div>
             {p.week.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-line-strong px-4 py-3 text-sm text-muted">这周没有待办了。可以在右边问 AI 接下来做什么。</p>
+              <p className="px-4 py-4 text-sm text-muted">这周没有待办了。可以在右边问 AI 接下来做什么。</p>
             ) : (
-              <ul className="divide-y divide-line rounded-xl border border-line px-3">
+              <ul className="divide-y divide-line px-3">
                 {p.week.map((t) => (
                   <TaskCard key={t.id} task={t} today={p.today} />
                 ))}
               </ul>
             )}
-            <AddTaskForm />
+            <div className="card-foot px-2">
+              <AddTaskForm />
+            </div>
           </section>
 
           <Later tasks={p.later} milestones={p.milestones} />
@@ -104,7 +109,7 @@ export function Home(p: Props) {
 
 function Briefing({ today, lines, countdown, profileLine }: { today: string; lines: string[]; countdown: Countdown[]; profileLine: string }) {
   return (
-    <section className="space-y-3">
+    <section className="space-y-3 rounded-xl bg-subtle/70 px-5 py-5">
       <div className="flex flex-wrap items-baseline gap-x-3">
         <h1 className="page-title">今日简报</h1>
         <span className="text-sm text-muted">{formatToday(today)}</span>
@@ -121,7 +126,7 @@ function Briefing({ today, lines, countdown, profileLine }: { today: string; lin
           </>
         ) : (
           countdown.map((c) => (
-            <span key={c.label} className="rounded-md bg-subtle px-2.5 py-1">
+            <span key={c.label} className="rounded-md bg-surface px-2.5 py-1">
               {c.label} <span className="font-medium text-foreground tabular-nums">{c.days === 0 ? "就是今天" : `还有 ${c.days} 天`}</span>
               {c.tentative && <span className="ml-1 rounded border border-dashed border-warn px-1 text-xs text-warn">仮</span>}
               {c.sourceUrl && <SourceLink url={c.sourceUrl} />}
@@ -312,9 +317,12 @@ function Later({ tasks, milestones }: { tasks: HomeTask[]; milestones: CalendarI
   ].sort((a, b) => a.date.localeCompare(b.date));
   if (!rows.length) return null;
   return (
-    <section className="space-y-2">
-      <h2 className="section-title">之后</h2>
-      <ul className="space-y-1.5 text-sm">
+    <section className="card">
+      <div className="card-head">
+        <h2 className="card-title">之后</h2>
+        <span className="text-xs text-muted">下周及以后的任务和官方日期</span>
+      </div>
+      <ul className="space-y-2 px-4 py-3 text-sm">
         {rows.map((r) => (
           <li key={r.key} className="flex items-center gap-3">
             <span className="w-12 shrink-0 tabular-nums text-muted">{formatDay(r.date)}</span>
@@ -403,91 +411,99 @@ function MonthCalendar({ today, month, items, upcoming }: { today: string; month
   const list = selected ? itemsOn(all, selected) : upcoming;
 
   return (
-    <section className="space-y-3">
-      <div className="flex items-center gap-2 text-sm">
-        <h2 className="section-title">日历</h2>
-        <div className="ml-auto flex items-center gap-1">
-          <Link href={`/workbench?m=${shiftMonth(month, -1)}`} className="rounded px-1.5 text-muted hover:text-foreground" aria-label="上个月">
-            ‹
-          </Link>
-          <span className="tabular-nums">
-            {y} 年 {Number(mm)} 月
-          </span>
-          <Link href={`/workbench?m=${shiftMonth(month, 1)}`} className="rounded px-1.5 text-muted hover:text-foreground" aria-label="下个月">
-            ›
-          </Link>
-          {month !== today.slice(0, 7) && (
-            <Link href="/workbench" className="text-xs text-muted hover:text-foreground">
-              今天
+    <div className="space-y-6">
+      <section className="card">
+        <div className="card-head text-sm">
+          <h2 className="card-title">日历</h2>
+          <div className="ml-auto flex items-center gap-1">
+            <Link href={`/workbench?m=${shiftMonth(month, -1)}`} className="rounded px-1.5 text-muted hover:text-foreground" aria-label="上个月">
+              ‹
             </Link>
+            <span className="tabular-nums">
+              {y} 年 {Number(mm)} 月
+            </span>
+            <Link href={`/workbench?m=${shiftMonth(month, 1)}`} className="rounded px-1.5 text-muted hover:text-foreground" aria-label="下个月">
+              ›
+            </Link>
+            {month !== today.slice(0, 7) && (
+              <Link href="/workbench" className="text-xs text-muted hover:text-foreground">
+                今天
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-7 px-2 pt-2 text-center text-xs">
+          {WEEKDAYS.map((d) => (
+            <div key={d} className="py-1 text-faint">
+              {d}
+            </div>
+          ))}
+          {weeks.flat().map(({ date, inMonth }) => {
+            const day = itemsOn(all, date);
+            const isSel = selected === date;
+            return (
+              <button
+                key={date}
+                onClick={() => setSelected(isSel ? null : date)}
+                className={`flex h-10 flex-col items-center gap-0.5 rounded pt-1 ${inMonth ? "" : "text-faint"} ${
+                  isSel ? "bg-subtle-strong" : "hover:bg-subtle"
+                }`}
+                aria-label={`${date}${day.length ? `，${day.length} 项` : ""}`}
+              >
+                <span className={`tabular-nums ${date === today ? "rounded-full bg-primary px-1.5 text-on-primary" : ""}`}>{Number(date.slice(8))}</span>
+                <span className="flex gap-0.5">
+                  {day.slice(0, 3).map((it) => (
+                    <Dot key={it.key} item={it} />
+                  ))}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="flex flex-wrap gap-x-3 px-4 pt-1 pb-3 text-xs text-faint">
+          <span>
+            <Dot item={{ kind: "deadline" }} /> 截止
+          </span>
+          <span>
+            <Dot item={{ kind: "exam" }} /> 考试
+          </span>
+          <span>
+            <Dot item={{ kind: "followup" }} /> 跟进
+          </span>
+          <span>
+            <Dot item={{ kind: "deadline", tentative: true }} /> 仮
+          </span>
+          <span>
+            <Dot item={{ kind: "other", proposed: true }} /> AI 提议
+          </span>
+        </p>
+
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <h2 className="card-title">{selected ? `${formatDay(selected)} 的日程` : "近期日程"}</h2>
+          <span className="text-xs text-muted">{selected ? "再点一次日期回到近期" : "接下来 30 天"}</span>
+        </div>
+        <div className="px-2 py-2">
+          {list.length === 0 ? (
+            <p className="px-2 py-2 text-sm text-muted">{selected ? "这天没有日程。" : "近期没有日程。"}</p>
+          ) : (
+            <ul className="space-y-1 text-sm">
+              {list.map((it) => (
+                <EventRow key={it.key} item={it} />
+              ))}
+            </ul>
           )}
         </div>
-      </div>
 
-      <div className="grid grid-cols-7 text-center text-xs">
-        {WEEKDAYS.map((d) => (
-          <div key={d} className="py-1 text-faint">
-            {d}
-          </div>
-        ))}
-        {weeks.flat().map(({ date, inMonth }) => {
-          const day = itemsOn(all, date);
-          const isSel = selected === date;
-          return (
-            <button
-              key={date}
-              onClick={() => setSelected(isSel ? null : date)}
-              className={`flex h-10 flex-col items-center gap-0.5 rounded pt-1 ${inMonth ? "" : "text-faint"} ${
-                isSel ? "bg-subtle-strong" : "hover:bg-subtle"
-              }`}
-              aria-label={`${date}${day.length ? `，${day.length} 项` : ""}`}
-            >
-              <span className={`tabular-nums ${date === today ? "rounded-full bg-primary px-1.5 text-on-primary" : ""}`}>{Number(date.slice(8))}</span>
-              <span className="flex gap-0.5">
-                {day.slice(0, 3).map((it) => (
-                  <Dot key={it.key} item={it} />
-                ))}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      <p className="flex flex-wrap gap-x-3 text-xs text-faint">
-        <span>
-          <Dot item={{ kind: "deadline" }} /> 截止
-        </span>
-        <span>
-          <Dot item={{ kind: "exam" }} /> 考试
-        </span>
-        <span>
-          <Dot item={{ kind: "followup" }} /> 跟进
-        </span>
-        <span>
-          <Dot item={{ kind: "deadline", tentative: true }} /> 仮
-        </span>
-        <span>
-          <Dot item={{ kind: "other", proposed: true }} /> AI 提议
-        </span>
-      </p>
-
-      <div className="space-y-2">
-        <h3 className="text-sm text-muted">{selected ? `${formatDay(selected)} 的日程` : "近期 30 天"}</h3>
-        {list.length === 0 ? (
-          <p className="text-sm text-muted">{selected ? "这天没有日程。" : "近期没有日程。"}</p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {list.map((it) => (
-              <EventRow key={it.key} item={it} />
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <details className="text-sm">
-        <summary className="cursor-pointer text-muted">添加日程</summary>
-        <AddEventForm key={selected ?? month} defaultDate={selected ?? (month === today.slice(0, 7) ? today : `${month}-01`)} />
-      </details>
-    </section>
+        <details className="card-foot text-sm">
+          <summary className="cursor-pointer py-1 text-muted hover:text-foreground">＋ 添加日程</summary>
+          <AddEventForm key={selected ?? month} defaultDate={selected ?? (month === today.slice(0, 7) ? today : `${month}-01`)} />
+        </details>
+      </section>
+    </div>
   );
 }
 
