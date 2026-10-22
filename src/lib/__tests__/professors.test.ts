@@ -6,7 +6,7 @@ import {
   buildMoreQueries,
   buildPaperQueries,
   buildSearchQueries,
-  candidateCount,
+  candidateTarget,
   cleanCopy,
   demoCandidates,
   mergePaperReply,
@@ -107,11 +107,11 @@ test("演示模型：“日程：日期 标题” 调用 add_calendar_event", ()
   assert.deepEqual(reply, { toolName: "add_calendar_event", input: { date: "2026-12-01", title: "JLPT N1", kind: "other" } });
 });
 
-test("用户要几位就给几位：count 限制候选数，默认 5，最多 8", () => {
-  assert.equal(candidateCount({}), 5);
-  assert.equal(candidateCount({ count: 3 }), 3);
-  assert.equal(candidateCount({ count: 20 }), 8);
-  assert.equal(candidateCount({ count: 0 }), 1);
+test("用户要几位就给几位；没说时 AI 按合适程度给 5–12 位", () => {
+  assert.deepEqual(candidateTarget({}), { min: 5, max: 12, exact: false });
+  assert.deepEqual(candidateTarget({ count: 3 }), { min: 3, max: 3, exact: true });
+  assert.deepEqual(candidateTarget({ count: 20 }), { min: 12, max: 12, exact: true });
+  assert.deepEqual(candidateTarget({ count: 0 }), { min: 1, max: 1, exact: true });
   const many = JSON.stringify({
     candidates: ["一", "二", "三", "四"].map((n) => ({ name: `山田${n}`, university: "例大学", research: "x", sources: [sources[0].url] })),
   });

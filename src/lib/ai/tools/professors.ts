@@ -3,7 +3,7 @@ import { z } from "zod";
 import { CONTACT_RULES } from "@/lib/admissions";
 import { describeRequirements } from "@/lib/aspirations";
 import { todayJst } from "@/lib/calendar";
-import { candidateKey, DEFAULT_CANDIDATES, describeProfessor, MAX_CANDIDATES, MAX_SCHOOLS, paperLabel, PROFESSOR_STATUSES } from "@/lib/professors";
+import { candidateKey, candidateTarget, DEFAULT_CANDIDATES, describeProfessor, MAX_CANDIDATES, MAX_SCHOOLS, paperLabel, PROFESSOR_STATUSES } from "@/lib/professors";
 import { answerField } from "@/lib/onboarding";
 import { listAspirations } from "@/server/aspirations";
 import { getProfile } from "@/server/profile";
@@ -39,7 +39,7 @@ export const searchProfessorsTool = defineTool({
       .min(1)
       .max(MAX_CANDIDATES)
       .optional()
-      .describe(`要几位候选：用户说了数量就照着填（「两三位」填 3，「一位」填 1）；没说就不填（默认 ${DEFAULT_CANDIDATES} 位）`),
+      .describe(`要几位候选：用户说了数量就照着填（「两三位」填 3，「一位」填 1）；没说就不填，由检索按合适程度给 ${DEFAULT_CANDIDATES}–${MAX_CANDIDATES} 位，合适的少就少给`),
   }),
   execute: async ({ keywords, schools, preference, field, count }, { userId, meter }) => {
     // 一次回复只找一轮：模型有时同时发出两个检索（比如按学校拆开），文稿栏只能显示一轮，第二个直接跳过
@@ -49,13 +49,17 @@ export const searchProfessorsTool = defineTool({
     const f = field ?? answerField(profile?.onboarding);
     const res = await runProfessorSearch(userId, { keywords, schools, preference, field: f, count, profile: profile?.markdown.slice(0, 2500) }, meter);
     const n = res.candidates.length;
-    const want = count ?? DEFAULT_CANDIDATES;
+    const target = candidateTarget({ count });
     return {
       searchId: res.searchId,
       demo: res.demo,
       // 回复只能说这一轮真有的卡片：人数、名字都以下面的 candidates 为准，上一轮的教授不在卡片里
       shown: `这一轮文稿栏里有 ${n} 张候选卡片，就是下面这 ${n} 位。介绍时人数和名字只按这 ${n} 位说，不要把之前几轮的教授说成卡片里的。${
-        n < want ? `用户要 ${want} 位，只找到 ${n} 位：如实告诉用户，并提议怎么扩大范围（换关键词、加学校）。` : ""
+        target.exact && n < target.max
+          ? `用户要 ${target.max} 位，只找到 ${n} 位：如实告诉用户，并提议怎么扩大范围（换关键词、加学校）。`
+          : !target.exact && n < target.min
+            ? `真正合适的只有 ${n} 位（没有硬凑）：如实告诉用户，并提议怎么扩大范围（换关键词、加学校）。`
+            : ""
       }${n ? "最后问用户要不要把其中哪几位加入志愿（用户同意后用 save_professor，带上这个 searchId）。" : ""}`,
       candidates: res.candidates.map((c) => ({
         name: c.name,
