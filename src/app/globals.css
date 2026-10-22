@@ -553,3 +553,6 @@ body {
 ::highlight(gn-quote) {
   background-color: color-mix(in srgb, var(--accent) 22%, transparent);
 }
+::highlight(gn-quote-pending) {
+  background-color: color-mix(in srgb, var(--accent) 22%, transparent);
+}
