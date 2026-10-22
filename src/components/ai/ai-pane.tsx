@@ -110,7 +110,7 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
 
   async function send(text: string, withQuotes = false) {
     // 引用在等待 beforeSend 前取出并清空，免得用户这时又加一段被一起清掉
-    const attached = withQuotes ? quotes.map(({ text: t, source }) => ({ text: t, source })) : [];
+    const attached = withQuotes ? quotes.map(({ text: t, source, comment }) => ({ text: t, source, ...(comment ? { comment } : {}) })) : [];
     if (attached.length) pageStore.clearQuotes();
     // 先让页面做准备（如编辑器保存未保存的修改），AI 才能读到最新内容
     try {
@@ -338,7 +338,7 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
         onSubmit={submit}
         className="mx-3 mb-3 rounded-xl border border-line-strong bg-surface shadow-[0_1px_3px_rgb(15_15_15/0.06)] transition-[border-color,box-shadow] focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15"
       >
-        <QuoteChips quotes={quotes} onRemove={pageStore.removeQuote} />
+        <QuoteChips quotes={quotes} onRemove={pageStore.removeQuote} onComment={pageStore.updateComment} />
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}

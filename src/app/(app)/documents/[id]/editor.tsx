@@ -528,7 +528,6 @@ const SAVE_LABELS: Record<SaveState, string> = {
 function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; zhOn: boolean; docId: string; flush: () => Promise<void> }) {
   const wrap = useRef<HTMLDivElement>(null);
   const addToChat = useAddToChat();
-  const { expand } = useShell();
   const sel = useEditorState({
     editor,
     selector: ({ editor: e }) => {
@@ -587,7 +586,7 @@ function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; 
       range = null;
     }
     const source = wrap.current?.closest<HTMLElement>("[data-quote-source]")?.dataset.quoteSource ?? "文书";
-    if (addToChat({ text, source, range })) expand("ai");
+    addToChat({ text, source, range });
   }
 
   const showResult = result && sel?.text === result.for;

@@ -11,7 +11,7 @@ import { MAX_QUOTES, type Quote } from "@/lib/quotes";
 //   - 用 useAskAi() 让侧边栏代用户发一条消息（如“改写选中段落”按钮）
 //   - 用 useAiBeforeSend(fn) 在消息发出前先做一件事（如编辑器先保存，AI 才能读到最新内容）
 //   - 用 useStartTask() 切到某个任务的专属对话（点任务卡），或者顺便让 AI 开始（「让 AI 开始」）
-//   - 用 useAddToChat() 把选中的文字加进 AI 输入框（「加入对话」），随用户下一条消息一起发出
+//   - 用 useAddToChat() 把选中的文字加进 AI 输入框（「加入对话」）：先在选区旁弹出评论小框（可不填），确认后随用户下一条消息一起发出
 
 type PageInfo = { path: string; title?: string; content?: string; workPath?: string };
 /** 用户在输入框上面点掉的「AI 能看到」：这一栏的内容不发给 AI */
@@ -28,6 +28,7 @@ type BeforeSend = () => Promise<void>;
 /** 输入框里待发的引用；range 用来在原文上标出编号（原文被重新渲染后就标不出了，引用照样发） */
 export type QuoteDraft = Quote & { id: string; range: Range | null };
 const NO_QUOTES: QuoteDraft[] = [];
+type ComposeListener = (q: Omit<QuoteDraft, "id" | "comment">) => void;
 
 function createPageStore() {
   let workPath = "/";
@@ -41,6 +42,7 @@ function createPageStore() {
   const startListeners = new Set<StartTaskListener>();
   let quotes: QuoteDraft[] = NO_QUOTES;
   const quoteListeners = new Set<() => void>();
+  const composeListeners = new Set<ComposeListener>();
   const setQuotes = (next: QuoteDraft[]) => {
     quotes = next;
     quoteListeners.forEach((l) => l());
@@ -91,11 +93,26 @@ function createPageStore() {
       };
     },
     getQuotes: () => quotes,
-    /** 同一处文字重复加入只算一次；最多 MAX_QUOTES 段，返回是否加上了 */
+    /** 同一处文字重复加入只算一次（新写的评论覆盖旧的）；最多 MAX_QUOTES 段，返回是否加上了 */
     addQuote: (q: Omit<QuoteDraft, "id">) => {
+      const same = quotes.find((x) => x.text === q.text && x.source === q.source);
+      if (same) {
+        if (q.comment) setQuotes(quotes.map((x) => (x === same ? { ...x, comment: q.comment } : x)));
+        return true;
+      }
       if (quotes.length >= MAX_QUOTES) return false;
-      if (!quotes.some((x) => x.text === q.text && x.source === q.source)) setQuotes([...quotes, { ...q, id: uuid() }]);
+      setQuotes([...quotes, { ...q, id: uuid() }]);
       return true;
+    },
+    updateComment: (id: string, comment: string) =>
+      setQuotes(quotes.map((q) => (q.id === id ? { ...q, comment: comment.trim() || undefined } : q))),
+    /** 打开「加入对话」的评论小框（AddToChat 组件监听），确认后才 addQuote */
+    composeQuote: (q: Omit<QuoteDraft, "id" | "comment">) => composeListeners.forEach((l) => l(q)),
+    onCompose: (listener: ComposeListener) => {
+      composeListeners.add(listener);
+      return () => {
+        composeListeners.delete(listener);
+      };
     },
     removeQuote: (id: string) => setQuotes(quotes.filter((q) => q.id !== id)),
     clearQuotes: () => setQuotes(NO_QUOTES),
@@ -153,6 +170,7 @@ export function useQuotes() {
   return useSyncExternalStore(store.onQuotes, store.getQuotes, () => NO_QUOTES);
 }
 
+/** 把选中的文字加入对话：先弹出评论小框 */
 export function useAddToChat() {
-  return usePageStore().addQuote;
+  return usePageStore().composeQuote;
 }

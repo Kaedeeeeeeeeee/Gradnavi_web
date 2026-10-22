@@ -11,6 +11,10 @@ test("parseQuotes drops bad entries and caps the count", () => {
   assert.deepEqual(parseQuotes("x"), []);
   assert.deepEqual(parseQuotes([{ text: "  " }, { text: 1 }, null, { text: "冈山大学", source: "AI 的回复" }]), [{ text: "冈山大学", source: "AI 的回复" }]);
   assert.equal(parseQuotes([{ text: "a" }])[0].source, "对话");
+  assert.deepEqual(parseQuotes([{ text: "a", source: "s", comment: "  这里不对 " }, { text: "b", source: "s", comment: "  " }]), [
+    { text: "a", source: "s", comment: "这里不对" },
+    { text: "b", source: "s" },
+  ]);
   assert.equal(parseQuotes(Array.from({ length: 20 }, () => ({ text: "a" }))).length, MAX_QUOTES);
 });
 
@@ -18,8 +22,10 @@ test("quotesForModel numbers quotes like the chips", () => {
   assert.equal(quotesForModel([]), "");
   const out = quotesForModel([
     { text: "冈山大学", source: "AI 的回复" },
-    { text: "第一行\n第二行", source: "文稿「研究计划书」" },
+    { text: "第一行\n第二行", source: "文稿「研究计划书」", comment: "这句太长了" },
   ]);
+  assert.match(out, /> 第二行\n用户对这段的评论：这句太长了/);
+  assert.doesNotMatch(out, /> 冈山大学\n用户对这段/);
   assert.match(out, /\[1\] 出自AI 的回复：\n> 冈山大学/);
   assert.match(out, /\[2\] 出自文稿「研究计划书」：\n> 第一行\n> 第二行/);
   assert.match(out, /用户的话：$/);
