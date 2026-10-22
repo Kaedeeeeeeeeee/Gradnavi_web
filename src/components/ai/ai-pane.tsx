@@ -8,7 +8,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { undoMemory } from "@/app/(app)/actions";
 import { openTaskConversationAction } from "@/app/(app)/workbench/actions";
 import { LogoMark, useShell } from "@/components/shell/app-shell";
-import { TOOL_META } from "@/lib/ai/tool-meta";
+import { TOOL_META, toolChipText } from "@/lib/ai/tool-meta";
 import { uuid } from "@/lib/browser";
 import { chatMarkdownToHtml } from "@/lib/chat-markdown";
 import { tabFocus, workFocus, type AiFocus } from "@/lib/ai-context";
@@ -441,22 +441,50 @@ function chipTarget(name: string, input: unknown, output: unknown): DocTab | nul
   return null;
 }
 
+/** 进行中的工具调用已经用了几秒（让用户知道 AI 在干活，不是卡住了） */
+function useElapsed(active: boolean) {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const start = Date.now();
+    const timer = setInterval(() => setSec(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return sec;
+}
+
+/** 工具调用的进度标签：进行中「正在找教授（東京大学 · …）· · · 12 秒」，完成后「✓ 找到 5 位教授 在文稿栏查看 →」 */
 function ToolChip({ name, state, input, output }: { name: string; state: string; input: unknown; output: unknown }) {
   const { openTab } = useShell();
-  const label = TOOL_META[name]?.label ?? name;
   const failed = state === "output-error";
   const done = state === "output-available";
+  const running = !failed && !done;
+  const sec = useElapsed(running);
+  const text = toolChipText(name, failed ? "failed" : done ? "done" : "running", input, output);
   const target = done ? chipTarget(name, input, output) : null;
+  if (!text) return null;
   return (
-    <div className="inline-flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 text-xs text-muted">
-      <span>{failed ? "✗" : done ? "✓" : "…"}</span>
-      <span>AI {label}</span>
+    <div className="inline-flex max-w-full items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 text-xs text-muted">
+      {running ? <Dots /> : <span className={failed ? "text-danger" : "text-ok"}>{failed ? "✗" : "✓"}</span>}
+      <span className="min-w-0 truncate">{text}</span>
+      {running && sec > 0 && <span className="tabular-nums text-faint">{sec} 秒</span>}
       {target && (
-        <button onClick={() => openTab(target)} className="text-accent hover:underline">
-          查看 →
+        <button onClick={() => openTab(target)} className="shrink-0 text-accent hover:underline">
+          {target.kind === "search" ? "在文稿栏查看 →" : "查看 →"}
         </button>
       )}
     </div>
+  );
+}
+
+/** 进行中：三个点隔一会儿依次跳一下 */
+function Dots() {
+  return (
+    <span className="chip-dots" aria-label="进行中">
+      <span />
+      <span />
+      <span />
+    </span>
   );
 }
 
