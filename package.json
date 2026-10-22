@@ -25,6 +25,7 @@
     "@tiptap/pm": "^3.32.0",
     "@tiptap/react": "^3.32.0",
     "@tiptap/starter-kit": "^3.32.0",
+    "@tiptap/suggestion": "^3.32.0",
     "@types/diff-match-patch": "^1.0.36",
     "ai": "^7.0.148",
     "better-auth": "^1.7.12",

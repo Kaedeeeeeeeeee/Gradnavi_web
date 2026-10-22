@@ -4,6 +4,8 @@
 //   - 用户改了这段日文 → 指纹变了，沿用原位置的旧中文并标「待更新」，点一下重新翻译
 // 标题不需要中文对照，不参与对应。
 
+import { stripColorTags } from "./doc-color";
+
 export type ZhEntry = { key: string; zh: string };
 /** 一段日文对应的中文；null 表示还没有中文 */
 export type ZhCell = { zh: string; stale: boolean; key: string } | null;
@@ -21,7 +23,7 @@ export const isHeadingBlock = (block: string) => /^#{1,6}\s/.test(block);
 
 /** 段落指纹：去掉行首的 Markdown 标记、强调符号、转义和所有空白 */
 export function blockKey(text: string): string {
-  return text
+  return stripColorTags(text)
     .replace(/^[ \t]*(#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s?)/gm, "")
     .replace(/[\\*_`~]/g, "")
     .replace(/\s+/g, "");
