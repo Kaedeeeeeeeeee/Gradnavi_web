@@ -465,11 +465,11 @@ function ToolChip({ name, state, input, output }: { name: string; state: string;
   if (!text) return null;
   return (
     <div className="inline-flex max-w-full items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 text-xs text-muted">
-      {running ? <Dots /> : <span className={failed ? "text-danger" : "text-ok"}>{failed ? "✗" : "✓"}</span>}
+      {running ? <Dots /> : <span className={`shrink-0 ${failed ? "text-danger" : "text-ok"}`}>{failed ? "✗" : "✓"}</span>}
       <span className="min-w-0 truncate">{text}</span>
-      {running && sec > 0 && <span className="tabular-nums text-faint">{sec} 秒</span>}
+      {running && sec > 0 && <span className="shrink-0 whitespace-nowrap tabular-nums text-faint">{sec} 秒</span>}
       {target && (
-        <button onClick={() => openTab(target)} className="shrink-0 text-accent hover:underline">
+        <button onClick={() => openTab(target)} className="shrink-0 whitespace-nowrap text-accent hover:underline">
           {target.kind === "search" ? "在文稿栏查看 →" : "查看 →"}
         </button>
       )}
@@ -480,7 +480,7 @@ function ToolChip({ name, state, input, output }: { name: string; state: string;
 /** 进行中：三个点隔一会儿依次跳一下 */
 function Dots() {
   return (
-    <span className="chip-dots" aria-label="进行中">
+    <span className="chip-dots shrink-0" aria-label="进行中">
       <span />
       <span />
       <span />
