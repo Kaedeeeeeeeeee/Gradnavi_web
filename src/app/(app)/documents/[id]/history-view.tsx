@@ -136,7 +136,7 @@ export function HistoryView({ docId, current, flush, onClose }: Props) {
                 中文对照
               </label>
             </div>
-            <DiffText parts={parts} className="max-h-[60vh] overflow-y-auto rounded-md border border-line px-4 py-3 text-sm" />
+            <DiffText parts={parts} className="max-h-[60vh] overflow-y-auto rounded-xl border border-line px-4 py-3 text-sm" />
             {sel && (
               <div className="flex flex-wrap gap-2 text-sm">
                 <button

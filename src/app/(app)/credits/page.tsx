@@ -24,7 +24,7 @@ export default async function CreditsPage() {
         </p>
       </div>
 
-      <section className="rounded-lg border border-line p-5">
+      <section className="rounded-xl border border-line p-5">
         <p className="text-sm text-muted">当前余额</p>
         <p className={`text-3xl font-semibold tabular-nums ${balance <= 0 ? "text-danger" : ""}`}>{balance.toLocaleString()}</p>
         <p className="mt-2 text-xs text-muted">
@@ -37,7 +37,7 @@ export default async function CreditsPage() {
         {ledger.length === 0 ? (
           <p className="text-sm text-muted">还没有记录。</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-xl border border-line px-4">
             <table className="w-full text-sm">
               <thead className="text-left text-muted">
                 <tr className="border-b border-line">
@@ -50,7 +50,7 @@ export default async function CreditsPage() {
               </thead>
               <tbody>
                 {ledger.map((r) => (
-                  <tr key={r.id} className="border-b border-line">
+                  <tr key={r.id} className="border-b border-line last:border-0">
                     <td className="py-2 pr-3 whitespace-nowrap text-muted tabular-nums">{time.format(r.createdAt)}</td>
                     <td className="py-2 pr-3">
                       {r.kind === "usage" && r.feature ? FEATURE_LABELS[r.feature] : LEDGER_KIND_LABELS[r.kind]}

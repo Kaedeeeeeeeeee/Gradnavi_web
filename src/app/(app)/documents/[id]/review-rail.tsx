@@ -31,7 +31,7 @@ export function DiffText({ parts, className = "" }: { parts: DiffPart[]; classNa
   );
 }
 
-const card = "rounded-md border bg-background p-3 text-sm shadow-sm transition-colors";
+const card = "rounded-xl border bg-background p-3 text-sm shadow-sm transition-colors";
 
 type RailProps = {
   markdown: string;

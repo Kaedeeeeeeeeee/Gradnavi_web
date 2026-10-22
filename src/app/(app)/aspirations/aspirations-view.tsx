@@ -34,7 +34,7 @@ export function AspirationsView({ list, lastSearch }: Props) {
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="section-title">我的志愿（{active.length}）</h2>
             {active.length >= 2 && (
-              <div className="ml-auto flex rounded-md border border-line p-0.5 text-xs">
+              <div className="ml-auto flex rounded-xl border border-line p-0.5 text-xs">
                 {(["list", "compare"] as const).map((m) => (
                   <button key={m} onClick={() => setMode(m)} className={`rounded px-2.5 py-1 ${mode === m ? "bg-subtle-strong" : "text-muted hover:text-foreground"}`}>
                     {m === "list" ? "列表" : "并排对比"}
@@ -65,7 +65,7 @@ function FindProfessors({ lastSearch }: { lastSearch: Props["lastSearch"] }) {
   const ask = useAskAi();
   const [text, setText] = useState("");
   return (
-    <section className="space-y-2 rounded-lg border border-line p-4">
+    <section className="space-y-2 rounded-xl border border-line p-4">
       <h2 className="section-title">和 AI 一起找教授</h2>
       <form
         onSubmit={(e) => {
@@ -109,7 +109,7 @@ function AspirationCard({ a }: { a: AspirationView }) {
   const p = a.professor;
   const s = a.school;
   return (
-    <li className={`space-y-3 rounded-lg border border-line p-4 ${p?.status === "dropped" ? "opacity-60" : ""}`}>
+    <li className={`space-y-3 rounded-xl border border-line p-4 ${p?.status === "dropped" ? "opacity-60" : ""}`}>
       <div className="flex flex-wrap items-baseline gap-x-2">
         {p ? (
           <button onClick={() => openTab({ kind: "professor", id: p.id, title: p.name })} className="text-left font-medium hover:underline">
@@ -195,7 +195,7 @@ function CompareTable({ list }: { list: AspirationView[] }) {
   ];
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto rounded-lg border border-line">
+      <div className="overflow-x-auto rounded-xl border border-line">
         <table className="w-full min-w-[560px] border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-line">
@@ -243,7 +243,7 @@ function StartFromSchool({ empty }: { empty: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ university: "", name: "", url: "" });
   return (
-    <details className="rounded-lg border border-line p-4 text-sm" open={empty || undefined}>
+    <details className="rounded-xl border border-line p-4 text-sm" open={empty || undefined}>
       <summary className="cursor-pointer font-medium">从研究科开始</summary>
       <p className="mt-2 text-muted">有的研究科好考、不太需要先联系教授，可以先把研究科加进志愿。系统每天检查它的募集要项，日程和入试要点自动带出来，不消耗 credit。</p>
       <form

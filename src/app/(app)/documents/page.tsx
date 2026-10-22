@@ -46,7 +46,7 @@ export default async function DocumentsPage() {
       {docs.length === 0 ? (
         <p className="text-sm text-muted">还没有文书。新建一份研究计划书，AI 会分步带你写。</p>
       ) : (
-        <ul className="divide-y divide-line rounded-md border border-line">
+        <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
           {docs.map((d) => (
             <li key={d.id}>
               <OpenTabLink tab={{ kind: "doc", id: d.id, title: d.title }} href={`/documents/${d.id}`} className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-subtle">
