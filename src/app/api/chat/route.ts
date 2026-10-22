@@ -16,20 +16,21 @@ import { auth } from "@/lib/auth";
 import { UsageMeter } from "@/lib/credits";
 import { parseQuotes, quotesForModel } from "@/lib/quotes";
 import { describeTask } from "@/lib/tasks";
+import { raisedBudget, shouldWrapUp, STEP_BUDGET, taskStepOf, turnKind, type StepTools } from "@/lib/ai/turn-budget";
 import { getOrCreateConversation, loadMessages, saveMessages } from "@/server/conversations";
 import { getBalance, InsufficientCreditsError, recordUsageSafe } from "@/server/credits";
 import { getUserMd } from "@/server/profile";
 import { getTodo, taskLinks, toTaskView } from "@/server/todos";
 
-export const maxDuration = 60;
+// 查研究科、对比学校可能要几分钟（一轮最长 5 分钟后进入总结）
+export const maxDuration = 360;
 
 // 只保留最近的若干条消息发给模型，控制 token 费用
 const HISTORY_LIMIT = 30;
 
-// 一轮最多几步（每步可以并行调用多个工具）。最后一步不给工具，让 AI 一定写出文字回答，不会查完资料就没下文
-const MAX_STEPS = 10;
+// 一轮的步数按这轮在做什么自动定（见 lib/ai/turn-budget）。该收尾时最后一步不给工具，让 AI 一定写出文字回答，不会查完资料就没下文
 const WRAP_UP =
-  "\n\n【本轮工具次数已用完】不要再调用工具。根据目前查到的内容直接回答：先写已经查清的结论（附出处链接），再列还没查到的部分和下一步建议，最后告诉用户可以说「继续」让你接着查。";
+  "\n\n【本轮该收尾了】不要再调用工具。根据目前查到的内容直接回答：先写已经查清的结论（附出处链接），再列还没查到的部分和下一步建议，最后告诉用户可以说「继续」让你接着查。";
 
 const bodySchema = z.object({
   conversationId: z.string().uuid(),
@@ -88,6 +89,10 @@ export async function POST(req: Request) {
 
   const today = new Intl.DateTimeFormat("zh-CN", { dateStyle: "full", timeZone: "Asia/Tokyo" }).format(new Date());
   const instructions = buildSystemPrompt({ userMd: await getUserMd(userId), page, today, task });
+  const userText = userMessage.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n");
+  const kind = turnKind({ taskStep: taskStepOf(taskRow?.stepKey), taskTitle: taskRow?.title, pagePath: page?.path, workPath: page?.workPath, userText });
+  const startedAt = Date.now();
+  let wrapped = false;
   const result = streamText({
     model: getChatModel(),
     instructions,
@@ -96,8 +101,17 @@ export async function POST(req: Request) {
       convertDataPart: (part) => (part.type === "data-quotes" ? { type: "text", text: quotesForModel(parseQuotes(part.data)) } : undefined),
     }),
     tools,
-    stopWhen: isStepCount(MAX_STEPS),
-    prepareStep: ({ stepNumber }) => (stepNumber === MAX_STEPS - 1 ? { toolChoice: "none", instructions: instructions + WRAP_UP } : {}),
+    // 收尾那一步写完就停；isStepCount 只是兜底
+    stopWhen: [() => wrapped, isStepCount(STEP_BUDGET.compare)],
+    prepareStep: ({ stepNumber, steps }) => {
+      const tools: StepTools[] = steps.map((st) =>
+        st.toolCalls.map((c) => ({ toolName: c.toolName, output: st.toolResults.find((r) => r.toolCallId === c.toolCallId)?.output })),
+      );
+      const budget = raisedBudget(STEP_BUDGET[kind], tools.flat().map((t) => t.toolName));
+      if (!shouldWrapUp({ stepNumber, budget, elapsedMs: Date.now() - startedAt, steps: tools })) return {};
+      wrapped = true;
+      return { toolChoice: "none", instructions: instructions + WRAP_UP };
+    },
     onStepEnd: (step) => meter.addTokens(step.usage),
     onEnd: () => settle(),
     onAbort: () => settle(),

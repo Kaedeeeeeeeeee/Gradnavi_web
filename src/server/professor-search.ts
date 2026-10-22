@@ -8,9 +8,11 @@ import {
   buildMoreQueries,
   buildPaperQueries,
   buildSearchQueries,
-  candidateCount,
   candidateKey,
+  candidateTarget,
+  DEFAULT_CANDIDATES,
   demoCandidates,
+  MAX_CANDIDATES,
   mergePaperReply,
   parseCandidates,
   type ProfessorCandidate,
@@ -45,10 +47,18 @@ function userContext(input: SearchInput) {
 ${input.preference ? `用户追加的要求：${input.preference}\n` : ""}${input.profile ? `\n用户档案摘要（user.md，含用户说过不合适的教授和原因，请避开同类）：\n${input.profile}\n` : ""}`;
 }
 
-function buildPrompt(input: SearchInput, results: SearchResult[], count: number, exclude: ProfessorCandidate[]) {
+/** exact：用户指定了人数；否则 count 是上限，由 AI 按合适程度决定给几位 */
+function howMany(count: number, exact: boolean, already: number) {
+  if (exact) return `${count} 位（用户要的就是这么多：符合条件的尽量给满，但不要多给，也不要硬凑不相关的人）`;
+  return `最多 ${count} 位。人数由你按合适程度决定：真正合适的多就多给，合适的少就少给${
+    already ? "" : `（一般 ${DEFAULT_CANDIDATES}–${MAX_CANDIDATES} 位）`
+  }；只列和用户方向真正相关的人，不要为了凑数硬塞，一位都不合适就返回空数组`;
+}
+
+function buildPrompt(input: SearchInput, results: SearchResult[], count: number, exact: boolean, exclude: ProfessorCandidate[]) {
   return `用户想申请日本大学院，正在找导师。
 ${userContext(input)}
-下面是检索结果。请从中找出与研究方向相关、在目标校任职、能指导研究生的教员（教授、准教授、讲师），${count} 位（用户要的就是这么多：符合条件的尽量给满，但不要多给，也不要硬凑不相关的人），按适合程度排序。${
+下面是检索结果。请从中找出与研究方向相关、在目标校任职、能指导研究生的教员（教授、准教授、讲师），${howMany(count, exact, exclude.length)}，按适合程度排序。${
     exclude.length ? `\n已经选出的这几位不要再列：${exclude.map((c) => `${c.name}（${c.university}）`).join("、")}` : ""
   }
 
@@ -126,9 +136,9 @@ async function searchAll(queries: string[], meter?: UsageMeter) {
   return { results, failed };
 }
 
-async function pickCandidates(input: SearchInput, results: SearchResult[], count: number, exclude: ProfessorCandidate[], meter?: UsageMeter) {
+async function pickCandidates(input: SearchInput, results: SearchResult[], count: number, exact: boolean, exclude: ProfessorCandidate[], meter?: UsageMeter) {
   const top = results.slice(0, MAX_RESULTS_FOR_AI);
-  const { text, totalUsage } = await generateText({ model: getChatModel(), prompt: buildPrompt(input, top, count, exclude) });
+  const { text, totalUsage } = await generateText({ model: getChatModel(), prompt: buildPrompt(input, top, count, exact, exclude) });
   meter?.addTokens(totalUsage);
   const taken = new Set(exclude.map(candidateKey));
   return parseCandidates(
@@ -142,24 +152,24 @@ async function pickCandidates(input: SearchInput, results: SearchResult[], count
 
 /**
  * meter：记录检索次数和 token，调用方负责结算（recordUsage）。
- * 第一轮凑不够用户要的人数时，换一组更宽的检索词再找一次（只补差的人数）。
+ * 第一轮凑不够人数（用户指定的人数，没指定时 DEFAULT_CANDIDATES 位）时，换一组更宽的检索词再找一次（只补差的人数）。
  */
 export async function searchProfessors(input: SearchInput, meter?: UsageMeter): Promise<ProfessorSearchResult> {
-  if (isDemoMode()) return { candidates: demoCandidates(input).slice(0, candidateCount(input)), demo: true, searched: 0 };
+  const target = candidateTarget(input);
+  if (isDemoMode()) return { candidates: demoCandidates(input).slice(0, target.exact ? target.max : DEFAULT_CANDIDATES), demo: true, searched: 0 };
 
-  const count = candidateCount(input);
   const queries = buildSearchQueries(input);
   const first = await searchAll(queries, meter);
   let searched = queries.length;
-  let candidates = first.results.length ? await pickCandidates(input, first.results, count, [], meter) : [];
+  let candidates = first.results.length ? await pickCandidates(input, first.results, target.max, target.exact, [], meter) : [];
 
-  if (candidates.length < count) {
+  if (candidates.length < target.min) {
     const more = buildMoreQueries(input);
     const second = await searchAll(more, meter);
     searched += more.length;
     const seen = new Set(first.results.map((r) => r.url));
     const fresh = [...second.results.filter((r) => !seen.has(r.url)), ...first.results];
-    if (second.results.length) candidates = [...candidates, ...(await pickCandidates(input, fresh, count - candidates.length, candidates, meter))];
+    if (second.results.length) candidates = [...candidates, ...(await pickCandidates(input, fresh, target.max - candidates.length, target.exact, candidates, meter))];
     if (!first.results.length && !second.results.length && (first.failed || second.failed)) throw (first.failed ?? second.failed)!.reason;
   }
 

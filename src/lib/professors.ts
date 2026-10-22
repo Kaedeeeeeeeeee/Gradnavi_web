@@ -34,7 +34,7 @@ export type SearchInput = {
   preference?: string;
   /** user.md 摘要：让 AI 说明「为什么适合你」，并避开用户说过不合适的教授 */
   profile?: string;
-  /** 用户要几位（「找两三位」= 3）；没说时 DEFAULT_CANDIDATES */
+  /** 用户要几位（「找两三位」= 3）；没说时由 AI 按合适程度定（见 candidateTarget） */
   count?: number;
 };
 
@@ -55,13 +55,19 @@ export type ProfessorCandidate = {
 };
 
 export const MAX_SCHOOLS = 5;
-export const MAX_CANDIDATES = 8;
+export const MAX_CANDIDATES = 12;
+/** 用户没说要几位时，合适的至少想凑到这么多（凑不到也不硬凑） */
 export const DEFAULT_CANDIDATES = 5;
 
-/** 这一轮要几位候选 */
-export function candidateCount(input: Pick<SearchInput, "count">) {
-  const n = Math.round(input.count ?? DEFAULT_CANDIDATES);
-  return Math.min(Math.max(Number.isFinite(n) ? n : DEFAULT_CANDIDATES, 1), MAX_CANDIDATES);
+/**
+ * 这一轮要几位候选。用户说了数量（「找两三位」= 3）就照给；没说时由 AI 按合适程度定 5–12 位：
+ * 合适的多就多给，少就少给，不硬凑。min = 不够时再换一组检索词补找的门槛。
+ */
+export function candidateTarget(input: Pick<SearchInput, "count">): { min: number; max: number; exact: boolean } {
+  const n = Math.round(input.count ?? NaN);
+  if (!Number.isFinite(n)) return { min: DEFAULT_CANDIDATES, max: MAX_CANDIDATES, exact: false };
+  const c = Math.min(Math.max(n, 1), MAX_CANDIDATES);
+  return { min: c, max: c, exact: true };
 }
 
 /** 把用户填的“目标校”拆成列表：逗号、顿号、空格、换行都算分隔 */
