@@ -81,3 +81,9 @@ test("没有文稿时只有两栏", () => {
   assert.equal(after.mobile, "work");
   assert.deepEqual(parseLayout(serializeLayout(docFocus), false), after);
 });
+
+test("只有研究科的志愿也能在文稿栏打开，cookie 读回来不丢", () => {
+  const s = openTab(EMPTY_TABS, { kind: "school", id: "s1", title: "東京大学 教育学研究科" });
+  assert.equal(s.active, "school:s1");
+  assert.deepEqual(parseTabs(serializeTabs(s)), s);
+});

@@ -1,15 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { checkNowAction, unwatchSchoolAction } from "@/app/(app)/schools/actions";
 import { createLetterAction, createPlanAction, deleteProfessorAction, updateProfessorAction } from "@/app/(app)/professors/actions";
 import { useAiPageContent, useAskAi } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { btn } from "@/components/tasks/task-ui";
-import type { AspirationView, ProfessorView } from "@/lib/aspirations";
+import type { AspirationView, ProfessorView, SchoolView } from "@/lib/aspirations";
 import { professorAffiliation } from "@/lib/professors";
 import { ContactStepper, FindSchoolButton, FollowUp, Gaps, PaperList, PasteReply, SchoolFacts, SourceLinks, Tentative } from "./aspiration-ui";
 
 // 文稿栏里的一条志愿：左边教授这边（为什么适合、近期论文、联系进度、回信），右边研究科这边（入试要点、日程、差距）。
+// 只有研究科的志愿用 SchoolAspirationDetail：研究科这边 + 让 AI 在这个研究科找教授。
 
 type Props = {
   a: AspirationView & { professor: ProfessorView };
@@ -56,36 +58,7 @@ export function AspirationDetail({ a, documents, aiText }: Props) {
         <section className="space-y-3">
           <h2 className="section-title">研究科这边</h2>
           {s ? (
-            <>
-              <p className="text-sm font-medium">
-                {s.university} {s.name}
-                <OpenTabLink tab={{ kind: "web", url: s.url, title: `${s.university} ${s.name}` }} href={s.url} className="ml-2 text-xs font-normal text-accent hover:underline">
-                  要项页面
-                </OpenTabLink>
-              </p>
-              <SchoolFacts school={s} />
-              <Gaps gaps={a.gaps} />
-              {s.problem && <p className="text-xs text-warn">{s.problem}</p>}
-              {s.events.length > 0 && (
-                <details className="text-sm">
-                  <summary className="cursor-pointer text-muted">
-                    {s.guideYear} 年度要项日程{s.tentative && "（按往年推算）"}
-                  </summary>
-                  <ul className="mt-1 space-y-0.5 text-xs">
-                    {s.events.map((e) => (
-                      <li key={e.key} className="flex gap-2">
-                        <span className="w-40 shrink-0 tabular-nums text-muted">
-                          {e.date}
-                          {e.endDate && `〜${e.endDate.slice(5)}`}
-                          {s.tentative && <Tentative />}
-                        </span>
-                        <span>{e.title.replace(`${s.university} ${s.name} `, "")}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-            </>
+            <SchoolSection school={s} gaps={a.gaps} />
           ) : (
             <div className="space-y-2 text-sm text-muted">
               <p>还没关联研究科：要不要先联系教授、考什么、语言要求多少，都要看教授所在研究科的募集要项。</p>
@@ -158,5 +131,93 @@ function Note({ professor: p }: { professor: ProfessorView }) {
       disabled={pending}
       className="input w-full px-3 py-1.5 text-sm"
     />
+  );
+}
+
+/** 研究科这边：要项页面、入试要点、差距、要项日程 */
+function SchoolSection({ school: s, gaps }: { school: SchoolView; gaps: string[] }) {
+  return (
+    <>
+      <p className="text-sm font-medium">
+        {s.university} {s.name}
+        <OpenTabLink tab={{ kind: "web", url: s.url, title: `${s.university} ${s.name}` }} href={s.url} className="ml-2 text-xs font-normal text-accent hover:underline">
+          要项页面
+        </OpenTabLink>
+      </p>
+      <SchoolFacts school={s} />
+      <Gaps gaps={gaps} />
+      {s.problem && <p className="text-xs text-warn">{s.problem}</p>}
+      {s.events.length > 0 && (
+        <details className="text-sm">
+          <summary className="cursor-pointer text-muted">
+            {s.guideYear} 年度要项日程{s.tentative && "（按往年推算）"}
+          </summary>
+          <ul className="mt-1 space-y-0.5 text-xs">
+            {s.events.map((e) => (
+              <li key={e.key} className="flex gap-2">
+                <span className="w-40 shrink-0 tabular-nums text-muted">
+                  {e.date}
+                  {e.endDate && `〜${e.endDate.slice(5)}`}
+                  {s.tentative && <Tentative />}
+                </span>
+                <span>{e.title.replace(`${s.university} ${s.name} `, "")}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </>
+  );
+}
+
+/** 只有研究科、还没定教授的志愿 */
+export function SchoolAspirationDetail({ a, aiText }: { a: AspirationView & { school: SchoolView }; aiText: string }) {
+  useAiPageContent(aiText, "doc");
+  const ask = useAskAi();
+  const { closeTab } = useShell();
+  const [pending, startTransition] = useTransition();
+  const s = a.school;
+  return (
+    <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+      <div className="space-y-1">
+        <h1 className="page-title">
+          {s.university} {s.name}
+        </h1>
+        <p className="text-sm text-muted">只有研究科，还没定教授</p>
+      </div>
+      <section className="space-y-3">
+        <h2 className="section-title">研究科这边</h2>
+        <SchoolSection school={s} gaps={a.gaps} />
+      </section>
+      <section className="space-y-2">
+        <h2 className="section-title">接下来</h2>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => ask(`帮我在${s.university} ${s.name}找和我方向相关的教授。`)} className={btn}>
+            让 AI 在这个研究科找教授
+          </button>
+          <button onClick={() => ask(`帮我看看${s.university} ${s.name}的入试要求，对照我的档案说说差距和准备顺序。`)} className={btn}>
+            让 AI 分析怎么考
+          </button>
+        </div>
+      </section>
+      <div className="flex gap-4 text-xs text-faint">
+        <button disabled={pending || s.pending} onClick={() => startTransition(() => checkNowAction(s.id))} className="hover:text-foreground disabled:opacity-50">
+          {s.pending ? "等待检查…" : "立即检查募集要项"}
+        </button>
+        <button
+          disabled={pending}
+          onClick={() =>
+            confirm(`把「${s.university} ${s.name}」移出志愿（不再监控募集要项）？`) &&
+            startTransition(async () => {
+              await unwatchSchoolAction(s.id);
+              closeTab(`school:${s.id}`);
+            })
+          }
+          className="hover:text-danger"
+        >
+          移出志愿
+        </button>
+      </div>
+    </div>
   );
 }
