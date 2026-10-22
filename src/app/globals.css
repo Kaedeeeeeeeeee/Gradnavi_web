@@ -252,6 +252,54 @@ body {
     }
   }
 
+  /*
+   * 待办和日程的清单行（像 Things 3 / Todoist）：圆圈 · 标题 · 小字 · 行尾日期。
+   * 「✦ 让 AI 开始」平时不显示，鼠标停在这一行（或键盘聚焦）时出现在日期的位置；
+   * 没有悬停的设备（手机、平板）一直显示一个小 ✦。
+   */
+  .todo-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    border-radius: 0.375rem;
+    padding: 0.375rem 0.5rem;
+  }
+  .todo-row:hover {
+    background: var(--subtle);
+  }
+  .row-ai {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 0.375rem;
+    padding: 0 0.375rem;
+    font-size: 0.75rem;
+    line-height: 1.25rem;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .row-ai:hover {
+    background: var(--info-soft);
+  }
+  .row-ai:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  @media (hover: hover) {
+    .todo-row:not(:hover, :focus-within) .row-ai {
+      display: none;
+    }
+    .todo-row:is(:hover, :focus-within) .row-when:has(+ .row-ai) {
+      display: none;
+    }
+  }
+  @media (hover: none) {
+    .row-ai-label {
+      display: none;
+    }
+  }
+
   /* 页面标题：像 Notion 的页面名，大而粗 */
   .page-title {
     font-size: 1.75rem;

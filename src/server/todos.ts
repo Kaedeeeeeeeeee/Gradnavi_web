@@ -3,7 +3,7 @@ import { and, asc, eq, isNull, max, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { graduateSchool, schoolWatch, todo } from "@/db/schema";
 import { getWatchedSchool } from "./schools";
-import { buildSteps, type TaskStatus, type TaskStep, type TaskView } from "@/lib/tasks";
+import { buildSteps, type TaskArea, type TaskStatus, type TaskStep, type TaskView } from "@/lib/tasks";
 import { getDocument } from "./documents";
 import { getSavedProfessor } from "./professors";
 
@@ -20,6 +20,8 @@ export type TodoInput = {
   professorId?: string | null;
   documentId?: string | null;
   schoolId?: string | null;
+  /** 分类；不设就自动归类 */
+  area?: TaskArea | null;
   steps?: { title: string; done?: boolean }[];
 };
 type Creator = "user" | "ai" | "system";
@@ -46,6 +48,7 @@ export function toTaskView(t: TodoRow): TaskView {
     professorId: t.professorId,
     documentId: t.documentId,
     schoolId: t.schoolId,
+    area: t.area,
     sortOrder: t.sortOrder,
   };
 }
@@ -101,6 +104,7 @@ export async function addTodos(userId: string, items: TodoInput[], createdBy: Cr
         professorId: item.professorId || null,
         documentId: item.documentId || null,
         schoolId: item.schoolId || null,
+        area: item.area || null,
         steps: buildSteps(item.steps ?? []),
         // AI 加的任务是提议，用户在主页同意后才正式加入
         proposed: createdBy === "ai",
@@ -119,6 +123,7 @@ export type TodoPatch = Partial<{
   professorId: string | null;
   documentId: string | null;
   schoolId: string | null;
+  area: TaskArea | null;
   steps: { title: string; done?: boolean }[];
 }>;
 

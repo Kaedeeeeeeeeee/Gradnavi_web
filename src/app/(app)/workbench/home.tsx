@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useStartTask } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
-import { btn, formatDay, primaryBtn, ProposalButtons, StartButton, StatusSelect } from "@/components/tasks/task-ui";
+import { btn, formatDay, primaryBtn, ProposalButtons, StartButton, StatusCircle } from "@/components/tasks/task-ui";
 import { DateInput } from "@/components/ui/date-input";
 import { addDays, CALENDAR_KIND_LABELS, CALENDAR_KINDS, CALENDAR_WEEKS, cellLabel, itemsOn, monthGrid, shiftMonth, weeksFrom, weekStart, type CalendarItem, type CalendarKind } from "@/lib/calendar";
-import { AGENDA_DAYS, type AgendaRow, type Countdown, type TaskView } from "@/lib/tasks";
+import { AGENDA_DAYS, groupTasksByProject, shortTitle, TASK_AREA_LABELS, type AgendaRow, type Countdown, type TaskGroupKey, type TaskView } from "@/lib/tasks";
 import type { GuideChange } from "@/lib/admissions";
 import { acceptAllProposalsAction, addEventAction, addTaskAction, deleteEventAction, setTaskStatusAction, updateEventAction } from "./actions";
 
@@ -16,6 +16,11 @@ export type HomeTask = TaskView & {
   started: boolean;
   /** 关联对象的名字（教授 / 文书 / 研究科） */
   link: string | null;
+};
+
+export type GroupNames = {
+  professors: Record<string, { name: string; school: string }>;
+  schools: Record<string, { name: string; url: string | null }>;
 };
 
 type ProposedEvent = { id: string; title: string; date: string; endDate: string | null; change: { date: string; endDate: string | null } | null; isNew: boolean };
@@ -45,10 +50,12 @@ type Props = {
   /** 待你确认的任务（和 AI 的提议一起放在「等你处理」） */
   review: HomeTask[];
   proposals: { tasks: HomeTask[]; changes: HomeTask[]; events: ProposedEvent[]; followUps: ProposedFollowUp[] };
-  /** 待办和日程：近 7 天有日期的（含已过期的任务）、没有日期的任务、更远的 */
+  /** 待办和日程：近 7 天有日期的（含已过期的任务）、其余任务（按教授 / 研究科 / 分类分组）、更远的日程 */
   near: AgendaRow<HomeTask>[];
-  undated: HomeTask[];
+  rest: HomeTask[];
   far: AgendaRow<HomeTask>[];
+  /** 分组的组名：教授（名字 + 学校）、研究科 */
+  groupNames: GroupNames;
   done: HomeTask[];
   /** 全部任务，日历里点某天时，待办也显示状态和「让 AI 开始」 */
   tasks: HomeTask[];
@@ -74,7 +81,7 @@ export function Home(p: Props) {
       {proposalCount + p.review.length > 0 && <Awaiting review={p.review} {...p.proposals} proposalCount={proposalCount} today={p.today} />}
 
       <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
-        <Agenda near={p.near} undated={p.undated} far={p.far} done={p.done} today={p.today} />
+        <Agenda near={p.near} rest={p.rest} far={p.far} done={p.done} names={p.groupNames} today={p.today} />
 
         <MonthCalendar today={p.today} view={p.view} items={p.calendar} tasks={p.tasks} />
       </div>
@@ -278,7 +285,7 @@ function formatRange(date: string, endDate?: string | null) {
 }
 
 /** 点任务名：在文稿栏打开任务详情，AI 栏切到这个任务的对话 */
-function TaskTitle({ task, className = "" }: { task: Pick<TaskView, "id" | "title">; className?: string }) {
+function TaskTitle({ task, label, className = "" }: { task: Pick<TaskView, "id" | "title">; label?: string; className?: string }) {
   const { openTab } = useShell();
   const startTask = useStartTask();
   return (
@@ -287,90 +294,98 @@ function TaskTitle({ task, className = "" }: { task: Pick<TaskView, "id" | "titl
         startTask(task.id, false);
         openTab({ kind: "task", id: task.id, title: task.title });
       }}
+      title={label && label !== task.title ? task.title : undefined}
       className={`text-left ${className}`}
     >
-      {task.title}
+      {label ?? task.title}
     </button>
   );
 }
 
-/** 「随时可以做」超过这么多条才折叠 */
-const UNDATED_SHOWN = 8;
-
-/** 「展开 / 收起」：居中、带箭头，一看就知道能点 */
+/** 「展开 / 收起」：一行淡灰小字，带箭头，一看就知道能点 */
 function ExpandButton({ open, onClick, children }: { open: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button
-      onClick={onClick}
-      aria-expanded={open}
-      className="card-foot flex w-full items-center justify-center gap-1 text-sm text-muted hover:bg-subtle hover:text-foreground"
-    >
-      {children}
-      <svg viewBox="0 0 16 16" aria-hidden className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`}>
-        <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    <button onClick={onClick} aria-expanded={open} className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs text-muted hover:bg-subtle hover:text-foreground">
+      <svg viewBox="0 0 16 16" aria-hidden className={`size-3 transition-transform ${open ? "rotate-90" : ""}`}>
+        <path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
+      {children}
     </button>
   );
 }
 
-/** 待办和日程：有日期的按日期排在上（默认近 7 天，展开看更远），没有日期的任务收在下面 */
-function Agenda({ near, undated, far, done, today }: { near: AgendaRow<HomeTask>[]; undated: HomeTask[]; far: AgendaRow<HomeTask>[]; done: HomeTask[]; today: string }) {
+/** 分组小标题：组名 + 灰色补充（学校、项数） */
+function GroupHead({ children, sub, strong = false }: { children: React.ReactNode; sub?: React.ReactNode; strong?: boolean }) {
+  return (
+    <h3 className={`flex min-w-0 items-baseline gap-2 px-2 pt-3 pb-0.5 text-xs font-semibold ${strong ? "text-foreground" : "text-muted"}`}>
+      <span className="shrink-0">{children}</span>
+      {sub && <span className="truncate font-normal text-faint">{sub}</span>}
+    </h3>
+  );
+}
+
+/**
+ * 待办和日程（像 Things 3 / Todoist 的清单）：
+ * - 上面「近 7 天」：有日期的任务和日程按日期排；更远的日程收在「之后还有 N 项」
+ * - 下面其余任务按项目分组：每位教授一组、每个研究科一组，其余按分类（语言考试 / 专业课和备考 / 申请准备 / 其他）
+ * 每行只有状态圆圈、标题、行尾日期；「让 AI 开始」鼠标停上去才出现。
+ */
+function Agenda({ near, rest, far, done, names, today }: { near: AgendaRow<HomeTask>[]; rest: HomeTask[]; far: AgendaRow<HomeTask>[]; done: HomeTask[]; names: GroupNames; today: string }) {
   const [expanded, setExpanded] = useState(false);
-  const [allUndated, setAllUndated] = useState(false);
+  const [adding, setAdding] = useState(false);
   const row = (r: AgendaRow<HomeTask>) => (r.task ? <TaskRow key={r.task.id} task={r.task} today={today} /> : <EventRow key={r.item.key} item={r.item} today={today} />);
-  const shownUndated = allUndated ? undated : undated.slice(0, UNDATED_SHOWN);
-  const group = "section-title border-t border-line bg-subtle/50 px-4 py-1.5 text-xs";
+  const groups = groupTasksByProject(rest);
+  const onlyOther = groups.length === 1 && groups[0].key.kind === "area" && groups[0].key.area === "other";
   return (
     <section className="@container card self-start">
       <div className="card-head">
         <h2 className="card-title">待办和日程</h2>
-        <span className="text-xs text-muted tabular-nums">
-          近 {AGENDA_DAYS} 天 {near.length} 项{undated.length > 0 && ` · 没日期 ${undated.length} 项`}
-          {far.length > 0 && ` · 更远 ${far.length} 项`}
-        </span>
+        <button onClick={() => setAdding(true)} aria-label="添加任务" title="添加任务" className="ml-auto grid size-6 place-items-center rounded-md text-lg leading-none text-faint hover:bg-subtle hover:text-foreground">
+          ＋
+        </button>
       </div>
-      {near.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-muted">近 {AGENDA_DAYS} 天没有到期的待办和日程。</p>
-      ) : (
-        <ul className="divide-y divide-line px-4">{near.map(row)}</ul>
-      )}
-      {expanded && far.length > 0 && (
-        <>
-          <p className={group}>{AGENDA_DAYS} 天以后</p>
-          <ul className="divide-y divide-line border-t border-line px-4">{far.map(row)}</ul>
-        </>
-      )}
-      {far.length > 0 && (
-        <ExpandButton open={expanded} onClick={() => setExpanded(!expanded)}>
-          {expanded ? `收起，只看近 ${AGENDA_DAYS} 天` : `展开更远的 ${far.length} 项`}
-        </ExpandButton>
-      )}
-      {undated.length > 0 && (
-        <>
-          <p className={group}>随时可以做（没有日期）· {undated.length} 项</p>
-          <ul className="divide-y divide-line border-t border-line px-4">
-            {shownUndated.map((t) => (
-              <TaskRow key={t.id} task={t} today={today} />
-            ))}
-          </ul>
-          {undated.length > UNDATED_SHOWN && (
-            <ExpandButton open={allUndated} onClick={() => setAllUndated(!allUndated)}>
-              {allUndated ? "收起" : `展开其余 ${undated.length - UNDATED_SHOWN} 项`}
-            </ExpandButton>
-          )}
-        </>
-      )}
-      <div className="card-foot px-2">
-        <AddTaskForm />
+      <div className="px-2 pb-2">
+        <GroupHead>近 {AGENDA_DAYS} 天</GroupHead>
+        {near.length === 0 ? <p className="px-2 py-1.5 text-sm text-faint">近 {AGENDA_DAYS} 天没有到期的待办和日程。</p> : <ul>{near.map(row)}</ul>}
+        {expanded && far.length > 0 && <ul>{far.map(row)}</ul>}
+        {far.length > 0 && (
+          <ExpandButton open={expanded} onClick={() => setExpanded(!expanded)}>
+            {expanded ? "收起之后的日程" : `之后还有 ${far.length} 项日程`}
+          </ExpandButton>
+        )}
+
+        {groups.map((g) => {
+          const head = groupHead(g.key, names, onlyOther);
+          return (
+            <div key={head.id}>
+              <GroupHead strong sub={head.sub}>
+                {head.tab ? (
+                  <OpenTabLink tab={head.tab} href={head.href ?? "/aspirations"} className="hover:underline">
+                    {head.name}
+                  </OpenTabLink>
+                ) : (
+                  head.name
+                )}
+              </GroupHead>
+              <ul>
+                {g.tasks.map((t) => (
+                  <TaskRow key={t.id} task={t} today={today} label={g.key.kind === "professor" ? shortTitle(t.title, names.professors[g.key.id]?.name ?? "") : undefined} />
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+
+        <AddTaskForm open={adding} onOpenChange={setAdding} />
       </div>
       {done.length > 0 && (
         <details className="card-foot text-sm">
           <summary className="cursor-pointer py-1 text-muted hover:text-foreground">已完成 {done.length} 项</summary>
-          <ul className="divide-y divide-line">
+          <ul className="-mx-2">
             {done.map((t) => (
-              <li key={t.id} className="flex items-center gap-3 py-2">
+              <li key={t.id} className="todo-row">
+                <StatusCircle id={t.id} status={t.status} />
                 <TaskTitle task={t} className="min-w-0 flex-1 text-faint line-through hover:text-foreground" />
-                <StatusSelect id={t.id} status={t.status} />
               </li>
             ))}
           </ul>
@@ -378,6 +393,22 @@ function Agenda({ near, undated, far, done, today }: { near: AgendaRow<HomeTask>
       )}
     </section>
   );
+}
+
+/** 分组的组名：教授名（点开看教授）+ 学校；研究科名（点开看入试页面）；分类名 */
+function groupHead(key: TaskGroupKey, names: GroupNames, onlyOther: boolean) {
+  if (key.kind === "professor") {
+    const p = names.professors[key.id];
+    const name = p ? `${p.name} 教授` : "教授";
+    return { id: `p:${key.id}`, name, sub: p?.school, tab: { kind: "professor" as const, id: key.id, title: p?.name ?? "教授" }, href: "/aspirations" };
+  }
+  if (key.kind === "school") {
+    const sc = names.schools[key.id];
+    const name = sc?.name ?? "研究科";
+    return { id: `s:${key.id}`, name, sub: undefined, tab: sc?.url ? { kind: "web" as const, url: sc.url, title: name } : undefined, href: sc?.url ?? undefined };
+  }
+  // 只有一组「其他」时叫「随时可以做」，不显得奇怪
+  return { id: `a:${key.area}`, name: onlyOther ? "随时可以做" : TASK_AREA_LABELS[key.area], sub: undefined, tab: undefined, href: undefined };
 }
 
 /** 日期：任务是截止日（没有就不显示），日程是当天或起止 */
@@ -390,51 +421,50 @@ function DateText({ date, endDate, today, overdue = false, className = "" }: { d
   );
 }
 
-function TaskRow({ task, today }: { task: HomeTask; today: string }) {
-  const { openTab } = useShell();
+/** 清单里的一行任务：圆圈（点开改状态）· 标题 · 子步骤 / AI 提议 · 行尾日期；悬停出现「✦ 让 AI 开始」 */
+function TaskRow({ task, today, label }: { task: HomeTask; today: string; label?: string }) {
   const steps = task.steps.length ? `${task.steps.filter((s) => s.done).length}/${task.steps.length}` : null;
   const overdue = !!task.dueDate && task.dueDate < today;
-  const meta = [task.link, steps && `子步骤 ${steps}`, overdue && "已过截止日"].filter(Boolean);
+  // 标题里已经有关联对象的名字（如「查清藤本 徹教授所在…」）就不再重复
+  const link = task.link && !task.title.includes(task.link.replace(/教授$/, "")) && !label ? task.link : null;
   return (
-    <li className="agenda-row py-2.5 text-sm">
-      <span className="ar-date pt-px">
-        <DateText date={task.dueDate} today={today} overdue={overdue} />
-      </span>
-      <TaskTitle task={task} className="ar-title font-medium hover:underline" />
-      <span className="ar-status">
-        <StatusSelect id={task.id} status={task.status} />
-      </span>
-      <div className="ar-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-        <DateText date={task.dueDate} today={today} overdue={overdue} className="ar-inline-date" />
-        {meta.map((m) => (
-          <span key={String(m)} className={m === "已过截止日" ? "text-danger" : "truncate"}>
-            {m}
+    <li className="todo-row text-sm">
+      <StatusCircle id={task.id} status={task.status} />
+      <div className="min-w-0 flex-1 leading-5">
+        <TaskTitle task={task} label={label} className="mr-2 hover:underline" />
+        {(steps || link || task.proposedChange) && (
+          <span className="inline-flex flex-wrap gap-x-2 text-xs text-faint">
+            {steps && <span title="子步骤">{steps}</span>}
+            {link && <span>{link}</span>}
+            {task.proposedChange && (
+              <span className="rounded border border-dashed border-line-strong px-1 text-muted">AI 提议改到 {task.proposedChange.dueDate ? formatDay(task.proposedChange.dueDate) : "不设截止日"}</span>
+            )}
           </span>
-        ))}
-        {task.proposedChange && (
-          <span className="rounded border border-dashed border-line-strong px-1">AI 提议改到 {task.proposedChange.dueDate ? formatDay(task.proposedChange.dueDate) : "不设截止日"}</span>
         )}
       </div>
-      <span className="ar-action">
-        {task.status === "review" ? (
-          <button
-            onClick={() => (task.documentId ? openTab({ kind: "doc", id: task.documentId, title: "草稿" }) : openTab({ kind: "task", id: task.id, title: task.title }))}
-            className={btn}
-          >
-            {task.documentId ? "查看草稿" : "查看"}
-          </button>
-        ) : (
-          <StartButton task={task} started={task.started} />
-        )}
-      </span>
+      {task.dueDate && (
+        <span className="row-when leading-5">
+          <DateText date={task.dueDate} today={today} overdue={overdue} />
+        </span>
+      )}
+      <StartButton task={task} started={task.started} quiet />
     </li>
   );
 }
 
-function AddTaskForm() {
+/** 底部「＋ 添加任务」：平时只是一行淡灰字，点了（或点卡片右上角的 ＋）才出现输入框和截止日 */
+function AddTaskForm({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [pending, startTransition] = useTransition();
+  const inputRef = useRef<HTMLInputElement>(null);
+  if (!open)
+    return (
+      <button onClick={() => onOpenChange(true)} className="mt-1 flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm text-faint hover:bg-subtle hover:text-muted">
+        <span className="grid size-5 place-items-center text-base leading-none">＋</span>
+        添加任务
+      </button>
+    );
   return (
     <form
       onSubmit={(e) => {
@@ -446,25 +476,26 @@ function AddTaskForm() {
         startTransition(async () => {
           await addTaskAction({ title: value, dueDate });
         });
+        inputRef.current?.focus();
       }}
-      className="flex gap-2"
+      onKeyDown={(e) => e.key === "Escape" && onOpenChange(false)}
+      className="mt-1 flex flex-wrap items-center gap-2 rounded-lg bg-subtle p-1.5"
     >
       <input
+        ref={inputRef}
+        autoFocus
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder="＋ 添加一个任务"
-        className="input min-w-0 flex-1 border-transparent bg-transparent px-2 py-1.5 text-sm hover:bg-subtle focus:bg-surface"
+        placeholder="要做什么？如：报名 12 月 JLPT N1"
+        aria-label="任务标题"
+        className="input min-w-40 flex-1 px-2 py-1 text-sm"
       />
-      <DateInput
-        value={dueDate}
-        onChange={setDueDate}
-        placeholder="截止日"
-        clearable
-        title="截止日（可选）"
-        className="w-32 shrink-0 rounded-lg px-2 py-1.5 text-sm hover:bg-subtle"
-      />
-      <button type="submit" disabled={pending || !title.trim()} className="btn px-3 py-1.5 text-sm">
+      <DateInput value={dueDate} onChange={setDueDate} placeholder="截止日" clearable title="截止日（可选）" className="w-28 shrink-0 rounded-lg px-2 py-1 text-sm hover:bg-surface" />
+      <button type="submit" disabled={pending || !title.trim()} className="btn-primary px-3 py-1 text-sm">
         添加
+      </button>
+      <button type="button" onClick={() => onOpenChange(false)} className="px-1 text-sm text-muted hover:text-foreground">
+        取消
       </button>
     </form>
   );
@@ -628,7 +659,7 @@ function MonthCalendar({ today, view, items, tasks }: { today: string; view: Pro
             {list.length === 0 ? (
               <p className="py-1 text-sm text-muted">这天没有安排。</p>
             ) : (
-              <ul className="divide-y divide-line">
+              <ul className="-mx-2">
                 {list.map((it) => {
                   // 待办和待办列表里一样：有状态和「让 AI 开始」；AI 提议的待办还走提议按钮
                   const task = it.source === "todo" && !it.proposed && !it.proposedChange ? taskById.get(it.sourceId ?? "") : undefined;
@@ -656,7 +687,7 @@ function EventRow({ item: it, today }: { item: CalendarItem; today: string }) {
   if (editing && it.sourceId) {
     const id = it.sourceId;
     return (
-      <li className="py-2.5">
+      <li className="px-2 py-2">
         <EventForm
           initial={{ title: it.title, date: it.date, endDate: it.endDate ?? "", kind: it.kind, note: it.note ?? "" }}
           submitLabel="保存"
@@ -671,11 +702,11 @@ function EventRow({ item: it, today }: { item: CalendarItem; today: string }) {
     );
   }
   return (
-    <li className="group agenda-row py-2.5 text-sm">
-      <span className="ar-date pt-px">
-        <DateText date={it.date} endDate={it.endDate} today={today} />
+    <li className="group todo-row text-sm">
+      <span aria-hidden className="grid h-5 w-5 shrink-0 place-items-center">
+        <span className={`h-3.5 w-[3px] rounded-full ${BAR[it.kind]} ${it.tentative ? "opacity-50" : ""}`} />
       </span>
-      <span className="ar-title min-w-0">
+      <div className="min-w-0 flex-1 leading-5">
         <span className={`mr-1.5 rounded px-1 text-xs ${KIND_STYLES[it.kind]}`}>{CALENDAR_KIND_LABELS[it.kind]}</span>
         {it.tentative && <span className="mr-1 rounded border border-dashed border-warn px-1 text-xs text-warn">仮</span>}
         {it.source === "todo" && it.sourceId ? (
@@ -686,34 +717,42 @@ function EventRow({ item: it, today }: { item: CalendarItem; today: string }) {
           it.title
         )}
         {it.sourceUrl && <SourceLink url={it.sourceUrl} />}
-      </span>
-      <span className="ar-status">
-        {it.source === "event" && it.sourceId && !isProposal && (
-          <span className="flex shrink-0 gap-2 text-xs text-faint opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 max-lg:opacity-100">
-            <button onClick={() => setEditing(true)} className="hover:text-foreground">
-              编辑
-            </button>
-            <button disabled={pending} onClick={() => startTransition(() => deleteEventAction(it.sourceId!))} className="hover:text-danger">
-              删除
-            </button>
-          </span>
-        )}
-      </span>
-      <div className="ar-meta min-w-0 space-y-1 text-xs text-muted">
-        <p className="ar-inline-date">
-          <DateText date={it.date} endDate={it.endDate} today={today} />
-        </p>
-        {it.note && <p>{it.note}</p>}
-        {isProposal && proposalKind && it.sourceId && (
-          <p>{it.proposed && !it.proposedChange ? "AI 提议" : `AI 提议改到 ${it.proposedChange ? formatRange(it.proposedChange.date, it.proposedChange.endDate) : ""}`}</p>
+        {(it.note || (isProposal && proposalKind && it.sourceId)) && (
+          <div className="mt-0.5 space-y-1 text-xs text-muted">
+            {it.note && <p>{it.note}</p>}
+            {isProposal && proposalKind && it.sourceId && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span>{it.proposed && !it.proposedChange ? "AI 提议" : `AI 提议改到 ${it.proposedChange ? formatRange(it.proposedChange.date, it.proposedChange.endDate) : ""}`}</span>
+                <ProposalButtons kind={proposalKind} id={it.sourceId} date={it.proposedChange?.date ?? it.date} />
+              </div>
+            )}
+          </div>
         )}
       </div>
-      <span className="ar-action">
-        {isProposal && proposalKind && it.sourceId && <ProposalButtons kind={proposalKind} id={it.sourceId} date={it.proposedChange?.date ?? it.date} />}
+      {it.source === "event" && it.sourceId && !isProposal && (
+        <span className="flex shrink-0 gap-2 text-xs leading-5 text-faint opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 max-lg:opacity-100">
+          <button onClick={() => setEditing(true)} className="hover:text-foreground">
+            编辑
+          </button>
+          <button disabled={pending} onClick={() => startTransition(() => deleteEventAction(it.sourceId!))} className="hover:text-danger">
+            删除
+          </button>
+        </span>
+      )}
+      <span className="leading-5">
+        <DateText date={it.date} endDate={it.endDate} today={today} />
       </span>
     </li>
   );
 }
+
+/** 日程行左边的竖条颜色（和日历圆点一致） */
+const BAR: Record<CalendarKind, string> = {
+  deadline: "bg-danger",
+  exam: "bg-warn",
+  followup: "bg-info",
+  other: "bg-faint",
+};
 
 const input = "input w-full px-3 py-1.5 text-sm";
 

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { CALENDAR_KINDS } from "@/lib/calendar";
 import { requireUser } from "@/lib/session";
-import { kickoffPrompt, TASK_STATUSES } from "@/lib/tasks";
+import { kickoffPrompt, TASK_AREAS, TASK_STATUSES } from "@/lib/tasks";
 import { acceptEventProposal, addCalendarEvent, deleteCalendarEvent, listProposedEvents, rejectEventProposal, rescheduleEvent, updateCalendarEvent } from "@/server/calendar";
 import { getTaskConversation, loadMessages } from "@/server/conversations";
 import { getSavedProfessor, listFollowUpProposals, resolveFollowUpProposal } from "@/server/professors";
@@ -54,6 +54,7 @@ const taskPatch = z.object({
   title: z.string().trim().min(1, "请填写标题").max(100).optional(),
   note: z.string().trim().max(500).nullable().optional(),
   dueDate: date.nullable().optional(),
+  area: z.enum(TASK_AREAS).nullable().optional(),
 });
 
 export async function updateTaskAction(id: string, patch: z.input<typeof taskPatch>): Promise<{ ok: true } | { ok: false; error: string }> {
