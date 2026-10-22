@@ -28,7 +28,7 @@ test("quotesForModel numbers quotes like the chips", () => {
   assert.doesNotMatch(out, /> 冈山大学\n用户对这段/);
   assert.match(out, /\[1\] 出自AI 的回复：\n> 冈山大学/);
   assert.match(out, /\[2\] 出自文稿「研究计划书」：\n> 第一行\n> 第二行/);
-  assert.match(out, /用户的话：$/);
+  assert.match(out, /没有正文时，就根据引用和用户的评论回应。）$/);
 });
 
 test("quoteSnippet shortens to one line", () => {

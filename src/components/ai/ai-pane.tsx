@@ -118,7 +118,7 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
     } catch (e) {
       console.error("[ai-sidebar] beforeSend", e);
     }
-    if (attached.length) sendMessage({ role: "user", parts: [{ type: "data-quotes", data: attached }, { type: "text", text }] });
+    if (attached.length) sendMessage({ role: "user", parts: [{ type: "data-quotes", data: attached }, ...(text ? [{ type: "text" as const, text }] : [])] });
     else sendMessage({ text });
   }
 
@@ -200,7 +200,8 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (!text || busy) return;
+    // 只有引用（和评论）没打字也能发：引用本身就是这条消息
+    if ((!text && quotes.length === 0) || busy) return;
     void send(text, true);
     setInput("");
   }
@@ -355,7 +356,7 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
               停止
             </button>
           ) : (
-            <button type="submit" disabled={!input.trim()} className="btn-primary px-3 py-1.5 text-sm">
+            <button type="submit" disabled={!input.trim() && quotes.length === 0} className="btn-primary px-3 py-1.5 text-sm">
               发送
             </button>
           )}
@@ -389,7 +390,7 @@ function Message({ message }: { message: UIMessage }) {
     return (
       <div className="space-y-1.5">
         <SentQuotes quotes={quotes} />
-        <div className="ml-auto w-fit max-w-[85%] rounded-xl bg-subtle px-3 py-2 whitespace-pre-wrap">{text}</div>
+        {text && <div className="ml-auto w-fit max-w-[85%] rounded-xl bg-subtle px-3 py-2 whitespace-pre-wrap">{text}</div>}
       </div>
     );
   }
