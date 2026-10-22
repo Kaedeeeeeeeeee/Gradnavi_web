@@ -6,7 +6,7 @@ import { useStartTask } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { btn, formatDay, primaryBtn, ProposalButtons, StartButton, StatusCircle } from "@/components/tasks/task-ui";
 import { DateInput } from "@/components/ui/date-input";
-import { addDays, CALENDAR_KIND_LABELS, CALENDAR_KINDS, CALENDAR_WEEKS, cellLabel, itemsOn, monthGrid, shiftMonth, weeksFrom, weekStart, type CalendarItem, type CalendarKind } from "@/lib/calendar";
+import { CALENDAR_KIND_LABELS, CALENDAR_KINDS, cellLabel, itemsOn, monthGrid, shiftMonth, type CalendarItem, type CalendarKind } from "@/lib/calendar";
 import { AGENDA_DAYS, groupTasksByProject, shortTitle, TASK_AREA_LABELS, type AgendaRow, type Countdown, type TaskGroupKey, type TaskView } from "@/lib/tasks";
 import type { GuideChange } from "@/lib/admissions";
 import { acceptAllProposalsAction, addEventAction, addTaskAction, deleteEventAction, setTaskStatusAction, updateEventAction } from "./actions";
@@ -39,8 +39,8 @@ type GuideAlert = {
 
 type Props = {
   today: string;
-  /** 日历：默认从某周开始的 3 周；?m= 时是整月 */
-  view: { kind: "weeks"; start: string } | { kind: "month"; month: string };
+  /** 日历显示的月份（YYYY-MM），一页一个月 */
+  month: string;
   profileLine: string;
   briefing: string[];
   countdown: Countdown[];
@@ -80,10 +80,10 @@ export function Home(p: Props) {
       {p.pausedMonitors.length > 0 && <MonitorPaused schools={p.pausedMonitors} />}
       {proposalCount + p.review.length > 0 && <Awaiting review={p.review} {...p.proposals} proposalCount={proposalCount} today={p.today} />}
 
-      <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
+      <div className="grid gap-6 @3xl:grid-cols-2">
         <Agenda near={p.near} rest={p.rest} far={p.far} done={p.done} names={p.groupNames} today={p.today} />
 
-        <MonthCalendar today={p.today} view={p.view} items={p.calendar} tasks={p.tasks} />
+        <MonthCalendar today={p.today} month={p.month} items={p.calendar} tasks={p.tasks} />
       </div>
     </div>
   );
@@ -543,18 +543,17 @@ function labelClass(it: CalendarItem) {
 /** 宽的时候格子里最多写几条，其余显示「+N」 */
 const CELL_LABELS = 2;
 
-function MonthCalendar({ today, view, items, tasks }: { today: string; view: Props["view"]; items: CalendarItem[]; tasks: HomeTask[] }) {
+function MonthCalendar({ today, month, items, tasks }: { today: string; month: string; items: CalendarItem[]; tasks: HomeTask[] }) {
   const [selected, setSelected] = useState<string | null>(null);
   const taskById = new Map(tasks.map((t) => [t.id, t]));
-  const weeks = view.kind === "month" ? monthGrid(view.month) : weeksFrom(view.start);
-  const first = weeks[0][0].date;
-  const last = weeks.at(-1)![6].date;
-  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
-  const nav =
-    view.kind === "month"
-      ? { prev: `/workbench?m=${shiftMonth(view.month, -1)}`, next: `/workbench?m=${shiftMonth(view.month, 1)}`, label: `${view.month.slice(0, 4)} 年 ${Number(view.month.slice(5))} 月`, isNow: view.month === today.slice(0, 7) }
-      : { prev: `/workbench?w=${addDays(view.start, -7 * CALENDAR_WEEKS)}`, next: `/workbench?w=${addDays(view.start, 7 * CALENDAR_WEEKS)}`, label: `${md(first)} – ${md(last)}`, isNow: view.start === weekStart(today) };
-  const defaultDate = selected ?? (today >= first && today <= last ? today : first);
+  const weeks = monthGrid(month);
+  const nav = {
+    prev: `/workbench?m=${shiftMonth(month, -1)}`,
+    next: `/workbench?m=${shiftMonth(month, 1)}`,
+    label: `${month.slice(0, 4)} 年 ${Number(month.slice(5))} 月`,
+    isNow: month === today.slice(0, 7),
+  };
+  const defaultDate = selected ?? (today.startsWith(month) ? today : `${month}-01`);
   // AI 的改期提议：在提议的那天显示一个虚线圈
   const ghosts: CalendarItem[] = items.flatMap((it) =>
     it.proposedChange ? [{ ...it, key: `${it.key}:change`, date: it.proposedChange.date, endDate: it.proposedChange.endDate, proposed: true }] : [],
@@ -575,17 +574,10 @@ function MonthCalendar({ today, view, items, tasks }: { today: string; view: Pro
               ›
             </Link>
             {!nav.isNow && (
-              <Link href={view.kind === "month" ? `/workbench?m=${today.slice(0, 7)}` : "/workbench"} className="text-xs text-muted hover:text-foreground">
+              <Link href="/workbench" className="ml-1 rounded-md bg-subtle px-1.5 py-0.5 text-xs text-muted hover:text-foreground">
                 今天
               </Link>
             )}
-            <Link
-              href={view.kind === "month" ? "/workbench" : `/workbench?m=${today.slice(0, 7)}`}
-              className="ml-1 rounded-md bg-subtle px-1.5 py-0.5 text-xs text-muted hover:text-foreground"
-              title={view.kind === "month" ? "看从这周开始的 3 周" : "看整月"}
-            >
-              {view.kind === "month" ? "3 周" : "月"}
-            </Link>
           </div>
         </div>
 
@@ -595,15 +587,14 @@ function MonthCalendar({ today, view, items, tasks }: { today: string; view: Pro
               {d}
             </div>
           ))}
-          {weeks.flat().map(({ date, inMonth }, i) => {
+          {weeks.flat().map(({ date, inMonth }) => {
             const day = itemsOn(all, date);
             const labeled = day.flatMap((it) => {
               const text = cellLabel(it, date);
               return text ? [{ it, text }] : [];
             });
             const isSel = selected === date;
-            // 3 周视图跨月时，第一格和每月 1 号写上月份
-            const dayNum = view.kind === "weeks" && (i === 0 || date.endsWith("-01")) ? md(date) : String(Number(date.slice(8)));
+            const dayNum = String(Number(date.slice(8)));
             return (
               <button
                 key={date}

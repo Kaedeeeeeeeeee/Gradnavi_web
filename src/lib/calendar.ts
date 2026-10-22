@@ -117,31 +117,6 @@ export function monthGrid(month: string): { date: string; inMonth: boolean }[][]
   return weeks;
 }
 
-/** 这一周的周一 */
-export function weekStart(date: string) {
-  const weekday = (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7; // 周一 = 0
-  return addDays(date, -weekday);
-}
-
-/** 主页日历默认显示几周（从这周开始），月底也看得到下个月初的截止 */
-export const CALENDAR_WEEKS = 3;
-
-/** 「从某周开始的几周」视图的格子；参数不对时从今天这周开始 */
-export function weeksFrom(start: string, weeks = CALENDAR_WEEKS): { date: string; inMonth: boolean }[][] {
-  let cursor = weekStart(start);
-  return Array.from({ length: weeks }, () =>
-    Array.from({ length: 7 }, () => {
-      const cell = { date: cursor, inMonth: true };
-      cursor = addDays(cursor, 1);
-      return cell;
-    }),
-  );
-}
-
-export function parseWeek(value: string | undefined, today: string) {
-  return isIsoDate(value) ? weekStart(value) : weekStart(today);
-}
-
 /**
  * 日历格子里的短标题（宽的时候直接写在格子里，不用点开）。
  * 跨天的只在第一天和最后一天写（最后一天加「截止」）；募集要项的去掉研究科名，只留大学名的前两个字。
