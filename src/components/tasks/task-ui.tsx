@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { updateProfessorAction } from "@/app/(app)/professors/actions";
 import { acceptProposalAction, rejectProposalAction, rescheduleEventAction, setTaskStatusAction, updateTaskAction } from "@/app/(app)/workbench/actions";
 import { useStartTask } from "@/components/ai/page-context";
@@ -34,26 +35,52 @@ export function StatusDot({ status, className = "" }: { status: TaskStatus; clas
 /**
  * 任务状态（清单左边的小圆圈）：点开选未开始 / 进行中 / 完成，不会一点就完成，防误触。
  * 只有用户能标完成，AI 最多设到待你确认；待你确认只在当前就是这个状态时列出。
+ * 菜单挂在 body 上（卡片 overflow: hidden，放在里面最后几行会被裁掉），下面放不下就放上面。
  */
 export function StatusCircle({ id, status }: { id: string; status: TaskStatus }) {
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
     if (!open) return;
-    const close = (e: Event) => {
-      if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) setOpen(false);
+    const place = () => {
+      const r = button.current?.getBoundingClientRect();
+      if (!r) return;
+      const h = menu.current?.offsetHeight ?? 120;
+      const below = r.bottom + 4;
+      setPos({ top: below + h > window.innerHeight - 8 && r.top - h - 4 > 8 ? r.top - h - 4 : below, left: Math.max(8, r.left) });
     };
-    document.addEventListener("pointerdown", close);
-    document.addEventListener("keydown", close);
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
     return () => {
-      document.removeEventListener("pointerdown", close);
-      document.removeEventListener("keydown", close);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (!menu.current?.contains(t) && !button.current?.contains(t)) setOpen(false);
+    };
+    const key = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", down);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", down);
+      document.removeEventListener("keydown", key);
+    };
+  }, [open]);
+
   return (
-    <span ref={ref} className="relative inline-flex shrink-0">
+    <>
       <button
+        ref={button}
         type="button"
         aria-label={`状态：${TASK_STATUS_LABELS[status]}，点击修改`}
         aria-haspopup="menu"
@@ -61,32 +88,39 @@ export function StatusCircle({ id, status }: { id: string; status: TaskStatus })
         title={TASK_STATUS_LABELS[status]}
         disabled={pending}
         onClick={() => setOpen(!open)}
-        className="grid size-5 place-items-center rounded-full hover:bg-subtle-strong focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none disabled:opacity-50"
+        className="grid size-5 shrink-0 place-items-center rounded-full hover:bg-subtle-strong focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none disabled:opacity-50"
       >
-        <StatusDot status={status} className={status === "todo" ? "hover:border-muted" : ""} />
+        <StatusDot status={status} />
       </button>
-      {open && (
-        <span role="menu" className="absolute top-full left-0 z-20 mt-1 grid min-w-28 rounded-lg border border-line-strong bg-surface p-1 shadow-lg">
-          {TASK_STATUSES.filter((s) => s !== "review" || status === "review").map((s) => (
-            <button
-              key={s}
-              type="button"
-              role="menuitemradio"
-              aria-checked={s === status}
-              autoFocus={s === status}
-              onClick={() => {
-                setOpen(false);
-                if (s !== status) startTransition(() => setTaskStatusAction(id, s));
-              }}
-              className={`flex items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none ${s === status ? "font-medium" : ""}`}
-            >
-              <StatusDot status={s} />
-              {TASK_STATUS_LABELS[s]}
-            </button>
-          ))}
-        </span>
-      )}
-    </span>
+      {open &&
+        createPortal(
+          <span
+            ref={menu}
+            role="menu"
+            style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
+            className="fixed z-50 grid min-w-28 rounded-lg border border-line-strong bg-surface p-1 text-foreground shadow-lg"
+          >
+            {TASK_STATUSES.filter((s) => s !== "review" || status === "review").map((s) => (
+              <button
+                key={s}
+                type="button"
+                role="menuitemradio"
+                aria-checked={s === status}
+                autoFocus={s === status}
+                onClick={() => {
+                  setOpen(false);
+                  if (s !== status) startTransition(() => setTaskStatusAction(id, s));
+                }}
+                className={`flex items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none ${s === status ? "font-medium" : ""}`}
+              >
+                <StatusDot status={s} />
+                {TASK_STATUS_LABELS[s]}
+              </button>
+            ))}
+          </span>,
+          document.body,
+        )}
+    </>
   );
 }
 
