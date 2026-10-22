@@ -343,7 +343,45 @@ body {
   background: color-mix(in srgb, var(--warn) 36%, transparent);
 }
 
-/* 中文对照：编辑器排成两栏，每段日文后面的中文格子落在右栏同一行 */
+/* 正文里的 AI 修改建议：新增的绿字、删掉的红线，后面跟「接受 / 拒绝」 */
+.doc-ins {
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--ok) 70%, transparent);
+  color: var(--ok);
+  text-decoration: none;
+}
+.doc-del {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+  text-decoration: line-through;
+}
+.doc-suggest-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: 0.375rem;
+  vertical-align: middle;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  user-select: none;
+}
+.doc-suggest-actions button {
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 0 0.4rem;
+  color: var(--foreground);
+}
+.doc-suggest-actions .doc-suggest-accept {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.doc-suggest-actions button:disabled {
+  opacity: 0.5;
+}
+
+/* 中文对照：编辑器排成两栏，每段日文后面的中文格子落在右栏同一行（编辑区不到 45rem 宽时改成中文在日文下面，见文件末尾） */
 .zh-on .doc-prose {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -376,4 +414,19 @@ body {
   font-size: 0.75rem;
   color: var(--accent);
   text-decoration: underline;
+}
+
+/* 中文对照在窄栏里：两栏挤不开，中文改成显示在每段日文下面（灰色小字） */
+@container (max-width: 45rem) {
+  .zh-on .doc-prose {
+    display: block;
+  }
+  .zh-on .doc-prose > * + * {
+    margin-top: 0.75em !important;
+  }
+  .zh-on .doc-prose > .zh-cell {
+    margin-top: 0.25em !important;
+    border-left: 2px solid var(--line-strong);
+    padding-left: 0.75em;
+  }
 }

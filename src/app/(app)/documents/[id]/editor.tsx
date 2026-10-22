@@ -29,7 +29,7 @@ import {
   snapshotAction,
   translateAction,
 } from "../actions";
-import { createOverlayStore, DocOverlay, findTextRange, overlayKey, type OverlayMark } from "./doc-overlay";
+import { createOverlayStore, DocOverlay, findTextRange, isInlineReplace, overlayKey, type OverlayMark } from "./doc-overlay";
 import { HistoryView } from "./history-view";
 import { LetterPanel, ProfessorForm, TailoredCopies, type DocLink, type PlanOption, type ProfessorOption } from "./panels";
 import { ReviewRail, type CommentView, type SuggestionView } from "./review-rail";
@@ -229,10 +229,19 @@ export function DocumentEditor(props: Props) {
     [editor, keyCache],
   );
 
+  // 一段之内的纯文字修改直接显示在正文里（找不到原文的，比如原文已经被改了，还是放在旁边的卡片里）
+  const inlineIds = new Set(
+    editor && !editor.isDestroyed
+      ? suggestions.flatMap((s) =>
+          s.op.type === "replace" && isInlineReplace(s.op.find, s.op.replace) && findTextRange(editor.state.doc, s.op.find, s.op.nth) ? [s.id] : [],
+        )
+      : [],
+  );
+  const railSuggestions = suggestions.filter((s) => !inlineIds.has(s.id));
   const marks: OverlayMark[] = [
     ...suggestions.flatMap((s): OverlayMark[] =>
       s.op.type === "replace"
-        ? [{ id: s.id, text: s.op.find, nth: s.op.nth, kind: "suggestion", active: active === s.id }]
+        ? [{ id: s.id, text: s.op.find, nth: s.op.nth, kind: "suggestion", active: active === s.id, ...(inlineIds.has(s.id) ? { replace: s.op.replace } : {}) }]
         : s.op.type === "section"
           ? [{ id: s.id, text: s.op.heading, kind: "suggestion", active: active === s.id }]
           : [],
@@ -241,14 +250,17 @@ export function DocumentEditor(props: Props) {
   ];
   const zhBusy = busy === "translate";
   const translateRef = useRef(translate);
+  const decideRef = useRef((id: string, accept: boolean) => act(id, () => (accept ? acceptSuggestionAction(id) : rejectSuggestionAction(id))));
   useLayoutEffect(() => {
     translateRef.current = translate;
+    decideRef.current = (id, accept) => act(id, () => (accept ? acceptSuggestionAction(id) : rejectSuggestionAction(id)));
   });
-  const overlaySig = JSON.stringify([marks, zhOn, doc.zh, zhBusy]);
+  const overlaySig = JSON.stringify([marks, zhOn, doc.zh, zhBusy, busy]);
   useLayoutEffect(() => {
     overlay.set({
       marks: JSON.parse(overlaySig)[0] as OverlayMark[],
       zh: zhOn ? { stored: doc.zh, keyOf, onTranslate: (k) => translateRef.current(k), busy: zhBusy } : null,
+      suggest: { onAccept: (id) => decideRef.current(id, true), onReject: (id) => decideRef.current(id, false), busy: JSON.parse(overlaySig)[4] as string | null },
       onMarkClick: (id) => {
         setActive(id);
         document.querySelector(`[data-rail-id="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -319,7 +331,7 @@ export function DocumentEditor(props: Props) {
 
   const reviewer = doc.targetProfessor ? `${doc.targetProfessor.name}教授` : "教授";
   const guided = doc.kind === "plan" || doc.kind === "intro";
-  const hasRail = suggestions.length > 0 || comments.length > 0;
+  const hasRail = railSuggestions.length > 0 || comments.length > 0;
 
   return (
     <div className="@container mx-auto max-w-6xl space-y-4">
@@ -342,11 +354,12 @@ export function DocumentEditor(props: Props) {
 
       <TitleInput id={doc.id} title={doc.title} />
 
+      {/* 标题下面只放一两行小字（写作进度、目标教授、定制版），需要时再点开，正文尽量提到第一屏 */}
       {guided && <WritingGuide doc={doc} track={props.track} onAsk={askAi} />}
-      {doc.kind === "plan" && !props.parent && <TailoredCopies docId={doc.id} copies={props.copies} professors={props.professors} />}
       {doc.kind === "plan" && (
-        <div className="rounded-xl border border-line p-4 text-sm">
-          <ProfessorForm docId={doc.id} professor={doc.targetProfessor} professors={props.professors} defaultOpen={false} />
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+          <ProfessorForm docId={doc.id} professor={doc.targetProfessor} professors={props.professors} defaultOpen={false} inline />
+          {!props.parent && <TailoredCopies docId={doc.id} copies={props.copies} professors={props.professors} />}
         </div>
       )}
       {doc.kind === "letter" && (
@@ -392,7 +405,8 @@ export function DocumentEditor(props: Props) {
 
       <div className={`flex flex-col gap-4 @4xl:flex-row @4xl:items-start ${view === "history" ? "hidden" : ""}`}>
         <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
+          {/* 工具栏贴在顶上，往下滚也看得到 */}
+          <div className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-2 bg-surface px-1 py-1">
             <Toolbar editor={editor} />
             <div className="ml-auto flex flex-wrap items-center gap-2 text-sm">
               <label className="flex items-center gap-1.5 text-muted">
@@ -428,6 +442,31 @@ export function DocumentEditor(props: Props) {
             </div>
           </div>
 
+          {inlineIds.size > 0 && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-ok-soft/60 px-3 py-1.5 text-xs text-muted" data-testid="inline-suggestions">
+              <span>
+                AI 修改建议 {inlineIds.size} 条，已在正文里标出：<ins className="doc-ins">绿字</ins>是新加的，<del className="doc-del">红线</del>是删掉的
+              </span>
+              <button onClick={() => focusMark([...inlineIds][0])} className="underline hover:text-foreground">
+                定位
+              </button>
+              {suggestions.length > 1 && (
+                <button
+                  disabled={!!busy}
+                  onClick={() =>
+                    act("all", async () => {
+                      const r = await acceptAllSuggestionsAction(doc.id);
+                      return r.ok && r.value ? { ok: false, error: `有 ${r.value} 条修改的原文已经变了，没能接受，请逐条处理。` } : r;
+                    })
+                  }
+                  className="underline hover:text-foreground disabled:opacity-40"
+                >
+                  全部接受
+                </button>
+              )}
+            </div>
+          )}
+
           <SelectionArea editor={editor} zhOn={zhOn} docId={doc.id} flush={flush} />
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-sm">
@@ -453,7 +492,7 @@ export function DocumentEditor(props: Props) {
           <aside className="order-first shrink-0 @4xl:sticky @4xl:top-2 @4xl:order-none @4xl:max-h-[85vh] @4xl:w-80 @4xl:overflow-y-auto">
             <ReviewRail
               markdown={markdown}
-              suggestions={suggestions}
+              suggestions={railSuggestions}
               comments={comments}
               active={active}
               busy={busy}
@@ -531,7 +570,7 @@ function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; 
 
   const showResult = result && sel?.text === result.for;
   return (
-    <div ref={wrap} className={`relative ${zhOn ? "zh-on" : ""}`}>
+    <div ref={wrap} className={`@container relative ${zhOn ? "zh-on" : ""}`}>
       <EditorContent editor={editor} />
       {sel && pos && (
         <div
