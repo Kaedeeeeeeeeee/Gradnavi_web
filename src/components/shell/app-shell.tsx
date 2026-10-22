@@ -90,6 +90,7 @@ function tabPath(tab: DocTab) {
   if (tab.kind === "school") return `/schools/${tab.id}`;
   if (tab.kind === "task") return `/tasks/${tab.id}`;
   if (tab.kind === "search") return `/search/${tab.id}`;
+  if (tab.kind === "compare") return "/aspirations/compare";
   return "/web";
 }
 
@@ -153,8 +154,9 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
         }
         const next = openTabIn(tabs, tab);
         updateTabs(next, next.active !== tabs.active || next.tabs.length !== tabs.tabs.length);
-        // 文稿栏刚出现、窗口又不够三栏时，先让工作台让位
-        const cramped = !narrow && !tabs.tabs.length && window.innerWidth < ROOMY_PX && currentPreset(layout, true) === "three";
+        // 文稿栏刚出现、窗口又不够三栏时，先让工作台让位；志愿并排对比要宽，也让工作台让位
+        const cramped =
+          !narrow && currentPreset(layout, true) === "three" && ((!tabs.tabs.length && window.innerWidth < ROOMY_PX) || (tab.kind === "compare" && window.innerWidth < 1800));
         setLayout((l) => (cramped ? applyPreset(l, "chatDoc", "doc") : expandPane(l, "doc")));
         if (layout.mobile !== "doc") setBackTo(layout.mobile);
         setLastPane("doc");
@@ -430,7 +432,7 @@ function WorkTabs({ pathname }: { pathname: string }) {
   );
 }
 
-const TAB_ICONS: Record<DocTab["kind"], string> = { doc: "文", professor: "志", school: "志", task: "任", search: "找", web: "网" };
+const TAB_ICONS: Record<DocTab["kind"], string> = { doc: "文", professor: "志", school: "志", task: "任", search: "找", compare: "比", web: "网" };
 
 function DocTabBar({ tabs, onActivate, onClose }: { tabs: Tabs; onActivate: (key: string) => void; onClose: (key: string) => void }) {
   if (!tabs.tabs.length) return <span className="px-1 text-sm font-medium">文稿 / 浏览</span>;

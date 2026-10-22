@@ -11,6 +11,8 @@ import { createContext, useContext, useEffect, useState } from "react";
 //   - 用 useStartTask() 切到某个任务的专属对话（点任务卡），或者顺便让 AI 开始（「让 AI 开始」）
 
 type PageInfo = { path: string; title?: string; content?: string; workPath?: string };
+/** 用户在输入框上面点掉的「AI 能看到」：这一栏的内容不发给 AI */
+export type Hidden = Record<"work" | "doc", boolean>;
 type Slot = "work" | "doc";
 /** 文稿栏当前标签：路径（如 /documents/<id>）和标题；栏收起时为空 */
 type DocInfo = { path: string; title: string } | null;
@@ -27,15 +29,20 @@ function createPageStore() {
   /** AI 栏当前对话所属的任务（一个任务一段对话） */
   let task: string | null = null;
   const content: Record<Slot, string | undefined> = { work: undefined, doc: undefined };
+  let hidden: Hidden = { work: false, doc: false };
   let beforeSend: BeforeSend | undefined;
   const askListeners = new Set<AskListener>();
   const startListeners = new Set<StartTaskListener>();
   return {
     get: (): PageInfo => {
       const title = typeof document === "undefined" ? undefined : document.title;
-      if (!doc) return { path: workPath, title, content: content.work };
-      const parts = [content.doc, content.work && `=== 左侧工作台页面的内容 ===\n${content.work}`].filter(Boolean);
+      const work = hidden.work ? undefined : content.work;
+      if (!doc || hidden.doc) return { path: hidden.work ? "/" : workPath, title, content: work };
+      const parts = [content.doc, work && `=== 左侧工作台页面的内容 ===\n${work}`].filter(Boolean);
       return { path: doc.path, title: doc.title, workPath, content: parts.join("\n\n").slice(0, CONTENT_LIMIT) || undefined };
+    },
+    setHidden: (next: Hidden) => {
+      hidden = next;
     },
     setWorkPath: (path: string) => {
       workPath = path;

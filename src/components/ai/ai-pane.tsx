@@ -4,25 +4,20 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from "ai";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { undoMemory } from "@/app/(app)/actions";
 import { openTaskConversationAction } from "@/app/(app)/workbench/actions";
 import { LogoMark, useShell } from "@/components/shell/app-shell";
 import { TOOL_META } from "@/lib/ai/tool-meta";
 import { uuid } from "@/lib/browser";
+import { tabFocus, workFocus, type AiFocus } from "@/lib/ai-context";
 import { activeTab, type DocTab } from "@/lib/shell";
-import { usePageStore } from "./page-context";
+import { usePageStore, type Hidden } from "./page-context";
 
-// 三栏里的 AI 对话栏。顶部一行说明 AI 现在和你一起在做什么（任务 / 文稿栏打开的文书 / 工作台当前页面）。
+// 三栏里的 AI 对话栏。顶部写这是任务对话还是通用对话；输入框上面一行写 AI 现在能看到什么（可以点掉）。
 // 一个任务一段对话：文稿栏切到任务详情、或点任务卡「让 AI 开始」时，切到这个任务专属的对话；
 // 「让 AI 开始」且这段对话还是空的，就代用户发出开场消息。主页上的通用对话另算。
-
-const WORK_PAGE_LABELS: [string, string][] = [
-  ["/workbench", "主页"],
-  ["/aspirations", "志愿"],
-  ["/documents", "文书列表"],
-  ["/profile", "AI 对你的了解"],
-];
+// 通用对话里用户换了打开的东西（志愿、文书、页面），聊天里插一行灰色分隔「你打开了 …」，快捷回复也跟着换。
 
 type Props = {
   initialConversationId: string | null;
@@ -200,28 +195,53 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
     setInput("");
   }
 
-  // AI 的最后一条消息带的快捷回复（如做完问卷后的开场消息），点一下就代用户发出
-  const last = messages.at(-1);
-  const quickReplies = last?.role === "assistant" ? last.parts.flatMap((p) => (p.type === "data-quickReplies" && Array.isArray(p.data) ? (p.data as string[]) : [])) : [];
-
   const tab = active;
-  const docShown = tab && tab.kind !== "task" && shell.isVisible("doc");
-  const workLabel = WORK_PAGE_LABELS.find(([p]) => pathname === p || pathname.startsWith(`${p}/`))?.[1];
+  const docShown = !!tab && tab.kind !== "task" && shell.isVisible("doc");
+  const work = workFocus(pathname);
+  const focus: AiFocus = (docShown && tabFocus(tab)) || work;
+
+  // 换了打开的东西：通用对话里记一条分隔（只在本页显示，不存进对话）；「AI 能看到」的点掉状态也重置
+  const [seenFocus, setSeenFocus] = useState(focus.key);
+  const [dividers, setDividers] = useState<{ conv: string; at: number; label: string }[]>([]);
+  const [hidden, setHidden] = useState<Hidden>({ work: false, doc: false });
+  if (focus.key !== seenFocus) {
+    setSeenFocus(focus.key);
+    setHidden({ work: false, doc: false });
+    if (!conv.task && messages.length > 0) {
+      const label = focus === work ? `你回到了${work.label}` : `你打开了 ${focus.label}`;
+      // 还没说话又换了：替换上一条分隔
+      setDividers((d) => [...d.filter((x) => !(x.conv === conversationId && x.at === messages.length)), { conv: conversationId, at: messages.length, label }]);
+    }
+  }
+  useEffect(() => {
+    pageStore.setHidden(hidden);
+  }, [pageStore, hidden]);
+  const convDividers = conv.task ? [] : dividers.filter((d) => d.conv === conversationId);
+  const dividerAt = (i: number) => convDividers.filter((d) => d.at === i);
+  const afterLast = dividerAt(messages.length).length > 0;
+
+  // AI 的最后一条消息带的快捷回复（如做完问卷后的开场消息），点一下就代用户发出；
+  // 通用对话里换了打开的东西后，改成按当前打开的东西给的快捷回复
+  const last = messages.at(-1);
+  const messageReplies = last?.role === "assistant" ? last.parts.flatMap((p) => (p.type === "data-quickReplies" && Array.isArray(p.data) ? (p.data as string[]) : [])) : [];
+  const quickReplies: { label: string; text: string }[] =
+    messageReplies.length && !afterLast ? messageReplies.map((q) => ({ label: q, text: q })) : conv.task || (messages.length > 0 && !afterLast) ? [] : focus.replies;
+
+  // 输入框上面：AI 现在能看到什么（文稿 / 页面可以点掉）
+  const pills: { key: string; label: string; slot?: keyof Hidden }[] = conv.task
+    ? [{ key: "task", label: `任务 · ${conv.task.title}` }]
+    : [...(focus !== work ? [{ key: "doc", label: focus.pill, slot: "doc" as const }] : []), { key: "work", label: work.pill, slot: "work" as const }];
 
   return (
     <>
       <div className="flex items-center gap-2 border-b border-line px-4 py-2 text-xs">
-        <span className="min-w-0 flex-1 truncate text-muted" title={conv.task?.title ?? (docShown ? tab.title : undefined)}>
+        <span className="min-w-0 flex-1 truncate text-muted" title={conv.task?.title}>
           {conv.task ? (
             <>
-              正在一起做：<span className="text-foreground">{conv.task.title}</span>
-            </>
-          ) : docShown ? (
-            <>
-              正在一起做：<span className="text-foreground">{tab.title || "（无标题）"}</span>
+              任务对话：<span className="text-foreground">{conv.task.title}</span>
             </>
           ) : (
-            `当前：${workLabel ?? "工作台"}`
+            "通用对话"
           )}
           {demo && <span className="ml-2 text-warn">演示模式</span>}
         </span>
@@ -256,18 +276,22 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
             <p>试试：「我下一步该做什么？」</p>
           </div>
         )}
-        {messages.map((m) => (
-          <Message key={m.id} message={m} />
+        {messages.map((m, i) => (
+          <Fragment key={m.id}>
+            {dividerAt(i).map((d) => (
+              <Divider key={d.label} label={d.label} />
+            ))}
+            <Message message={m} />
+          </Fragment>
+        ))}
+        {dividerAt(messages.length).map((d) => (
+          <Divider key={d.label} label={d.label} />
         ))}
         {quickReplies.length > 0 && status === "ready" && (
           <div className="flex flex-wrap gap-2">
             {quickReplies.map((q) => (
-              <button
-                key={q}
-                onClick={() => void send(q)}
-                className="btn rounded-full px-3 py-1 text-xs"
-              >
-                {q}
+              <button key={q.label} onClick={() => void send(q.text)} className="btn rounded-full px-3 py-1 text-xs">
+                {q.label}
               </button>
             ))}
           </div>
@@ -277,6 +301,27 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
         <div ref={bottomRef} />
       </div>
 
+      <div className="mx-4 mb-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted" data-testid="ai-sees">
+        <span>AI 能看到：</span>
+        {pills.map((p) => {
+          const off = p.slot ? hidden[p.slot] : false;
+          return p.slot ? (
+            <button
+              key={p.key}
+              onClick={() => setHidden((h) => ({ ...h, [p.slot!]: !h[p.slot!] }))}
+              title={off ? "点一下让 AI 看到" : "点一下不让 AI 看这个"}
+              className={`max-w-56 truncate rounded-full px-2 py-px ${off ? "bg-subtle text-faint line-through" : "bg-info-soft text-info"}`}
+            >
+              {p.label}
+            </button>
+          ) : (
+            <span key={p.key} className="max-w-56 truncate rounded-full bg-info-soft px-2 py-px text-info">
+              {p.label}
+            </span>
+          );
+        })}
+        <span className="rounded-full bg-subtle px-2 py-px">你的档案</span>
+      </div>
       <form
         onSubmit={submit}
         className="mx-3 mb-3 rounded-xl border border-line-strong bg-surface shadow-[0_1px_3px_rgb(15_15_15/0.06)] transition-[border-color,box-shadow] focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15"
@@ -304,6 +349,17 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
         </div>
       </form>
     </>
+  );
+}
+
+/** 通用对话里换了打开的东西：一行灰色分隔 */
+function Divider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 text-xs text-faint">
+      <span className="h-px flex-1 bg-line" />
+      <span className="max-w-[80%] truncate">{label}</span>
+      <span className="h-px flex-1 bg-line" />
+    </div>
   );
 }
 

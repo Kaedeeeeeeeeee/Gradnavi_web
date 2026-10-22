@@ -13,6 +13,44 @@ import { CONTACT_FLOW, PROFESSOR_STATUS_LABELS, type PaperRef, type ProfessorSta
 // 志愿列表、志愿详情、找教授候选卡片共用的小部件：联系进度、近期论文、研究科要点、差距、跟进日。
 
 /** 联系进度：未联系 → 已发信 → 已回复 → 面谈过 → 同意接收。点哪一步就改到哪一步 */
+const CONTACT_STYLES: Record<ProfessorStatus, string> = {
+  to_contact: "bg-subtle text-muted",
+  contacted: "bg-info-soft text-info",
+  replied: "bg-ok-soft text-ok",
+  interview: "bg-ok-soft text-ok",
+  accepted: "bg-ok-soft text-ok",
+  dropped: "bg-subtle text-faint",
+};
+
+/** 联系状态：一个标签，点开是下拉（和主页任务的状态一样），一点就能改 */
+export function ContactStatusSelect({ id, status }: { id: string; status: ProfessorStatus }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <span className="relative inline-flex shrink-0">
+      <select
+        aria-label="联系状态"
+        value={status}
+        disabled={pending}
+        onChange={(e) => {
+          const next = e.target.value as ProfessorStatus;
+          if (next === "dropped" && !confirm("不再考虑这位教授？之后可以重新考虑。")) return;
+          startTransition(() => updateProfessorAction(id, { status: next }));
+        }}
+        className={`cursor-pointer appearance-none rounded py-0.5 pr-5 pl-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 ${CONTACT_STYLES[status]}`}
+      >
+        {[...CONTACT_FLOW, "dropped" as const].map((s) => (
+          <option key={s} value={s}>
+            {s === "dropped" ? "已放弃" : PROFESSOR_STATUS_LABELS[s]}
+          </option>
+        ))}
+      </select>
+      <span aria-hidden className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-[9px] opacity-60">
+        ▼
+      </span>
+    </span>
+  );
+}
+
 export function ContactStepper({ id, status, compact = false }: { id: string; status: ProfessorStatus; compact?: boolean }) {
   const [pending, startTransition] = useTransition();
   const current = CONTACT_FLOW.indexOf(status as (typeof CONTACT_FLOW)[number]);

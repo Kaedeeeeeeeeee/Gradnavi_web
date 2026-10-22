@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CONTACT_RULE_LABELS } from "../admissions";
 import { diffGuideEvents, parseGuideReply } from "../admissions";
-import { describeAspiration, matchSchool, nextDeadline, parseScores, requirementGaps, contactLabel } from "../aspirations";
+import { aspirationNextStep, describeAspiration, matchSchool, nextDeadline, parseScores, requirementGaps, contactLabel, sortAspirations, type ProfessorView, type SchoolView } from "../aspirations";
 import type { CalendarItem } from "../calendar";
 import { candidateKey, parseCandidates } from "../professors";
 import { openTab } from "../shell";
@@ -152,4 +152,19 @@ test("事先联系：没有结论时显示要项里的说法，不再显示「�
   assert.equal(contactLabel({ contact: null, contactNote: "未提及需事先联系指导教員" }), "未提及需事先联系指导教員");
   assert.equal(contactLabel({ contact: null, contactNote: null }), "未查到");
   assert.equal(contactLabel(null), "未查到");
+});
+
+test("志愿的下一步按联系状态给文案；默认按最近的出愿日期排，放弃的在最后", () => {
+  const prof = (status: ProfessorView["status"], patch: Partial<ProfessorView> = {}) => ({ id: "p", name: "佐藤", status, note: null, followUpDate: null, ...patch }) as unknown as ProfessorView;
+  assert.equal(aspirationNextStep({ professor: prof("contacted", { followUpDate: "2026-10-29" }), school: null })!.text, "10/29 还没回就跟进");
+  assert.equal(aspirationNextStep({ professor: prof("replied", { note: "可以 11 月面谈" }), school: null })!.text, "可以 11 月面谈");
+  assert.equal(aspirationNextStep({ professor: prof("dropped"), school: null }), null);
+  const sch = (date: string | null) => ({ deadline: date ? { date } : null }) as unknown as SchoolView;
+  const list = [
+    { key: "a", professor: prof("dropped"), school: sch("2026-10-01") },
+    { key: "b", professor: prof("contacted"), school: sch(null) },
+    { key: "c", professor: prof("to_contact"), school: sch("2026-12-08") },
+    { key: "d", professor: prof("replied"), school: sch("2026-11-05") },
+  ];
+  assert.deepEqual(sortAspirations(list).map((x) => x.key), ["d", "c", "b", "a"]);
 });
