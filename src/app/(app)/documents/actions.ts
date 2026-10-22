@@ -11,6 +11,8 @@ import {
   createDocument,
   createTailoredCopy,
   deleteDocument,
+  reorderDocuments,
+  restoreDocument,
   getDocument,
   listPendingSuggestions,
   listVersions,
@@ -93,6 +95,20 @@ export async function markLetterSentAction(id: string, professorId: string) {
 export async function deleteDocumentAction(id: string) {
   const user = await requireUser();
   await deleteDocument(user.id, id);
+  revalidatePath("/", "layout");
+}
+
+/** 撤销删除 */
+export async function restoreDocumentAction(id: string) {
+  const user = await requireUser();
+  await restoreDocument(user.id, id);
+  revalidatePath("/", "layout");
+}
+
+/** 文书列表拖动排序后保存顺序 */
+export async function reorderDocumentsAction(ids: string[]) {
+  const user = await requireUser();
+  await reorderDocuments(user.id, z.array(z.string().max(100)).max(500).parse(ids));
   revalidatePath("/", "layout");
 }
 
