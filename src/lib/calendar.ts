@@ -52,6 +52,15 @@ export function addDays(date: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
+const WEEKDAY_ZH = ["日", "一", "二", "三", "四", "五", "六"];
+
+/** 全站统一的日期写法：「10/24 周六」；不是今年的前面加年份「2027/1/15 周五」 */
+export function formatDate(date: string, today = todayJst()) {
+  const [y, m, d] = date.split("-").map(Number);
+  const week = WEEKDAY_ZH[new Date(`${date}T00:00:00Z`).getUTCDay()];
+  return `${String(y) === today.slice(0, 4) ? "" : `${y}/`}${m}/${d} 周${week}`;
+}
+
 /** from 到 to 相隔几天（to 在前为负） */
 export function daysBetween(from: string, to: string) {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);

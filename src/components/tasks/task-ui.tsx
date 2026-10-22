@@ -5,6 +5,7 @@ import { updateProfessorAction } from "@/app/(app)/professors/actions";
 import { acceptProposalAction, rejectProposalAction, rescheduleEventAction, setTaskStatusAction, updateTaskAction } from "@/app/(app)/workbench/actions";
 import { useStartTask } from "@/components/ai/page-context";
 import { useShell } from "@/components/shell/app-shell";
+import { DateInput } from "@/components/ui/date-input";
 import { TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus, type TaskView } from "@/lib/tasks";
 
 // 任务卡和任务详情共用的小部件：状态标签、「让 AI 开始」、AI 提议的同意 / 改 / 拒绝。
@@ -87,7 +88,7 @@ export function ProposalButtons({
   if (editing)
     return (
       <span className="flex shrink-0 items-center gap-1">
-        <input type="date" value={value} onChange={(e) => setValue(e.target.value)} className="rounded border border-line-strong bg-transparent px-1 text-xs" />
+        <DateInput value={value} onChange={setValue} className="rounded border border-line-strong px-1 text-xs" />
         <button
           disabled={pending || !value}
           className={primaryBtn}

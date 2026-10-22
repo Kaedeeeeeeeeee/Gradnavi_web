@@ -35,10 +35,13 @@ import {
 // 文稿栏按需出现：没打开文书/网页时只有「工作台 | AI 对话」两栏，打开第一个标签时滑入，关掉最后一个后隐藏。
 // - 栏间拖动调宽；每栏可放大（其余收成竖条）或收起成 52px 竖条，竖条上显示未读/待确认标记
 // - 顶栏三个布局预设；布局和文稿栏标签存在 cookie 里，下次打开保持原样
-// - 窄屏（<1024px）只显示一栏，底部标签切换
+// - 窄屏（<1024px）只显示一栏，底部标签「主页 / 志愿 / 文书 / AI 对话」切换；打开的文稿盖在上面，左上角「返回」
+// - 宽度不到 1280px（平板横屏、小笔记本）时，第一次打开文稿默认用「聊天 + 文稿」，工作台收成竖条，三栏不会都挤成 300px
 // 文稿栏当前标签的内容由服务器渲染（layout 读 cookie），切换标签 = 写 cookie + router.refresh()。
 
 const MIN_PANE_PX = 280;
+/** 窗口比这窄时，打开文稿默认「聊天 + 文稿」 */
+const ROOMY_PX = 1280;
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 function writeCookie(name: string, value: string) {
@@ -114,6 +117,8 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
   const [tabs, setTabs] = useState(initialTabs);
   const [badges, setBadges] = useState<Record<PaneId, Badge>>({ work: false, doc: false, ai: false });
   const [lastPane, setLastPane] = useState<PaneId>(initialTabs.active ? "doc" : "work");
+  /** 窄屏上文稿的「返回」回到哪一栏 */
+  const [backTo, setBackTo] = useState<PaneId>("work");
   const [dragging, setDragging] = useState(false);
   const [refreshing, startRefresh] = useTransition();
   const paneRefs = useRef<Record<PaneId, HTMLElement | null>>({ work: null, doc: null, ai: null });
@@ -148,7 +153,10 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
         }
         const next = openTabIn(tabs, tab);
         updateTabs(next, next.active !== tabs.active || next.tabs.length !== tabs.tabs.length);
-        setLayout((l) => expandPane(l, "doc"));
+        // 文稿栏刚出现、窗口又不够三栏时，先让工作台让位
+        const cramped = !narrow && !tabs.tabs.length && window.innerWidth < ROOMY_PX && currentPreset(layout, true) === "three";
+        setLayout((l) => (cramped ? applyPreset(l, "chatDoc", "doc") : expandPane(l, "doc")));
+        if (layout.mobile !== "doc") setBackTo(layout.mobile);
         setLastPane("doc");
       },
       closeTab: (key) => {
@@ -164,7 +172,7 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
       isVisible,
       setBadge: (pane, badge) => setBadges((b) => (b[pane] === badge ? b : { ...b, [pane]: badge })),
     }),
-    [layout, tabs, updateTabs, isVisible],
+    [layout, tabs, updateTabs, isVisible, narrow],
   );
 
   // 告诉 AI 用户正在看什么：工作台栏的页面 + 文稿栏的当前标签（栏收起时不算）
@@ -228,9 +236,20 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
     return badges[pane];
   };
 
+  const showMobile = (pane: PaneId) => setLayout((l) => ({ ...l, mobile: pane }));
+
   const header: Record<PaneId, React.ReactNode> = {
     work: <WorkTabs pathname={pathname} />,
-    doc: <DocTabBar tabs={tabs} onActivate={(key) => key !== tabs.active && updateTabs({ ...tabs, active: key }, true)} onClose={closeTab} />,
+    doc: (
+      <div className="flex items-center gap-1">
+        <button onClick={() => showMobile(backTo === "doc" ? "work" : backTo)} className="shrink-0 rounded-md px-2 py-1 text-sm text-muted hover:bg-subtle hover:text-foreground lg:hidden">
+          ‹ 返回
+        </button>
+        <div className="min-w-0 flex-1">
+          <DocTabBar tabs={tabs} onActivate={(key) => key !== tabs.active && updateTabs({ ...tabs, active: key }, true)} onClose={closeTab} />
+        </div>
+      </div>
+    ),
     ai: <span className="px-1 text-sm font-medium">AI 对话</span>,
   };
 
@@ -282,7 +301,7 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
                 className={`min-w-0 flex-col ${layout.collapsed[p] ? "lg:hidden" : "lg:flex"} ${layout.mobile === p ? "max-lg:flex" : "max-lg:hidden"} lg:min-w-[280px] ${p === "doc" ? "animate-pane-in" : ""} overflow-hidden lg:rounded-xl lg:border lg:border-line lg:shadow-[0_1px_2px_rgb(15_15_15/0.04)] ${p === "ai" ? "bg-panel" : "bg-surface"}`}
                 aria-label={PANE_LABELS[p]}
               >
-                <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line pl-2 pr-1">
+                <div className={`flex h-10 shrink-0 items-center gap-1 border-b border-line pl-2 pr-1 ${p === "work" ? "max-lg:hidden" : ""}`}>
                   <div className="min-w-0 flex-1">{header[p]}</div>
                   <PaneControls only={open.length === 1} onMax={() => choosePresetFor(p)} onRestore={() => choosePreset("three")} onCollapse={() => setLayout((l) => collapsePane(l, p, hasDoc))} />
                 </div>
@@ -301,20 +320,26 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
           ))}
         </div>
 
-        <nav className="flex shrink-0 border-t border-line bg-surface lg:hidden">
-          {shown.map((p) => {
-            const badge = badgeOf(p);
+        <nav className="flex shrink-0 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden">
+          {WORK_TABS.map((t, i) => {
+            const active = layout.mobile === "work" && isWorkTabActive(pathname, t.href);
+            const badge = i === 0 ? badgeOf("work") : false;
             return (
-              <button
-                key={p}
-                onClick={() => setLayout((l) => ({ ...l, mobile: p }))}
-                className={`relative flex-1 py-2.5 text-sm ${layout.mobile === p ? "font-medium" : "text-muted"}`}
+              <Link
+                key={t.href}
+                href={t.href}
+                onClick={() => showMobile("work")}
+                className={`relative flex-1 py-2.5 text-center text-sm ${active ? "font-medium" : "text-muted"}`}
               >
-                {PANE_LABELS[p]}
-                {layout.mobile !== p && badge ? <BadgeDot badge={badge} className="ml-1" /> : null}
-              </button>
+                {t.label}
+                {!active && badge ? <BadgeDot badge={badge} className="ml-1" /> : null}
+              </Link>
             );
           })}
+          <button onClick={() => showMobile("ai")} className={`relative flex-1 py-2.5 text-sm ${layout.mobile === "ai" ? "font-medium" : "text-muted"}`}>
+            {PANE_LABELS.ai}
+            {layout.mobile !== "ai" && badgeOf("ai") ? <BadgeDot badge={badgeOf("ai")} className="ml-1" /> : null}
+          </button>
         </nav>
       </div>
     </ShellContext>
@@ -384,11 +409,13 @@ const WORK_TABS = [
   { href: "/documents", label: "文书" },
 ];
 
+const isWorkTabActive = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
 function WorkTabs({ pathname }: { pathname: string }) {
   return (
     <nav className="flex gap-0.5 overflow-x-auto text-sm">
       {WORK_TABS.map((t) => {
-        const active = pathname === t.href || pathname.startsWith(`${t.href}/`);
+        const active = isWorkTabActive(pathname, t.href);
         return (
           <Link
             key={t.href}

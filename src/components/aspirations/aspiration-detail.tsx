@@ -6,6 +6,7 @@ import { createLetterAction, createPlanAction, deleteProfessorAction, updateProf
 import { useAiPageContent, useAskAi } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { btn } from "@/components/tasks/task-ui";
+import { formatDate } from "@/lib/calendar";
 import type { AspirationView, ProfessorView, SchoolView } from "@/lib/aspirations";
 import { professorAffiliation } from "@/lib/professors";
 import { ContactStepper, FindSchoolButton, FollowUp, Gaps, PaperList, PasteReply, SchoolFacts, SourceLinks, Tentative } from "./aspiration-ui";
@@ -156,8 +157,8 @@ function SchoolSection({ school: s, gaps }: { school: SchoolView; gaps: string[]
             {s.events.map((e) => (
               <li key={e.key} className="flex gap-2">
                 <span className="w-40 shrink-0 tabular-nums text-muted">
-                  {e.date}
-                  {e.endDate && `〜${e.endDate.slice(5)}`}
+                  {formatDate(e.date)}
+                  {e.endDate && `〜${formatDate(e.endDate)}`}
                   {s.tentative && <Tentative />}
                 </span>
                 <span>{e.title.replace(`${s.university} ${s.name} `, "")}</span>
