@@ -7,7 +7,7 @@ import { useShell } from "@/components/shell/app-shell";
 import { btn, primaryBtn } from "@/components/tasks/task-ui";
 import { formatDate } from "@/lib/calendar";
 import { PROFESSOR_STATUS_LABELS, professorAffiliation, type ProfessorCandidate, type ProfessorStatus } from "@/lib/professors";
-import { PaperList, ProfessorFacts, SourceLinks, Tentative } from "./aspiration-ui";
+import { PaperList, ProfessorAvatar, ProfessorFacts, SourceLinks, Tentative } from "./aspiration-ui";
 
 // 文稿栏里的找教授结果：AI 在对话里检索的这一轮候选。用户点「加入志愿」或「不合适」（顺手说原因，记进 user.md），
 // 想调整就在右侧对话里接着说，AI 再搜一轮，这里换成新结果。
@@ -88,9 +88,15 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
 
   return (
     <li className={`space-y-2.5 rounded-xl border p-4 ${c.saved ? "border-ok/40" : "border-line"} ${dim ? "opacity-60" : ""}`}>
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="font-medium">{p.name}</span>
-        <span className="text-sm text-muted">{professorAffiliation(p)}</span>
+      <div className="flex items-center gap-3">
+        <ProfessorAvatar name={p.name} photo={p.details?.photo} />
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <span className="font-medium">{p.name}</span>
+          <span className="text-sm text-muted">
+            {professorAffiliation(p)}
+            {p.details?.position && ` · ${p.details.position}`}
+          </span>
+        </div>
       </div>
       {p.fit && (
         <p className="text-sm">

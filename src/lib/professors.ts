@@ -68,6 +68,8 @@ export type ProfessorDetails = {
   contact?: string;
   /** 研究科对「出愿前联系教授」的规定（检索结果里看到时） */
   contactRule?: string;
+  /** 官方页面（researchmap 个人页、大学 / 研究室主页）上的本人照片；source 是照片所在的页面 */
+  photo?: { url: string; source: string };
 };
 
 /** 检索候选（还没收藏） */
@@ -300,7 +302,23 @@ const paperReplySchema = z.object({
   chineseStudents: text(200).nullish().catch(null),
   contact: text(200).nullish().catch(null),
   contactRule: text(200).nullish().catch(null),
+  photo: z.object({ url: z.string(), source: z.string() }).nullish().catch(null),
 });
+
+/** 照片只认官方页面里出现过的图片网址（https），来源页必须是 researchmap 或大学（.ac.jp）的页面 */
+function toPhoto(photo: { url: string; source: string } | null | undefined, allowed: (u: string) => boolean) {
+  const raw = photo?.url?.trim();
+  const source = allowedUrl(photo?.source, allowed);
+  if (!raw || !source || !allowed(raw)) return undefined;
+  try {
+    // 页面里常是相对路径（/img/yamada.jpg），按来源页补全
+    const url = new URL(raw, source);
+    if (url.protocol !== "https:" || !/(^|\.)researchmap\.jp$|\.ac\.jp$/.test(new URL(source).hostname)) return undefined;
+    return { url: url.toString(), source };
+  } catch {
+    return undefined;
+  }
+}
 
 /** 链接只认检索结果（或抓到的页面正文）里逐字出现过的 URL */
 function allowedUrl(url: string | null | undefined, allowed: (u: string) => boolean) {
@@ -327,6 +345,7 @@ function toDetails(d: z.infer<typeof paperReplySchema>, allowed: (u: string) => 
     ...(cleanCopy(d.chineseStudents) ? { chineseStudents: cleanCopy(d.chineseStudents) } : {}),
     ...(cleanCopy(d.contact) ? { contact: cleanCopy(d.contact) } : {}),
     ...(cleanCopy(d.contactRule) ? { contactRule: cleanCopy(d.contactRule) } : {}),
+    ...(toPhoto(d.photo, allowed) ? { photo: toPhoto(d.photo, allowed) } : {}),
   };
   return Object.keys(details).length ? details : undefined;
 }

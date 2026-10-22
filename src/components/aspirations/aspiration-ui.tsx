@@ -283,6 +283,25 @@ export function SourceLinks({ sources }: { sources: SourceLink[] }) {
 
 const NOT_FOUND = <span className="text-faint">未查到</span>;
 
+/**
+ * 教授头像：官方页面上的本人照片；没有照片、或外链打不开（失效、防盗链）时显示姓氏首字。
+ * 不带 Referer 引用，多数大学网站的防盗链就不会拦。
+ */
+export function ProfessorAvatar({ name, photo, size = 40 }: { name: string; photo?: ProfessorDetails["photo"] | null; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const style = { width: size, height: size };
+  if (photo && !failed)
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- 外站图片，不经过 next/image 的优化服务
+      <img src={photo.url} alt={`${name} 的照片`} referrerPolicy="no-referrer" loading="lazy" onError={() => setFailed(true)} style={style} className="shrink-0 rounded-full bg-subtle object-cover" />
+    );
+  return (
+    <span aria-hidden style={{ ...style, fontSize: size * 0.42 }} className="flex shrink-0 items-center justify-center rounded-full bg-subtle font-medium text-muted" lang="ja">
+      {name.trim().charAt(0)}
+    </span>
+  );
+}
+
 function WebLink({ url, title, children }: { url: string; title: string; children: React.ReactNode }) {
   return (
     <OpenTabLink tab={{ kind: "web", url, title }} href={url} className="text-accent hover:underline">
@@ -362,6 +381,14 @@ export function ProfessorFacts({
         })}
         {missing.length > 0 && <span className="text-xs text-faint">未查到：{missing.map((k) => PROFESSOR_LINK_LABELS[k]).join("、")}</span>}
       </p>
+      {d.photo && (
+        <p className="text-xs text-faint">
+          照片来自{" "}
+          <WebLink url={d.photo.source} title={`${name} · 照片来源`}>
+            {sourceLabel({ title: "", url: d.photo.source })}
+          </WebLink>
+        </p>
+      )}
       <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
         {rows.map(([label, value]) => (
           <div key={label} className="contents">

@@ -164,10 +164,21 @@ test("补充信息合并：链接只认检索结果或 researchmap 页面里出�
         chineseStudents: "chineseStudents 为空",
         contact: "研究室主页有联系邮箱 yamada@example.ac.jp",
         contactRule: null,
+        photo: { url: "/img/yamada.jpg", source: "https://kaken.nii.ac.jp/grant/KAKENHI-PROJECT-1/" },
       },
+      { index: 2 },
     ],
   });
   const [a] = mergePaperReply(reply, base, found, [page]);
+  // 照片：来源页要是 researchmap 或大学页面，图片网址要在页面全文里出现过
+  const lab = [{ title: "山田研究室", url: "https://www.example.ac.jp/yamada/" }];
+  const photoReply = (url: string) => JSON.stringify({ candidates: [{ index: 1, photo: { url, source: "https://www.example.ac.jp/yamada/" } }] });
+  const labPage = '<img src="/img/yamada.jpg">';
+  assert.deepEqual(mergePaperReply(photoReply("/img/yamada.jpg"), base, lab, [labPage])[0].details?.photo, {
+    url: "https://www.example.ac.jp/img/yamada.jpg",
+    source: "https://www.example.ac.jp/yamada/",
+  });
+  assert.equal(mergePaperReply(photoReply("https://images.example.com/guess.jpg"), base, lab, [labPage])[0].details, undefined);
   assert.deepEqual(a.details, {
     position: "准教授",
     links: { lab: "https://lab.example.ac.jp/yamada/", kaken: "https://kaken.nii.ac.jp/grant/KAKENHI-PROJECT-1/" },

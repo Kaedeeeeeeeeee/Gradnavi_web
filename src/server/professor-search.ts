@@ -34,7 +34,7 @@ const MAX_RESULTS_FOR_AI = 40;
 const PAPER_PER_QUERY = 6;
 const PAPER_RESULTS_PER_CANDIDATE = 14;
 const ADMISSION_PER_QUERY = 4;
-/** researchmap 个人页（职位、学位、科研费、主页链接都在上面）读多少字 */
+/** researchmap 个人页、大学教员页各读多少字 */
 const PROFILE_PAGE_LIMIT = 6000;
 
 const NO_FIELD_NAMES = "- 给用户看的文字（research、fit、acceptsInternational 等）是写给用户的自然中文：不要提 JSON 字段名（papers、sources 等）、不要写「null」「为空」「检索结果里没有」这类话，查不到的就不提。";
@@ -74,15 +74,16 @@ ${NO_FIELD_NAMES}
 ${formatResults(results)}`;
 }
 
-type CandidateSources = { results: SearchResult[]; profile: { url: string; content: string } | null; admission: SearchResult[] };
+type FetchedPage = { url: string; content: string };
+type CandidateSources = { results: SearchResult[]; pages: FetchedPage[]; admission: SearchResult[] };
 
 function buildPaperPrompt(input: SearchInput, candidates: ProfessorCandidate[], sources: CandidateSources[]) {
   const blocks = candidates
     .map((c, i) => {
-      const { results, profile, admission } = sources[i];
+      const { results, pages, admission } = sources[i];
       return `## 候选 ${i + 1}：${c.name}（${[c.university, c.department].filter(Boolean).join(" ")}）
 研究方向：${c.research || "未知"}
-${results.length ? formatResults(results) : "（没有检索结果）"}${profile ? `\n\n### researchmap 个人页 ${profile.url}\n${profile.content}` : ""}${
+${results.length ? formatResults(results) : "（没有检索结果）"}${pages.map((p) => `\n\n### 页面全文 ${p.url}\n${p.content}`).join("")}${
         admission.length ? `\n\n### 所在研究科的入试页检索结果\n${formatResults(admission)}` : ""
       }`;
     })
@@ -101,11 +102,12 @@ ${userContext(input)}
 - chineseStudents：研究室成员页等明确写了有中国留学生（或人数）时用中文简述，否则 null。不要根据姓名猜。
 - contact：公开的联系方式（页面上写的邮箱、联系表单、「请先联系研究科教务」等），用中文简述并保留邮箱原文；没有 null。
 - contactRule：所在研究科对「出愿前要不要联系指导教员」的规定（如「出願前に指導予定教員の内諾が必要」），用中文简述；入试页结果里没提到 null。
+- photo：「页面全文」里能确认是这位教员本人的照片时填 {"url":"图片网址","source":"照片所在页面的网址"}；图片网址必须逐字出现在该页面全文里（researchmap 头像、大学或研究室主页上的本人照片），拿不准是不是本人（合影、logo、别人的照片）就 null。
 - 只根据给出的内容写，不要补充没有的信息。
 ${NO_FIELD_NAMES}
 
 只输出 JSON，index 是候选编号：
-{"candidates":[{"index":1,"papers":[{"title":"","year":null,"url":null}],"fit":"","position":null,"links":{"researchmap":null,"lab":null,"homepage":null,"kaken":null,"admission":null},"birthYear":null,"retirementNote":null,"grants":[],"acceptsInternational":null,"chineseStudents":null,"contact":null,"contactRule":null}]}
+{"candidates":[{"index":1,"papers":[{"title":"","year":null,"url":null}],"fit":"","position":null,"links":{"researchmap":null,"lab":null,"homepage":null,"kaken":null,"admission":null},"birthYear":null,"retirementNote":null,"grants":[],"acceptsInternational":null,"chineseStudents":null,"contact":null,"contactRule":null,"photo":null}]}
 
 ${blocks}`;
 }
@@ -113,16 +115,31 @@ ${blocks}`;
 const RESEARCHMAP_PROFILE = /^https:\/\/researchmap\.jp\/[^/?#]+\/?$/;
 const RESEARCHMAP_PAGES = /^https:\/\/researchmap\.jp\/(researchers|search|community|public|achievements)\/?$/;
 
-/** 读 researchmap 个人页：职位、科研费、主页链接都在上面，检索摘要里常常没有 */
-async function readProfile(results: SearchResult[], meter?: UsageMeter) {
-  const url = results.find((r) => RESEARCHMAP_PROFILE.test(r.url) && !RESEARCHMAP_PAGES.test(r.url))?.url;
-  if (!url) return null;
-  try {
-    return await fetchPage(url, meter, PROFILE_PAGE_LIMIT);
-  } catch (error) {
-    console.warn(`[professor-search] researchmap 个人页读取失败 ${url}`, error);
-    return null;
-  }
+/**
+ * 读两页全文：researchmap 个人页（职位、科研费、主页链接、头像都在上面，检索摘要里常常没有），
+ * 和标题里有教员姓名的大学页面（教员介绍 / 研究室主页，常有本人照片和联系方式）
+ */
+async function readPages(c: ProfessorCandidate, results: SearchResult[], meter?: UsageMeter): Promise<FetchedPage[]> {
+  const name = c.name.replace(/[\s　]/g, "");
+  const surname = c.name.trim().split(/[\s　]/)[0];
+  const profile = results.find((r) => RESEARCHMAP_PROFILE.test(r.url) && !RESEARCHMAP_PAGES.test(r.url))?.url;
+  const official = results.find((r) => {
+    try {
+      return new URL(r.url).hostname.endsWith(".ac.jp") && !/\.pdf($|\?)/i.test(r.url) && (r.title.replace(/[\s　]/g, "").includes(name) || r.title.includes(surname));
+    } catch {
+      return false;
+    }
+  })?.url;
+  const urls = [profile, official].filter((u): u is string => !!u);
+  const pages = await Promise.all(
+    urls.map((url) =>
+      fetchPage(url, meter, PROFILE_PAGE_LIMIT).catch((error) => {
+        console.warn(`[professor-search] 页面读取失败 ${url}`, error);
+        return null;
+      }),
+    ),
+  );
+  return pages.filter((p): p is FetchedPage => !!p);
 }
 
 /** 每位候选单独检索（论文、KAKEN、研究室、研究科招生页），再用一次 AI 调用整理。失败时保留第一轮结果 */
@@ -134,7 +151,7 @@ async function addRecentPapers(input: SearchInput, candidates: ProfessorCandidat
       candidates.map(async (c) => {
         const settled = await Promise.allSettled(buildPaperQueries(c).map((q) => webSearch(q, PAPER_PER_QUERY, meter)));
         const results = dedupe(settled.flatMap((s) => (s.status === "fulfilled" ? s.value : []))).slice(0, PAPER_RESULTS_PER_CANDIDATE);
-        return { results, profile: await readProfile(results, meter) };
+        return { results, pages: await readPages(c, results, meter) };
       }),
     ),
     Promise.all(admissionQueries.map((q) => webSearch(q, ADMISSION_PER_QUERY, meter).catch(() => [] as SearchResult[]))),
@@ -149,7 +166,7 @@ async function addRecentPapers(input: SearchInput, candidates: ProfessorCandidat
       text,
       candidates,
       sources.flatMap((s) => [...s.results, ...s.admission]).map((r) => ({ title: r.title, url: r.url })),
-      sources.flatMap((s) => (s.profile ? [s.profile.content] : [])),
+      sources.flatMap((s) => s.pages.map((p) => p.content)),
     );
   } catch (error) {
     console.warn("[professor-search] 单独检索整理失败", error);
