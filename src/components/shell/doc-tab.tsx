@@ -5,12 +5,13 @@ import { SearchResults, type CandidateView } from "@/components/aspirations/sear
 import { db } from "@/db";
 import { graduateSchool } from "@/db/schema";
 import { projectGuide } from "@/lib/admissions";
-import { contactLabel, describeAspiration, languageLabel, matchSchool, nextDeadline } from "@/lib/aspirations";
+import { contactLabel, describeAspiration, languageLabel, matchSchool, nextDeadline, sortAspirations } from "@/lib/aspirations";
 import { todayJst } from "@/lib/calendar";
 import { decideTrack } from "@/lib/onboarding";
 import { candidateKey, describeProfessor } from "@/lib/professors";
 import type { DocTab } from "@/lib/shell";
-import { getAspiration, getSchoolAspiration } from "@/server/aspirations";
+import { getAspiration, getSchoolAspiration, listAspirations } from "@/server/aspirations";
+import { CompareView } from "@/components/aspirations/compare-table";
 import { getDocumentBundle, listDocuments } from "@/server/documents";
 import { getProfile } from "@/server/profile";
 import { getProfessorSearch } from "@/server/professor-search";
@@ -33,6 +34,7 @@ export async function renderDocTab(userId: string, tab: DocTab | null): Promise<
   if (tab.kind === "school") return schoolTab(userId, tab.id);
   if (tab.kind === "task") return taskTab(userId, tab.id);
   if (tab.kind === "search") return searchTab(userId, tab.id);
+  if (tab.kind === "compare") return compareTab(userId);
   return documentTab(userId, tab.id);
 }
 
@@ -152,6 +154,11 @@ async function searchTab(userId: string, id: string) {
       />
     ),
   };
+}
+
+async function compareTab(userId: string) {
+  const list = sortAspirations((await listAspirations(userId, todayJst())).filter((a) => a.professor?.status !== "dropped"));
+  return { title: "对比志愿", node: <CompareView list={list} /> };
 }
 
 async function taskTab(userId: string, id: string) {

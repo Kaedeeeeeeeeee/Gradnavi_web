@@ -197,3 +197,47 @@ export function describeAspiration(a: AspirationView) {
 export function statusLabel(status: ProfessorStatus) {
   return PROFESSOR_STATUS_LABELS[status];
 }
+
+/** 志愿卡片的「下一步」：按联系状态写死的文案 + 一个让 AI 在对话里开始的按钮（不调 AI） */
+export type NextStep = { text: string; action: { label: string; prompt: string } | null };
+
+export function aspirationNextStep(a: Pick<AspirationView, "professor" | "school">): NextStep | null {
+  const p = a.professor;
+  const s = a.school;
+  if (!p) {
+    const name = s ? `${s.university} ${s.name}` : "这个研究科";
+    return { text: "还没定教授", action: { label: "找这里的教授", prompt: `帮我在${name}找 2–3 位和我方向合适的教授，先问我一两个问题。` } };
+  }
+  const who = `${p.name}教授（教授 ID：${p.id}）`;
+  const contact = s?.requirements?.contact;
+  switch (p.status) {
+    case "to_contact":
+      return {
+        text: contact === "required" ? "先联系教授（这个研究科必须先联系）" : contact === "recommended" ? "先联系教授（建议）" : "写一封套磁信联系教授",
+        action: { label: "让 AI 起草套磁信", prompt: `帮我给${who}写套磁信：新建一份关联这位教授的套磁信，按我的档案、计划书和教授的研究方向写日文初稿。` },
+      };
+    case "contacted":
+      return {
+        text: p.followUpDate ? `${Number(p.followUpDate.slice(5, 7))}/${Number(p.followUpDate.slice(8))} 还没回就跟进` : "等回信；可以定一个跟进日",
+        action: { label: "起草跟进邮件", prompt: `我给${who}发了套磁信，还没收到回复。帮我判断什么时候跟进合适，再写一封简短礼貌的日文跟进邮件。` },
+      };
+    case "replied":
+      return {
+        text: p.note ? (p.note.length > 40 ? `${p.note.slice(0, 40)}…` : p.note) : "教授回信了，商量怎么回",
+        action: { label: "回复教授", prompt: `${who}回复我了（要点在志愿备注里）。帮我理解回信、写日文回复；要约面谈的话，时间定了提议写进日历。` },
+      };
+    case "interview":
+      return { text: "准备面谈", action: { label: "和 AI 模拟面谈", prompt: `帮我准备和${who}的面谈：整理教授近期研究、可能被问到的问题和回答要点，然后和我做一次模拟问答。` } };
+    case "accepted":
+      return { text: "教授同意接收了，准备出愿材料", action: { label: "列出出愿材料", prompt: `${who}同意接收我了。帮我查他所在研究科的募集要项，列出出愿材料和截止日期。` } };
+    case "dropped":
+      return null;
+  }
+}
+
+/** 志愿的默认顺序：放弃的放最后；其余按最近的出愿日期，没有日期的排在后面 */
+export function sortAspirations<T extends Pick<AspirationView, "professor" | "school">>(list: T[]): T[] {
+  const rank = (a: T) => (a.professor?.status === "dropped" ? 1 : 0);
+  const date = (a: T) => a.school?.deadline?.date ?? "9999";
+  return [...list].sort((x, y) => rank(x) - rank(y) || date(x).localeCompare(date(y)));
+}

@@ -25,6 +25,8 @@ export type DocTab =
   | { kind: "task"; id: string; title: string }
   /** 找教授的一轮结果（候选卡片）。同时只开一个：新一轮结果替换旧的 */
   | { kind: "search"; id: string; title: string }
+  /** 志愿并排对比（只有一个，id 固定为 all） */
+  | { kind: "compare"; id: string; title: string }
   | { kind: "web"; url: string; title: string };
 
 export type Tabs = { tabs: DocTab[]; active: string | null };
@@ -132,6 +134,7 @@ const tabSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("school"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("task"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("search"), id: z.string().max(64), title: z.string().max(100) }),
+  z.object({ kind: z.literal("compare"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("web"), url: z.string().max(500), title: z.string().max(100) }),
 ]);
 
