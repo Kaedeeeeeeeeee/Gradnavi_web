@@ -18,11 +18,11 @@ export function DiffText({ parts, className = "" }: { parts: DiffPart[]; classNa
         op === 0 ? (
           <span key={i}>{text}</span>
         ) : op === 1 ? (
-          <ins key={i} className="bg-emerald-100 text-emerald-900 no-underline dark:bg-emerald-950 dark:text-emerald-200">
+          <ins key={i} className="bg-ok-soft text-ok no-underline">
             {text}
           </ins>
         ) : (
-          <del key={i} className="bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
+          <del key={i} className="bg-danger-soft text-danger">
             {text}
           </del>
         ),
@@ -52,7 +52,7 @@ export function ReviewRail(p: RailProps) {
   return (
     <div className="space-y-3" data-testid="review-rail">
       {p.suggestions.length > 0 && (
-        <div className="flex items-center justify-between text-xs text-zinc-500">
+        <div className="flex items-center justify-between text-xs text-muted">
           <span>AI 修改建议 {p.suggestions.length} 条，待你确认</span>
           {p.suggestions.length > 1 && (
             <button onClick={p.onAcceptAll} disabled={!!p.busy} className="underline hover:text-foreground disabled:opacity-40">
@@ -64,7 +64,7 @@ export function ReviewRail(p: RailProps) {
       {p.suggestions.map((s) => (
         <SuggestionCard key={s.id} s={s} {...p} />
       ))}
-      {p.comments.length > 0 && <div className="pt-1 text-xs text-zinc-500">教授批注 {p.comments.length} 条</div>}
+      {p.comments.length > 0 && <div className="pt-1 text-xs text-muted">教授批注 {p.comments.length} 条</div>}
       {p.comments.map((c) => (
         <CommentCard key={c.id} c={c} {...p} />
       ))}
@@ -82,21 +82,21 @@ function SuggestionCard({ s, markdown, active, busy, onFocus, onAccept, onReject
       data-testid="suggestion-card"
       data-rail-id={s.id}
       onClick={() => onFocus(s.id)}
-      className={`${card} ${isActive ? "border-emerald-500" : "border-emerald-200 dark:border-emerald-900"}`}
+      className={`${card} ${isActive ? "border-ok" : "border-ok/40"}`}
     >
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <span className="font-medium">{s.summary}</span>
-        <span className="shrink-0 text-xs text-zinc-400">{SUGGESTION_SOURCE_LABELS[s.source]}</span>
+        <span className="shrink-0 text-xs text-faint">{SUGGESTION_SOURCE_LABELS[s.source]}</span>
       </div>
-      {where && <div className="mb-1 text-xs text-zinc-500">位置：{where}</div>}
-      <DiffText parts={parts} className="max-h-60 overflow-y-auto rounded bg-zinc-50 px-2 py-1.5 dark:bg-zinc-900" />
+      {where && <div className="mb-1 text-xs text-muted">位置：{where}</div>}
+      <DiffText parts={parts} className="max-h-60 overflow-y-auto rounded bg-subtle px-2 py-1.5" />
       {s.zh.length > 0 && (
         <div className="mt-2">
-          <button onClick={(e) => (e.stopPropagation(), setShowZh(!showZh))} className="text-xs text-zinc-500 underline">
+          <button onClick={(e) => (e.stopPropagation(), setShowZh(!showZh))} className="text-xs text-muted underline">
             {showZh ? "收起中文" : "看中文意思"}
           </button>
           {showZh && (
-            <div lang="zh-CN" className="mt-1 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
+            <div lang="zh-CN" className="mt-1 space-y-1 text-xs text-muted">
               {s.zh.map((t, i) => (
                 <p key={i}>{t}</p>
               ))}
@@ -108,14 +108,14 @@ function SuggestionCard({ s, markdown, active, busy, onFocus, onAccept, onReject
         <button
           onClick={(e) => (e.stopPropagation(), onAccept(s.id))}
           disabled={!!busy}
-          className="rounded-md bg-foreground px-3 py-1 text-background disabled:opacity-40"
+          className="btn-primary px-3 py-1"
         >
           {busy === s.id ? "处理中…" : "接受"}
         </button>
         <button
           onClick={(e) => (e.stopPropagation(), onReject(s.id))}
           disabled={!!busy}
-          className="rounded-md border border-zinc-300 px-3 py-1 disabled:opacity-40 dark:border-zinc-700"
+          className="btn px-3 py-1"
         >
           拒绝
         </button>
@@ -132,27 +132,27 @@ function CommentCard({ c, active, busy, onFocus, onApplyComment, onIgnoreComment
       data-testid="comment-card"
       data-rail-id={c.id}
       onClick={() => onFocus(c.id)}
-      className={`${card} ${isActive ? "border-amber-500" : "border-amber-200 dark:border-amber-900"} ${waiting ? "opacity-60" : ""}`}
+      className={`${card} ${isActive ? "border-warn" : "border-warn/40"} ${waiting ? "opacity-60" : ""}`}
     >
       <div className="mb-1 flex items-center gap-2 text-xs">
-        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 dark:bg-amber-950 dark:text-amber-300">{COMMENT_CATEGORY_LABELS[c.category]}</span>
-        <span lang="ja" className="min-w-0 truncate text-zinc-500" title={c.quote}>
+        <span className="rounded-full bg-warn-soft px-2 py-0.5 text-warn">{COMMENT_CATEGORY_LABELS[c.category]}</span>
+        <span lang="ja" className="min-w-0 truncate text-muted" title={c.quote}>
           「{c.quote}」
         </span>
       </div>
       <p className="leading-relaxed">{c.body}</p>
       {waiting ? (
-        <p className="mt-2 text-xs text-zinc-500">已按这条生成修改建议，见上方。</p>
+        <p className="mt-2 text-xs text-muted">已按这条生成修改建议，见上方。</p>
       ) : (
         <div className="mt-2 flex gap-2">
           <button
             onClick={(e) => (e.stopPropagation(), onApplyComment(c.id))}
             disabled={!!busy}
-            className="rounded-md border border-zinc-300 px-3 py-1 disabled:opacity-40 dark:border-zinc-700"
+            className="btn px-3 py-1"
           >
             {busy === c.id ? "AI 修改中…" : "按这条改"}
           </button>
-          <button onClick={(e) => (e.stopPropagation(), onIgnoreComment(c.id))} disabled={!!busy} className="px-2 py-1 text-zinc-500 disabled:opacity-40">
+          <button onClick={(e) => (e.stopPropagation(), onIgnoreComment(c.id))} disabled={!!busy} className="px-2 py-1 text-muted disabled:opacity-40">
             忽略
           </button>
         </div>

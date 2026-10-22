@@ -11,7 +11,7 @@ import { PROFESSOR_STATUS_LABELS, professorAffiliation } from "@/lib/professors"
 
 type Props = { list: AspirationView[]; lastSearch: { id: string; title: string; count: number } | null };
 
-const input = "rounded-md border border-zinc-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700";
+const input = "input px-3 py-1.5 text-sm";
 
 export function AspirationsView({ list, lastSearch }: Props) {
   const [mode, setMode] = useState<"list" | "compare">("list");
@@ -20,9 +20,9 @@ export function AspirationsView({ list, lastSearch }: Props) {
 
   return (
     <div className="@container mx-auto max-w-4xl space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">志愿</h1>
-        <p className="text-sm text-zinc-500">
+      <div className="space-y-2">
+        <h1 className="page-title">志愿</h1>
+        <p className="text-sm text-muted">
           每条志愿 = 一位教授 + 教授所在的研究科。教授想收、研究科也考得上，才算稳；两边一起看，AI 帮你权衡，你来决定。
         </p>
       </div>
@@ -32,11 +32,11 @@ export function AspirationsView({ list, lastSearch }: Props) {
       {list.length > 0 && (
         <section className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-medium">我的志愿（{active.length}）</h2>
+            <h2 className="section-title">我的志愿（{active.length}）</h2>
             {active.length >= 2 && (
-              <div className="ml-auto flex rounded-md border border-zinc-200 p-0.5 text-xs dark:border-zinc-800">
+              <div className="ml-auto flex rounded-md border border-line p-0.5 text-xs">
                 {(["list", "compare"] as const).map((m) => (
-                  <button key={m} onClick={() => setMode(m)} className={`rounded px-2.5 py-1 ${mode === m ? "bg-zinc-200 dark:bg-zinc-700" : "text-zinc-500 hover:text-foreground"}`}>
+                  <button key={m} onClick={() => setMode(m)} className={`rounded px-2.5 py-1 ${mode === m ? "bg-subtle-strong" : "text-muted hover:text-foreground"}`}>
                     {m === "list" ? "列表" : "并排对比"}
                   </button>
                 ))}
@@ -65,8 +65,8 @@ function FindProfessors({ lastSearch }: { lastSearch: Props["lastSearch"] }) {
   const ask = useAskAi();
   const [text, setText] = useState("");
   return (
-    <section className="space-y-2 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-      <h2 className="font-medium">和 AI 一起找教授</h2>
+    <section className="space-y-2 rounded-lg border border-line p-4">
+      <h2 className="section-title">和 AI 一起找教授</h2>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -83,11 +83,11 @@ function FindProfessors({ lastSearch }: { lastSearch: Props["lastSearch"] }) {
           maxLength={300}
           className={`${input} min-w-0 flex-1`}
         />
-        <button type="submit" className="shrink-0 rounded-md bg-foreground px-3 py-1.5 text-sm text-background">
+        <button type="submit" className="btn-primary px-3 py-1.5 text-sm">
           开始
         </button>
       </form>
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted">
         候选教授会显示在中间（附近两三年的论文和为什么适合你），点「加入志愿」或「不合适」；想调整就在右边接着说，比如「更偏应用一点」。
         {lastSearch && (
           <>
@@ -109,7 +109,7 @@ function AspirationCard({ a }: { a: AspirationView }) {
   const p = a.professor;
   const s = a.school;
   return (
-    <li className={`space-y-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800 ${p?.status === "dropped" ? "opacity-60" : ""}`}>
+    <li className={`space-y-3 rounded-lg border border-line p-4 ${p?.status === "dropped" ? "opacity-60" : ""}`}>
       <div className="flex flex-wrap items-baseline gap-x-2">
         {p ? (
           <button onClick={() => openTab({ kind: "professor", id: p.id, title: p.name })} className="text-left font-medium hover:underline">
@@ -120,12 +120,12 @@ function AspirationCard({ a }: { a: AspirationView }) {
             {s!.university} {s!.name}
           </span>
         )}
-        <span className="text-sm text-zinc-500">{p ? professorAffiliation(p) : "只有研究科，还没定教授"}</span>
+        <span className="text-sm text-muted">{p ? professorAffiliation(p) : "只有研究科，还没定教授"}</span>
       </div>
 
       <div className="grid gap-4 @xl:grid-cols-2">
         <div className="space-y-2">
-          <h3 className="text-xs font-medium text-zinc-500">教授这边</h3>
+          <h3 className="text-xs font-medium text-muted">教授这边</h3>
           {p ? (
             <>
               {(p.fit || p.research) && <p className="line-clamp-3 text-sm">{p.fit || p.research}</p>}
@@ -138,7 +138,7 @@ function AspirationCard({ a }: { a: AspirationView }) {
           )}
         </div>
         <div className="space-y-2">
-          <h3 className="text-xs font-medium text-zinc-500">
+          <h3 className="text-xs font-medium text-muted">
             研究科这边{p && s && <span className="ml-1 font-normal">{s.name}</span>}
           </h3>
           {s ? <SchoolFacts school={s} /> : p && <FindSchoolButton professor={p} />}
@@ -147,18 +147,18 @@ function AspirationCard({ a }: { a: AspirationView }) {
       </div>
 
       {s && !p && (
-        <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
           <OpenTabLink tab={{ kind: "web", url: s.url, title: `${s.university} ${s.name}` }} href={s.url} className="underline hover:text-foreground">
             要项页面
           </OpenTabLink>
-          {s.problem && <span className="text-amber-700 dark:text-amber-400">{s.problem}</span>}
+          {s.problem && <span className="text-warn">{s.problem}</span>}
           <button disabled={pending || s.pending} onClick={() => startTransition(() => checkNowAction(s.id))} className="ml-auto hover:text-foreground disabled:opacity-50">
             {s.pending ? "等待检查…" : "立即检查"}
           </button>
           <button
             disabled={pending}
             onClick={() => confirm(`把「${s.university} ${s.name}」移出志愿（不再监控募集要项）？`) && startTransition(() => unwatchSchoolAction(s.id))}
-            className="hover:text-red-600"
+            className="hover:text-danger"
           >
             移出志愿
           </button>
@@ -191,27 +191,27 @@ function CompareTable({ list }: { list: AspirationView[] }) {
           "—"
         ),
     ],
-    ["差距", (a) => (a.gaps.length ? <span className="text-amber-800 dark:text-amber-300">{a.gaps.join("；")}</span> : "—")],
+    ["差距", (a) => (a.gaps.length ? <span className="text-warn">{a.gaps.join("；")}</span> : "—")],
   ];
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full min-w-[560px] border-collapse text-left text-sm">
           <thead>
-            <tr className="border-b border-zinc-200 dark:border-zinc-800">
+            <tr className="border-b border-line">
               <th className="w-24 p-2" />
               {list.map((a) => (
                 <th key={a.key} className="p-2 align-top font-medium">
                   {a.professor ? a.professor.name : "（只有研究科）"}
-                  <div className="text-xs font-normal text-zinc-500">{a.professor ? a.professor.university : `${a.school!.university} ${a.school!.name}`}</div>
+                  <div className="text-xs font-normal text-muted">{a.professor ? a.professor.university : `${a.school!.university} ${a.school!.name}`}</div>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.map(([label, cell]) => (
-              <tr key={label} className="border-b border-zinc-100 last:border-0 dark:border-zinc-900">
-                <th className="p-2 align-top text-xs font-normal text-zinc-500">{label}</th>
+              <tr key={label} className="border-b border-line last:border-0">
+                <th className="p-2 align-top text-xs font-normal text-muted">{label}</th>
                 {list.map((a) => (
                   <td key={a.key} className="p-2 align-top">
                     {cell(a)}
@@ -243,9 +243,9 @@ function StartFromSchool({ empty }: { empty: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ university: "", name: "", url: "" });
   return (
-    <details className="rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-800" open={empty || undefined}>
+    <details className="rounded-lg border border-line p-4 text-sm" open={empty || undefined}>
       <summary className="cursor-pointer font-medium">从研究科开始</summary>
-      <p className="mt-2 text-zinc-500">有的研究科好考、不太需要先联系教授，可以先把研究科加进志愿。系统每天检查它的募集要项，日程和入试要点自动带出来，不消耗 credit。</p>
+      <p className="mt-2 text-muted">有的研究科好考、不太需要先联系教授，可以先把研究科加进志愿。系统每天检查它的募集要项，日程和入试要点自动带出来，不消耗 credit。</p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -269,8 +269,8 @@ function StartFromSchool({ empty }: { empty: boolean }) {
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="研究科，如 教育学研究科" className={`${input} min-w-0 flex-1`} />
         </div>
         <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="入试信息 / 募集要项网址（不知道就留空，AI 帮你找）" className={`${input} w-full`} />
-        {error && <p className="text-xs text-red-600">{error}</p>}
-        <button type="submit" disabled={pending} className="rounded-md bg-foreground px-3 py-1.5 text-background disabled:opacity-50">
+        {error && <p className="text-xs text-danger">{error}</p>}
+        <button type="submit" disabled={pending} className="btn-primary px-3 py-1.5">
           {form.url.trim() ? "加入志愿" : "让 AI 找网址并加入"}
         </button>
       </form>

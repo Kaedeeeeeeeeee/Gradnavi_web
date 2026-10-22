@@ -114,7 +114,7 @@ export function DocumentEditor(props: Props) {
     editorProps: {
       attributes: {
         lang: "ja",
-        class: "doc-prose min-h-[60vh] rounded-md border border-zinc-200 px-6 py-5 outline-none focus:border-zinc-400 dark:border-zinc-800",
+        class: "doc-prose min-h-[60vh] rounded-md border border-line px-6 py-5 outline-none focus:border-line-strong",
       },
     },
     onCreate: ({ editor }) => {
@@ -323,7 +323,7 @@ export function DocumentEditor(props: Props) {
 
   return (
     <div className="@container mx-auto max-w-6xl space-y-4">
-      <div className="flex items-center gap-2 text-sm text-zinc-500">
+      <div className="flex items-center gap-2 text-sm text-muted">
         <Link href="/documents" className="hover:text-foreground">
           文书
         </Link>
@@ -345,7 +345,7 @@ export function DocumentEditor(props: Props) {
       {guided && <WritingGuide doc={doc} track={props.track} onAsk={askAi} />}
       {doc.kind === "plan" && !props.parent && <TailoredCopies docId={doc.id} copies={props.copies} professors={props.professors} />}
       {doc.kind === "plan" && (
-        <div className="rounded-md border border-zinc-200 p-4 text-sm dark:border-zinc-800">
+        <div className="rounded-md border border-line p-4 text-sm">
           <ProfessorForm docId={doc.id} professor={doc.targetProfessor} professors={props.professors} defaultOpen={false} />
         </div>
       )}
@@ -362,7 +362,7 @@ export function DocumentEditor(props: Props) {
       )}
 
       {conflict && (
-        <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-700 dark:bg-amber-950">
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-warn/40 bg-warn-soft px-3 py-2 text-sm">
           <span>文书在别处被修改了，你这里还有未保存的内容。</span>
           <button className="underline" onClick={() => loadVersion(conflict.markdown, conflict.version)}>
             载入最新版（放弃我的修改）
@@ -381,7 +381,7 @@ export function DocumentEditor(props: Props) {
       )}
 
       {notice && (
-        <p className={`text-sm ${notice.error ? "text-red-600" : "text-emerald-700 dark:text-emerald-400"}`} role="status">
+        <p className={`text-sm ${notice.error ? "text-danger" : "text-ok"}`} role="status">
           {notice.text}
         </p>
       )}
@@ -395,7 +395,7 @@ export function DocumentEditor(props: Props) {
           <div className="flex flex-wrap items-center gap-2">
             <Toolbar editor={editor} />
             <div className="ml-auto flex flex-wrap items-center gap-2 text-sm">
-              <label className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
+              <label className="flex items-center gap-1.5 text-muted">
                 <input
                   type="checkbox"
                   data-testid="zh-toggle"
@@ -410,18 +410,18 @@ export function DocumentEditor(props: Props) {
                 中文对照
               </label>
               {zhOn && zhMissing > 0 && (
-                <button onClick={() => translate()} disabled={!!busy} className="text-blue-600 underline disabled:opacity-40 dark:text-blue-400">
+                <button onClick={() => translate()} disabled={!!busy} className="text-accent underline disabled:opacity-40">
                   {busy === "translate" ? "翻译中…" : `翻译 ${zhMissing} 段`}
                 </button>
               )}
-              <button onClick={() => setView("history")} className="rounded-md border border-zinc-300 px-3 py-1 dark:border-zinc-700">
+              <button onClick={() => setView("history")} className="btn px-3 py-1">
                 版本历史{props.versionCount ? `（${props.versionCount}）` : ""}
               </button>
               <button
                 data-testid="review-button"
                 onClick={() => act("review", () => reviewAction(doc.id), "审阅完成，批注在页边。")}
                 disabled={!!busy}
-                className="rounded-md bg-foreground px-3 py-1 text-background disabled:opacity-40"
+                className="btn-primary px-3 py-1"
               >
                 {busy === "review" ? "AI 正在审阅…" : `让 AI 当${reviewer}审一遍`}
               </button>
@@ -430,10 +430,10 @@ export function DocumentEditor(props: Props) {
 
           <SelectionArea editor={editor} zhOn={zhOn} docId={doc.id} flush={flush} />
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-800">
-            <span className="text-zinc-500">{SAVE_LABELS[saveState]}</span>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-sm">
+            <span className="text-muted">{SAVE_LABELS[saveState]}</span>
             <div className="flex gap-2">
-              <button onClick={exportPdf} className="rounded-md border border-zinc-300 px-3 py-1.5 dark:border-zinc-700">
+              <button onClick={exportPdf} className="btn px-3 py-1.5">
                 导出 PDF
               </button>
               <form
@@ -443,7 +443,7 @@ export function DocumentEditor(props: Props) {
                 }}
                 onSubmit={(e) => !confirm("确定删除这份文书？") && e.preventDefault()}
               >
-                <button className="rounded-md px-3 py-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950">删除</button>
+                <button className="rounded-md px-3 py-1.5 text-danger hover:bg-danger-soft">删除</button>
               </form>
             </div>
           </div>
@@ -541,17 +541,17 @@ function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; 
           onMouseDown={(e) => e.preventDefault()}
         >
           {showResult && (
-            <div className={`mb-1 rounded-md border bg-background p-2 text-sm shadow-md ${result.error ? "border-red-300 text-red-600" : "border-zinc-200 dark:border-zinc-700"}`} lang="zh-CN">
+            <div className={`mb-1 rounded-md border bg-background p-2 text-sm shadow-md ${result.error ? "border-danger/40 text-danger" : "border-line"}`} lang="zh-CN">
               {result.text}
             </div>
           )}
-          <div className="inline-flex overflow-hidden rounded-md border border-zinc-300 bg-background text-sm shadow-md dark:border-zinc-700">
+          <div className="inline-flex overflow-hidden rounded-md border border-line-strong bg-background text-sm shadow-md">
             {SELECTION_ACTIONS.map((a) => (
               <button
                 key={a}
                 disabled={!!running}
                 onClick={() => void run(a)}
-                className="border-r border-zinc-200 px-2.5 py-1 last:border-r-0 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                className="border-r border-line px-2.5 py-1 last:border-r-0 hover:bg-subtle disabled:opacity-50"
               >
                 {running === a ? (isRewrite(a) ? "改写中…" : "思考中…") : SELECTION_ACTION_LABELS[a]}
               </button>
@@ -619,7 +619,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
           key={b.label}
           onClick={b.run}
           disabled={b.disabled}
-          className={`rounded px-2 py-1 disabled:opacity-30 ${b.active ? "bg-zinc-200 dark:bg-zinc-700" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+          className={`rounded px-2 py-1 disabled:opacity-30 ${b.active ? "bg-subtle-strong" : "hover:bg-subtle"}`}
         >
           {b.label}
         </button>

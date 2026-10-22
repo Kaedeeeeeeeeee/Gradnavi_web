@@ -33,22 +33,22 @@ export function SearchResults({ search, candidates, aiText }: Props) {
   useAiPageContent(aiText, "doc");
   const added = candidates.filter((c) => c.saved).length;
   return (
-    <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
-      <div className="space-y-1">
-        <h1 className="text-xl font-semibold">找教授：{search.keywords}</h1>
-        <p className="text-sm text-zinc-500">
+    <div className="mx-auto max-w-3xl space-y-4 px-6 py-8">
+      <div className="space-y-2">
+        <h1 className="page-title text-2xl">找教授：{search.keywords}</h1>
+        <p className="text-sm text-muted">
           {[search.schools.length ? search.schools.join("、") : "不限学校", search.preference].filter(Boolean).join(" · ")} · {candidates.length} 位候选
           {added > 0 && ` · 已加入志愿 ${added} 位`}
         </p>
-        <p className="text-xs text-zinc-500">想调整就在右侧对话里说，比如「更偏应用一点」「只要关东的」，AI 会再搜一轮。</p>
+        <p className="text-xs text-muted">想调整就在右侧对话里说，比如「更偏应用一点」「只要关东的」，AI 会再搜一轮。</p>
       </div>
       {search.demo && (
-        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+        <p className="rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
           演示模式：服务器还没有配置 DEEPSEEK_API_KEY，下面是示例数据，不是真实教授。
         </p>
       )}
       {candidates.length === 0 ? (
-        <div className="space-y-2 text-sm text-zinc-500">
+        <div className="space-y-2 text-sm text-muted">
           <p>这一轮没有找到合适的教授。</p>
           <button onClick={() => ask("这一轮没找到合适的教授，帮我换个检索方式（换日文关键词、放宽学校）再找一次。")} className={btn}>
             让 AI 换个方式再找
@@ -61,7 +61,7 @@ export function SearchResults({ search, candidates, aiText }: Props) {
           ))}
         </ul>
       )}
-      <p className="text-xs text-zinc-500">信息由 AI 根据检索结果整理，可能不完整或过时。联系前请打开来源链接核实，招生情况以研究室主页和募集要项为准。</p>
+      <p className="text-xs text-muted">信息由 AI 根据检索结果整理，可能不完整或过时。联系前请打开来源链接核实，招生情况以研究室主页和募集要项为准。</p>
     </div>
   );
 }
@@ -86,26 +86,26 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
   }
 
   return (
-    <li className={`space-y-2.5 rounded-lg border p-4 ${c.saved ? "border-emerald-300 dark:border-emerald-800" : "border-zinc-200 dark:border-zinc-800"} ${dim ? "opacity-60" : ""}`}>
+    <li className={`space-y-2.5 rounded-lg border p-4 ${c.saved ? "border-ok/40" : "border-line"} ${dim ? "opacity-60" : ""}`}>
       <div className="flex flex-wrap items-baseline gap-x-2">
         <span className="font-medium">{p.name}</span>
-        <span className="text-sm text-zinc-500">{professorAffiliation(p)}</span>
+        <span className="text-sm text-muted">{professorAffiliation(p)}</span>
       </div>
       {p.fit && (
         <p className="text-sm">
-          <span className="mr-1 text-xs text-zinc-500">为什么适合</span>
+          <span className="mr-1 text-xs text-muted">为什么适合</span>
           {p.fit}
         </p>
       )}
-      {p.research && <p className="text-sm text-zinc-600 dark:text-zinc-400">{p.research}</p>}
+      {p.research && <p className="text-sm text-muted">{p.research}</p>}
       <div className="space-y-1">
-        <h3 className="text-xs text-zinc-500">近期论文</h3>
+        <h3 className="text-xs text-muted">近期论文</h3>
         <PaperList refs={p.paperRefs ?? []} papers={p.papers} />
-        {!p.papers.length && <p className="text-sm text-zinc-500">没查到近期论文，可以在研究室主页或 researchmap 上看</p>}
+        {!p.papers.length && <p className="text-sm text-muted">没查到近期论文，可以在研究室主页或 researchmap 上看</p>}
       </div>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">留学生 / 研究生制度：{p.acceptsInternational || "未查到，以研究室主页为准"}</p>
+      <p className="text-sm text-muted">留学生 / 研究生制度：{p.acceptsInternational || "未查到，以研究室主页为准"}</p>
       {c.school && (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="text-sm text-muted">
           研究科（{c.school.name}）：{c.school.contact} · {c.school.language}
           {c.school.deadline && (
             <>
@@ -121,7 +121,7 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {c.saved ? (
           <>
-            <span className="text-xs text-emerald-700 dark:text-emerald-400">✓ 已加入志愿 · {PROFESSOR_STATUS_LABELS[c.saved.status]}</span>
+            <span className="text-xs text-ok">✓ 已加入志愿 · {PROFESSOR_STATUS_LABELS[c.saved.status]}</span>
             <button onClick={() => openTab({ kind: "professor", id: c.saved!.id, title: p.name })} className={btn}>
               查看志愿
             </button>
@@ -134,7 +134,7 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
           </>
         ) : dim ? (
           <>
-            <span className="text-xs text-zinc-500">已标不合适{c.rejected ? `：${c.rejected}` : ""}（已记进你的档案，下次避开）</span>
+            <span className="text-xs text-muted">已标不合适{c.rejected ? `：${c.rejected}` : ""}（已记进你的档案，下次避开）</span>
             <button disabled={pending} onClick={() => startTransition(() => undoRejectAction(searchId, c.key))} className={btn}>
               撤销
             </button>
@@ -143,7 +143,7 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
           <div className="w-full space-y-2">
             <div className="flex flex-wrap gap-1.5">
               {REASONS.map((r) => (
-                <button key={r} onClick={() => setReason(r)} className={`${btn} ${reason === r ? "border-zinc-500 bg-zinc-100 dark:bg-zinc-800" : ""}`}>
+                <button key={r} onClick={() => setReason(r)} className={`${btn} ${reason === r ? "border-muted bg-subtle" : ""}`}>
                   {r}
                 </button>
               ))}
@@ -155,7 +155,7 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
                 autoFocus
                 maxLength={200}
                 placeholder="顺手说一句原因（可不填），AI 下次找得更准"
-                className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-transparent px-2 py-1 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+                className="input min-w-0 flex-1 px-2 py-1 text-sm"
               />
               <button disabled={pending} onClick={() => startTransition(() => rejectCandidateAction(searchId, c.key, reason))} className={primaryBtn}>
                 确定
@@ -167,10 +167,10 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
           </div>
         ) : (
           <>
-            <button disabled={pending} onClick={add} className="rounded-md bg-foreground px-3 py-1 text-sm text-background disabled:opacity-50">
+            <button disabled={pending} onClick={add} className="btn-primary px-3 py-1 text-sm">
               {pending ? "加入中…" : "加入志愿"}
             </button>
-            <button disabled={pending} onClick={() => setRejecting(true)} className="rounded-md border border-zinc-300 px-3 py-1 text-sm dark:border-zinc-700">
+            <button disabled={pending} onClick={() => setRejecting(true)} className="btn px-3 py-1 text-sm">
               不合适
             </button>
           </>

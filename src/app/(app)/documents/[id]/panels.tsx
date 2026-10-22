@@ -13,8 +13,8 @@ export type ProfessorOption = { id: string; label: string };
 export type DocLink = { id: string; title: string };
 export type PlanOption = DocLink & { professorId: string | null; isCopy: boolean };
 
-const box = "space-y-3 rounded-md border border-zinc-200 p-4 text-sm dark:border-zinc-800";
-const btn = "rounded-md border border-zinc-300 px-3 py-1.5 disabled:opacity-40 dark:border-zinc-700";
+const box = "space-y-3 rounded-md border border-line p-4 text-sm";
+const btn = "btn px-3 py-1.5";
 
 /** 计划书：通用版下面列出给每位教授的定制版，可以再为一位教授复制一份 */
 export function TailoredCopies({
@@ -32,23 +32,23 @@ export function TailoredCopies({
   const [pending, startTransition] = useTransition();
   return (
     <details className={box} data-testid="tailored-copies" open={copies.length > 0}>
-      <summary className="cursor-pointer text-zinc-500">给教授的定制版（{copies.length}）</summary>
-      <p className="text-zinc-500">这份是通用版。为志愿里的每位教授复制一份定制版，再按那位教授的论文调整；通用版之后的修改不会影响已复制的定制版。</p>
+      <summary className="cursor-pointer text-muted">给教授的定制版（{copies.length}）</summary>
+      <p className="text-muted">这份是通用版。为志愿里的每位教授复制一份定制版，再按那位教授的论文调整；通用版之后的修改不会影响已复制的定制版。</p>
       {copies.length > 0 && (
         <ul className="space-y-1">
           {copies.map((c) => (
             <li key={c.id}>
-              <OpenTabLink tab={{ kind: "doc", id: c.id, title: c.title }} href={`/documents/${c.id}`} className="text-blue-600 hover:underline dark:text-blue-400">
+              <OpenTabLink tab={{ kind: "doc", id: c.id, title: c.title }} href={`/documents/${c.id}`} className="text-accent hover:underline">
                 {c.title}
               </OpenTabLink>
-              {c.parentVersion && <span className="text-zinc-500">（复制自第 {c.parentVersion} 版）</span>}
+              {c.parentVersion && <span className="text-muted">（复制自第 {c.parentVersion} 版）</span>}
             </li>
           ))}
         </ul>
       )}
       {professors.length ? (
         <div className="flex flex-wrap items-center gap-2">
-          <select value={pick} onChange={(e) => setPick(e.target.value)} className="min-w-0 max-w-full rounded-md border border-zinc-300 bg-transparent px-2 py-1 dark:border-zinc-700">
+          <select value={pick} onChange={(e) => setPick(e.target.value)} className="input min-w-0 max-w-full px-2 py-1">
             <option value="">选择教授</option>
             {professors.map((p) => (
               <option key={p.id} value={p.id}>
@@ -73,7 +73,7 @@ export function TailoredCopies({
           </button>
         </div>
       ) : (
-        <p className="text-zinc-500">
+        <p className="text-muted">
           志愿里还没有教授，先去
           <Link href="/aspirations" className="underline">
             找教授
@@ -81,7 +81,7 @@ export function TailoredCopies({
           。
         </p>
       )}
-      {error && <p className="text-red-600">{error}</p>}
+      {error && <p className="text-danger">{error}</p>}
     </details>
   );
 }
@@ -122,8 +122,8 @@ export function LetterPanel({
   return (
     <div className={box} data-testid="letter-panel">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-zinc-500">GradNavi 不代发邮件：复制全文后用你自己的邮箱发送。</span>
-        <button onClick={copy} className="ml-auto rounded-md bg-foreground px-3 py-1.5 text-background">
+        <span className="text-muted">GradNavi 不代发邮件：复制全文后用你自己的邮箱发送。</span>
+        <button onClick={copy} className="btn-primary ml-auto px-3 py-1.5">
           {copied ? "已复制" : "复制全文"}
         </button>
         {professorId &&
@@ -132,16 +132,16 @@ export function LetterPanel({
               我已发送，标记为“已发信”
             </button>
           ) : (
-            linkedStatus && <span className="text-zinc-500">教授状态：{PROFESSOR_STATUS_LABELS[linkedStatus]}</span>
+            linkedStatus && <span className="text-muted">教授状态：{PROFESSOR_STATUS_LABELS[linkedStatus]}</span>
           ))}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-zinc-500">附件</span>
+        <span className="text-muted">附件</span>
         <select
           value={attachment?.id ?? ""}
           disabled={pending}
           onChange={(e) => startTransition(async () => void (await setAttachmentAction(docId, e.target.value || null)))}
-          className="min-w-0 max-w-full rounded-md border border-zinc-300 bg-transparent px-2 py-1 dark:border-zinc-700"
+          className="input min-w-0 max-w-full px-2 py-1"
           data-testid="attachment-select"
         >
           <option value="">不附计划书</option>
@@ -154,10 +154,10 @@ export function LetterPanel({
         </select>
         {attachment && (
           <>
-            <OpenTabLink tab={{ kind: "doc", id: attachment.id, title: attachment.title }} href={`/documents/${attachment.id}`} className="text-blue-600 hover:underline dark:text-blue-400">
+            <OpenTabLink tab={{ kind: "doc", id: attachment.id, title: attachment.title }} href={`/documents/${attachment.id}`} className="text-accent hover:underline">
               打开
             </OpenTabLink>
-            <a href={`/api/documents/${attachment.id}/pdf`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline dark:text-blue-400">
+            <a href={`/api/documents/${attachment.id}/pdf`} target="_blank" rel="noreferrer" className="text-accent hover:underline">
               导出附件 PDF
             </a>
           </>
@@ -172,7 +172,7 @@ function ProfessorPicker({ docId, professor, professors }: { docId: string; prof
   const [pending, startTransition] = useTransition();
   if (!professors.length) {
     return (
-      <p className="text-zinc-500">
+      <p className="text-muted">
         志愿还是空的，可以先去
         <Link href="/aspirations" className="underline">
           找教授
@@ -183,12 +183,12 @@ function ProfessorPicker({ docId, professor, professors }: { docId: string; prof
   }
   return (
     <label className="flex flex-wrap items-center gap-2">
-      <span className="text-zinc-500">从志愿选择</span>
+      <span className="text-muted">从志愿选择</span>
       <select
         value={professor?.professorId ?? ""}
         disabled={pending}
         onChange={(e) => e.target.value && startTransition(() => linkProfessorAction(docId, e.target.value))}
-        className="min-w-0 max-w-full rounded-md border border-zinc-300 bg-transparent px-2 py-1 dark:border-zinc-700"
+        className="input min-w-0 max-w-full px-2 py-1"
       >
         <option value="">{professor && !professor.professorId ? "（手动填写）" : "请选择"}</option>
         {professors.map((p) => (
@@ -230,11 +230,11 @@ function ProfessorFormInner({
   const field = (key: keyof typeof form) => ({
     value: form[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm({ ...form, [key]: e.target.value }),
-    className: "w-full rounded-md border border-zinc-300 bg-transparent px-3 py-1.5 outline-none focus:border-zinc-500 dark:border-zinc-700",
+    className: "input w-full px-3 py-1.5",
   });
   return (
     <details open={defaultOpen}>
-      <summary className="cursor-pointer text-zinc-500">
+      <summary className="cursor-pointer text-muted">
         {label}：{professor ? `${professor.name}${professor.affiliation ? `（${professor.affiliation}）` : ""}` : "未设定"}
       </summary>
       <div className="mt-3">

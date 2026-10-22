@@ -17,7 +17,7 @@ export function ContactStepper({ id, status, compact = false }: { id: string; st
   const set = (s: ProfessorStatus) => startTransition(() => updateProfessorAction(id, { status: s }));
   if (status === "dropped")
     return (
-      <span className="flex items-center gap-2 text-xs text-zinc-500">
+      <span className="flex items-center gap-2 text-xs text-muted">
         已放弃
         <button disabled={pending} onClick={() => set("to_contact")} className="underline hover:text-foreground">
           重新考虑
@@ -34,17 +34,17 @@ export function ContactStepper({ id, status, compact = false }: { id: string; st
           title={`改成「${PROFESSOR_STATUS_LABELS[s]}」`}
           className={`rounded px-1.5 py-0.5 ${
             i === current
-              ? "bg-foreground text-background"
+              ? "bg-primary text-on-primary"
               : i < current
-                ? "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"
-                : "text-zinc-400 hover:text-foreground"
+                ? "bg-subtle-strong text-muted"
+                : "text-faint hover:text-foreground"
           } ${compact && i !== current ? "max-sm:hidden" : ""}`}
         >
           {PROFESSOR_STATUS_LABELS[s]}
         </button>
       ))}
       {!compact && (
-        <button disabled={pending} onClick={() => confirm("不再考虑这位教授？之后可以重新考虑。") && set("dropped")} className="ml-1 px-1 text-zinc-400 hover:text-red-600">
+        <button disabled={pending} onClick={() => confirm("不再考虑这位教授？之后可以重新考虑。") && set("dropped")} className="ml-1 px-1 text-faint hover:text-danger">
           放弃
         </button>
       )}
@@ -56,19 +56,19 @@ export function PaperList({ refs, papers }: { refs: PaperRef[]; papers: string[]
   const list: PaperRef[] = refs.length ? refs : papers.map((title) => ({ title }));
   if (!list.length) return null;
   return (
-    <ul className="space-y-0.5 text-sm text-zinc-600 dark:text-zinc-400" lang="ja">
+    <ul className="space-y-0.5 text-sm text-muted" lang="ja">
       {list.map((p) => (
         <li key={p.title} className="flex gap-1.5">
-          <span className="shrink-0 text-zinc-400">·</span>
+          <span className="shrink-0 text-faint">·</span>
           <span className="min-w-0">
             {p.url ? (
-              <OpenTabLink tab={{ kind: "web", url: p.url, title: p.title.slice(0, 40) }} href={p.url} className="text-blue-600 hover:underline dark:text-blue-400">
+              <OpenTabLink tab={{ kind: "web", url: p.url, title: p.title.slice(0, 40) }} href={p.url} className="text-accent hover:underline">
                 {p.title}
               </OpenTabLink>
             ) : (
               p.title
             )}
-            {p.year && !p.title.includes(String(p.year)) && <span className="ml-1 text-xs text-zinc-400">{p.year}</span>}
+            {p.year && !p.title.includes(String(p.year)) && <span className="ml-1 text-xs text-faint">{p.year}</span>}
           </span>
         </li>
       ))}
@@ -79,7 +79,7 @@ export function PaperList({ refs, papers }: { refs: PaperRef[]; papers: string[]
 export function Gaps({ gaps }: { gaps: string[] }) {
   if (!gaps.length) return null;
   return (
-    <ul className="space-y-0.5 text-xs text-amber-800 dark:text-amber-300">
+    <ul className="space-y-0.5 text-xs text-warn">
       {gaps.map((g) => (
         <li key={g}>⚠ {g}</li>
       ))}
@@ -90,14 +90,14 @@ export function Gaps({ gaps }: { gaps: string[] }) {
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-2">
-      <dt className="w-16 shrink-0 text-zinc-500">{label}</dt>
+      <dt className="w-16 shrink-0 text-muted">{label}</dt>
       <dd className="min-w-0">{children}</dd>
     </div>
   );
 }
 
 export function Tentative() {
-  return <span className="ml-1 rounded border border-dashed border-amber-500 px-1 text-xs text-amber-700">仮</span>;
+  return <span className="ml-1 rounded border border-dashed border-warn px-1 text-xs text-warn">仮</span>;
 }
 
 /** 研究科这边：要不要先联系、考试科目、语言、出愿截止 */
@@ -107,9 +107,9 @@ export function SchoolFacts({ school }: { school: SchoolView }) {
     <dl className="space-y-1 text-sm">
       <Fact label="事先联系">
         <span className={req?.contact === "required" ? "font-medium" : ""}>{contactLabel(req)}</span>
-        {req?.contact && req.contactNote && <span className="ml-1 text-xs text-zinc-500">{req.contactNote}</span>}
+        {req?.contact && req.contactNote && <span className="ml-1 text-xs text-muted">{req.contactNote}</span>}
       </Fact>
-      <Fact label="考试科目">{req?.subjects.length ? req.subjects.join("、") : <span className="text-zinc-500">未查到</span>}</Fact>
+      <Fact label="考试科目">{req?.subjects.length ? req.subjects.join("、") : <span className="text-muted">未查到</span>}</Fact>
       <Fact label="语言">{languageLabel(req)}</Fact>
       <Fact label="出愿截止">
         {school.deadline ? (
@@ -118,7 +118,7 @@ export function SchoolFacts({ school }: { school: SchoolView }) {
             {school.deadline.tentative && <Tentative />}
           </>
         ) : (
-          <span className="text-zinc-500">{school.pending ? "等待首次检查" : "还没有日程"}</span>
+          <span className="text-muted">{school.pending ? "等待首次检查" : "还没有日程"}</span>
         )}
       </Fact>
       {req?.notes && <Fact label="其他">{req.notes}</Fact>}
@@ -148,7 +148,7 @@ export function FollowUp({ professor }: { professor: Pick<ProfessorView, "id" | 
   const [pending, startTransition] = useTransition();
   const proposal = professor.proposedFollowUp;
   return (
-    <span className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+    <span className="flex flex-wrap items-center gap-2 text-xs text-muted">
       <label className="flex items-center gap-1">
         跟进日
         <input
@@ -156,11 +156,11 @@ export function FollowUp({ professor }: { professor: Pick<ProfessorView, "id" | 
           value={professor.followUpDate ?? ""}
           disabled={pending}
           onChange={(e) => startTransition(() => updateProfessorAction(professor.id, { followUpDate: e.target.value || null }))}
-          className="rounded border border-zinc-300 bg-transparent px-1 py-0.5 text-xs text-foreground dark:border-zinc-700"
+          className="rounded border border-line-strong bg-transparent px-1 py-0.5 text-xs text-foreground"
         />
       </label>
       {proposal && (
-        <span className="flex items-center gap-1.5 rounded border border-dashed border-zinc-400 px-1.5 py-0.5">
+        <span className="flex items-center gap-1.5 rounded border border-dashed border-line-strong px-1.5 py-0.5">
           AI 提议{proposal.date ? `改到 ${formatDay(proposal.date)}` : "取消跟进日"}
           <ProposalButtons kind="professor" id={professor.id} date={proposal.date} editable={!!proposal.date} />
         </span>
@@ -188,7 +188,7 @@ export function PasteReply({ professor }: { professor: Pick<ProfessorView, "id" 
         rows={5}
         autoFocus
         placeholder={`把${professor.name}教授的回信原文贴在这里，AI 会读懂它、更新联系状态，并建议怎么回复`}
-        className="w-full rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+        className="input w-full px-3 py-2 text-sm"
         lang="ja"
       />
       <div className="flex gap-2">
@@ -201,7 +201,7 @@ export function PasteReply({ professor }: { professor: Pick<ProfessorView, "id" 
             setText("");
             setOpen(false);
           }}
-          className="rounded-md bg-foreground px-3 py-1 text-xs text-background disabled:opacity-40"
+          className="btn-primary px-3 py-1 text-xs"
         >
           交给 AI
         </button>
@@ -218,7 +218,7 @@ export function SourceLinks({ sources }: { sources: { title: string; url: string
   return (
     <p className="flex flex-wrap gap-x-3 text-xs">
       {sources.map((s) => (
-        <OpenTabLink key={s.url} tab={{ kind: "web", url: s.url, title: s.title.slice(0, 40) }} href={s.url} className="max-w-full truncate text-blue-600 hover:underline dark:text-blue-400">
+        <OpenTabLink key={s.url} tab={{ kind: "web", url: s.url, title: s.title.slice(0, 40) }} href={s.url} className="max-w-full truncate text-accent hover:underline">
           {s.title}
         </OpenTabLink>
       ))}

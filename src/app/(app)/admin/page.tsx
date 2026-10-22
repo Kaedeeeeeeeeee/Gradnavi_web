@@ -9,8 +9,8 @@ import { addInvitesAction, grantCreditsAction, removeInviteAction } from "./acti
 export const metadata = { title: "管理 · GradNavi" };
 
 const time = new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Tokyo" });
-const input = "rounded-md border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700";
-const button = "rounded-md border border-zinc-300 px-2 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800";
+const input = "input px-2 py-1 text-sm";
+const button = "btn px-2 py-1 text-sm";
 
 // 内测管理：我们为每次 AI 调用付出的成本、credit 发放与消耗、邀请名单、反馈。仅 ADMIN_EMAILS 可见
 export default async function AdminPage() {
@@ -30,33 +30,33 @@ export default async function AdminPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-10">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">内测管理</h1>
-        <p className="text-sm text-zinc-500">
+      <div className="space-y-2">
+        <h1 className="page-title">内测管理</h1>
+        <p className="text-sm text-muted">
           注册模式：{env.SIGNUP_MODE === "invite" ? "邀请制" : "开放注册"} · 注册赠送 {env.SIGNUP_CREDITS} credit · 成本按下方价格表估算（单位美元），和 DeepSeek
           后台账单核对后可通过环境变量调整
         </p>
       </div>
 
       <section className="space-y-3">
-        <h2 className="font-medium">我们的成本</h2>
+        <h2 className="section-title">我们的成本</h2>
         <div className="grid gap-4 md:grid-cols-3">
           <CostCard title="今天（日本时间）" rows={costToday} />
           <CostCard title="近 7 天" rows={cost7d} />
           <CostCard title="全部" rows={costAll} />
         </div>
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-muted">
           价格表：输入 ${pricing.inputPerM}/百万 token（缓存命中 ${pricing.cachedInputPerM}）· 输出 ${pricing.outputPerM}/百万 token · 检索 $
           {pricing.searchPerCall}/次 · 读网页 ${pricing.fetchPerCall}/次 · 1 美元 = {pricing.creditsPerUsd} credit × 加价 {pricing.markup}
         </p>
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-medium">用户（{users.length}）</h2>
+        <h2 className="section-title">用户（{users.length}）</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-left text-zinc-500">
-              <tr className="border-b border-zinc-200 dark:border-zinc-800">
+            <thead className="text-left text-muted">
+              <tr className="border-b border-line">
                 <Th>邮箱</Th>
                 <Th>注册</Th>
                 <Th right>余额</Th>
@@ -70,10 +70,10 @@ export default async function AdminPage() {
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id} className="border-b border-zinc-100 dark:border-zinc-900">
+                <tr key={u.id} className="border-b border-line">
                   <Td>{u.email}</Td>
                   <Td muted>{time.format(u.createdAt)}</Td>
-                  <Td right className={(u.balance ?? 0) <= 0 && u.balance !== null ? "text-red-600" : ""}>
+                  <Td right className={(u.balance ?? 0) <= 0 && u.balance !== null ? "text-danger" : ""}>
                     {u.balance ?? "未开户"}
                   </Td>
                   <Td right>{u.granted}</Td>
@@ -97,8 +97,8 @@ export default async function AdminPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-medium">邀请名单（{invites.length}）</h2>
-        <p className="text-xs text-zinc-500">邀请制下只有名单内的新邮箱（以及 ADMIN_EMAILS）能注册；已注册的用户不受影响。</p>
+        <h2 className="section-title">邀请名单（{invites.length}）</h2>
+        <p className="text-xs text-muted">邀请制下只有名单内的新邮箱（以及 ADMIN_EMAILS）能注册；已注册的用户不受影响。</p>
         <form action={addInvitesAction} className="flex flex-wrap items-start gap-2">
           <textarea name="emails" rows={2} required placeholder="邮箱，可一次粘贴多个（逗号/换行分隔）" className={`${input} w-96`} />
           <input name="note" placeholder="备注（如：在国内、文科）" className={`${input} w-48`} />
@@ -109,11 +109,11 @@ export default async function AdminPage() {
             {invites.map((i) => (
               <li key={i.email} className="flex items-center gap-3">
                 <span>{i.email}</span>
-                <span className={`text-xs ${i.joined ? "text-emerald-600" : "text-zinc-500"}`}>{i.joined ? "已注册" : "未注册"}</span>
-                {i.note && <span className="text-xs text-zinc-500">{i.note}</span>}
+                <span className={`text-xs ${i.joined ? "text-ok" : "text-muted"}`}>{i.joined ? "已注册" : "未注册"}</span>
+                {i.note && <span className="text-xs text-muted">{i.note}</span>}
                 <form action={removeInviteAction}>
                   <input type="hidden" name="email" value={i.email} />
-                  <button className="text-xs text-zinc-500 hover:text-red-600">移除</button>
+                  <button className="text-xs text-muted hover:text-danger">移除</button>
                 </form>
               </li>
             ))}
@@ -122,11 +122,11 @@ export default async function AdminPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-medium">最近的 AI 调用</h2>
+        <h2 className="section-title">最近的 AI 调用</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-left text-zinc-500">
-              <tr className="border-b border-zinc-200 dark:border-zinc-800">
+            <thead className="text-left text-muted">
+              <tr className="border-b border-line">
                 <Th>时间</Th>
                 <Th>用户</Th>
                 <Th>功能</Th>
@@ -141,14 +141,14 @@ export default async function AdminPage() {
             </thead>
             <tbody>
               {usage.map((r) => (
-                <tr key={r.id} className="border-b border-zinc-100 dark:border-zinc-900">
+                <tr key={r.id} className="border-b border-line">
                   <Td muted>{time.format(r.createdAt)}</Td>
                   <Td>{r.email ?? "系统"}</Td>
                   <Td>{FEATURE_LABELS[r.feature]}</Td>
                   <Td muted>{r.model}</Td>
                   <Td right>
                     {r.inputTokens.toLocaleString()}
-                    {r.cachedInputTokens > 0 && <span className="text-zinc-500">（{r.cachedInputTokens.toLocaleString()}）</span>}
+                    {r.cachedInputTokens > 0 && <span className="text-muted">（{r.cachedInputTokens.toLocaleString()}）</span>}
                   </Td>
                   <Td right>{r.outputTokens.toLocaleString()}</Td>
                   <Td right>{r.searchCalls || ""}</Td>
@@ -163,14 +163,14 @@ export default async function AdminPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-medium">反馈（最近 {feedback.length} 条）</h2>
+        <h2 className="section-title">反馈（最近 {feedback.length} 条）</h2>
         {feedback.length === 0 ? (
-          <p className="text-sm text-zinc-500">还没有反馈。</p>
+          <p className="text-sm text-muted">还没有反馈。</p>
         ) : (
           <ul className="space-y-3 text-sm">
             {feedback.map((f) => (
-              <li key={f.id} className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-                <p className="text-xs text-zinc-500">
+              <li key={f.id} className="rounded-md border border-line p-3">
+                <p className="text-xs text-muted">
                   {time.format(f.createdAt)} · {f.email}
                   {f.page && ` · ${f.page}`}
                 </p>
@@ -189,16 +189,16 @@ function CostCard({ title, rows }: { title: string; rows: CostRow[] }) {
   const total = rows.reduce((s, r) => s + r.costUsd, 0);
   const credits = rows.reduce((s, r) => s + r.credits, 0);
   return (
-    <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-      <p className="text-sm text-zinc-500">{title}</p>
+    <div className="rounded-lg border border-line p-4">
+      <p className="text-sm text-muted">{title}</p>
       <p className="text-2xl font-semibold tabular-nums">{formatUsd(total)}</p>
-      <p className="text-xs text-zinc-500">向用户扣 {credits.toLocaleString()} credit</p>
+      <p className="text-xs text-muted">向用户扣 {credits.toLocaleString()} credit</p>
       <ul className="mt-3 space-y-1 text-xs">
         {FEATURES.map((f) => {
           const r = byFeature.get(f);
           return (
             <li key={f} className="flex justify-between gap-2">
-              <span className="text-zinc-500">{FEATURE_LABELS[f]}</span>
+              <span className="text-muted">{FEATURE_LABELS[f]}</span>
               <span className="tabular-nums">
                 {r ? `${r.calls} 次 · ${formatUsd(r.costUsd)}` : "—"}
               </span>
@@ -216,6 +216,6 @@ function Th({ children, right }: { children: React.ReactNode; right?: boolean })
 
 function Td({ children, right, muted, className = "" }: { children: React.ReactNode; right?: boolean; muted?: boolean; className?: string }) {
   return (
-    <td className={`py-2 pr-3 whitespace-nowrap ${right ? "text-right tabular-nums" : ""} ${muted ? "text-zinc-500" : ""} ${className}`}>{children}</td>
+    <td className={`py-2 pr-3 whitespace-nowrap ${right ? "text-right tabular-nums" : ""} ${muted ? "text-muted" : ""} ${className}`}>{children}</td>
   );
 }

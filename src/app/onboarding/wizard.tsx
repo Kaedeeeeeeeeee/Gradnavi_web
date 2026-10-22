@@ -70,11 +70,11 @@ export function OnboardingWizard({ questions }: { questions: Question[] }) {
     <div className="space-y-4">
       {questions.slice(0, step).map((q, i) => (
         <div key={q.key} className="space-y-1.5">
-          <p className="text-sm text-zinc-500">{q.title}</p>
+          <p className="text-sm text-muted">{q.title}</p>
           <button
             onClick={() => goBack(i)}
             title="修改这个回答"
-            className="ml-auto block rounded-lg bg-zinc-100 px-3 py-2 text-left text-sm hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            className="ml-auto block rounded-lg bg-subtle px-3 py-2 text-left text-sm hover:bg-subtle-strong"
           >
             {display(q, answers)}
           </button>
@@ -82,15 +82,15 @@ export function OnboardingWizard({ questions }: { questions: Question[] }) {
       ))}
 
       {current && (
-        <div className="space-y-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <div className="space-y-3 rounded-lg border border-line p-4">
           <div>
             <p className="font-medium">
               {current.title}
-              <span className="ml-2 text-xs font-normal text-zinc-400">
+              <span className="ml-2 text-xs font-normal text-faint">
                 {step + 1}/{questions.length}
               </span>
             </p>
-            {current.hint && <p className="mt-1 text-sm text-zinc-500">{current.hint}</p>}
+            {current.hint && <p className="mt-1 text-sm text-muted">{current.hint}</p>}
           </div>
 
           <div className="grid gap-2">
@@ -98,12 +98,12 @@ export function OnboardingWizard({ questions }: { questions: Question[] }) {
               <button
                 key={o.value}
                 onClick={() => answer(o.value, current.other?.detailKey ? { [current.other.detailKey]: "" } : {})}
-                className={`rounded-md border px-3 py-2 text-left text-sm hover:border-zinc-500 ${
-                  step < reached && answers[current.key] === o.value ? "border-zinc-500" : "border-zinc-300 dark:border-zinc-700"
+                className={`rounded-md border px-3 py-2 text-left text-sm hover:border-muted ${
+                  step < reached && answers[current.key] === o.value ? "border-muted" : "border-line-strong"
                 }`}
               >
                 {o.label}
-                {o.hint && <span className="block text-xs text-zinc-500">{o.hint}</span>}
+                {o.hint && <span className="block text-xs text-muted">{o.hint}</span>}
               </button>
             ))}
             {current.other &&
@@ -125,16 +125,16 @@ export function OnboardingWizard({ questions }: { questions: Question[] }) {
                     maxLength={100}
                     onChange={(e) => setDraft(e.target.value)}
                     placeholder={current.other.placeholder}
-                    className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+                    className="input min-w-0 flex-1 px-3 py-2 text-sm"
                   />
-                  <button type="submit" disabled={!draft.trim()} className="rounded-md bg-foreground px-4 py-1.5 text-sm text-background disabled:opacity-40">
+                  <button type="submit" disabled={!draft.trim()} className="btn-primary px-4 py-1.5 text-sm">
                     下一步
                   </button>
                 </form>
               ) : (
                 <button
                   onClick={() => setOtherOpen(true)}
-                  className="rounded-md border border-dashed border-zinc-300 px-3 py-2 text-left text-sm hover:border-zinc-500 dark:border-zinc-700"
+                  className="rounded-md border border-dashed border-line-strong px-3 py-2 text-left text-sm hover:border-muted"
                 >
                   {current.other.label}
                 </button>
@@ -144,13 +144,13 @@ export function OnboardingWizard({ questions }: { questions: Question[] }) {
       )}
 
       {done && (
-        <div className="space-y-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <div className="space-y-3 rounded-lg border border-line p-4">
           <p className="font-medium">好了。进去后 AI 已经在右边等你，主页上也有第一批任务。</p>
-          <p className="text-sm text-zinc-500">想改哪个回答，点一下上面对应的气泡就行。</p>
-          <button onClick={submit} disabled={pending} className="rounded-md bg-foreground px-4 py-2 text-sm text-background disabled:opacity-40">
+          <p className="text-sm text-muted">想改哪个回答，点一下上面对应的气泡就行。</p>
+          <button onClick={submit} disabled={pending} className="btn-primary px-4 py-2 text-sm">
             {pending ? "准备中…" : "开始"}
           </button>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
         </div>
       )}
     </div>

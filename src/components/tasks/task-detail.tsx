@@ -16,7 +16,7 @@ type Links = {
   school: { id: string; name: string; url: string } | null;
 };
 
-const field = "rounded-md border border-zinc-300 bg-transparent px-2 py-1 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700";
+const field = "input px-2 py-1 text-sm";
 
 export function TaskDetail({ task, links, started, aiText }: { task: TaskView; links: Links; started: boolean; aiText: string }) {
   useAiPageContent(aiText, "doc");
@@ -27,9 +27,9 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
   const run = (fn: () => Promise<unknown>) => startTransition(async () => void (await fn()));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
+    <div className="mx-auto max-w-3xl space-y-5 px-6 py-8">
       {task.proposed && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-zinc-400 px-3 py-2 text-sm dark:border-zinc-600">
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-line-strong px-3 py-2 text-sm">
           <span className="flex-1">这是 AI 提议的任务，同意后才会加进你的待办。</span>
           <ProposalButtons kind="task" id={task.id} date={task.dueDate} editable={false} />
         </div>
@@ -40,7 +40,7 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => title.trim() && title !== task.title && run(() => updateTaskAction(task.id, { title }))}
-          className="w-full bg-transparent text-xl font-semibold outline-none"
+          className="page-title w-full bg-transparent outline-none placeholder:text-faint"
           aria-label="任务标题"
         />
         <div className="flex flex-wrap items-center gap-1" role="radiogroup" aria-label="状态">
@@ -51,7 +51,7 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
               aria-checked={task.status === s}
               disabled={pending}
               onClick={() => s !== task.status && run(() => setTaskStatusAction(task.id, s))}
-              className={`rounded px-2 py-0.5 text-xs ${task.status === s ? "bg-foreground text-background" : "border border-zinc-300 text-zinc-500 hover:text-foreground dark:border-zinc-700"}`}
+              className={`rounded-md px-2 py-0.5 text-xs ${task.status === s ? "bg-subtle-strong font-medium text-foreground" : "text-muted hover:bg-subtle hover:text-foreground"}`}
             >
               {TASK_STATUS_LABELS[s]}
             </button>
@@ -60,11 +60,11 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
             <StartButton task={task} started={started} primary />
           </span>
         </div>
-        {task.status === "review" && <p className="text-xs text-amber-700">AI 觉得这件事做完了，看一下结果，没问题就点「完成」。</p>}
+        {task.status === "review" && <p className="text-xs text-warn">AI 觉得这件事做完了，看一下结果，没问题就点「完成」。</p>}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-zinc-500">截止</span>
+        <span className="text-muted">截止</span>
         <input
           type="date"
           value={task.dueDate ?? ""}
@@ -72,7 +72,7 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
           className={field}
         />
         {task.proposedChange && (
-          <span className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-zinc-400 px-2 py-1 text-xs dark:border-zinc-600">
+          <span className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-line-strong px-2 py-1 text-xs">
             AI 提议改到 {task.proposedChange.dueDate ? formatDay(task.proposedChange.dueDate) : "不设截止日"}
             <ProposalButtons kind="task" id={task.id} date={task.proposedChange.dueDate} />
           </span>
@@ -92,12 +92,12 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
 
       {(links.professor || links.document || links.school) && (
         <section className="space-y-1 text-sm">
-          <h2 className="font-medium">关联</h2>
+          <h2 className="section-title">关联</h2>
           <ul className="space-y-1">
             {links.professor && (
               <li>
                 教授：
-                <OpenTabLink tab={{ kind: "professor", id: links.professor.id, title: links.professor.name }} href="/aspirations" className="text-blue-600 hover:underline dark:text-blue-400">
+                <OpenTabLink tab={{ kind: "professor", id: links.professor.id, title: links.professor.name }} href="/aspirations" className="text-accent hover:underline">
                   {links.professor.label}
                 </OpenTabLink>
               </li>
@@ -105,7 +105,7 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
             {links.document && (
               <li>
                 文书：
-                <OpenTabLink tab={{ kind: "doc", id: links.document.id, title: links.document.title }} href={`/documents/${links.document.id}`} className="text-blue-600 hover:underline dark:text-blue-400">
+                <OpenTabLink tab={{ kind: "doc", id: links.document.id, title: links.document.title }} href={`/documents/${links.document.id}`} className="text-accent hover:underline">
                   {links.document.title}
                 </OpenTabLink>
               </li>
@@ -113,7 +113,7 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
             {links.school && (
               <li>
                 研究科：
-                <OpenTabLink tab={{ kind: "web", url: links.school.url, title: links.school.name }} href={links.school.url} className="text-blue-600 hover:underline dark:text-blue-400">
+                <OpenTabLink tab={{ kind: "web", url: links.school.url, title: links.school.name }} href={links.school.url} className="text-accent hover:underline">
                   {links.school.name}
                 </OpenTabLink>
               </li>
@@ -122,7 +122,7 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
         </section>
       )}
 
-      <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
+      <div className="border-t border-line pt-4">
         <button
           disabled={pending}
           onClick={() => {
@@ -132,7 +132,7 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
               closeTab(`task:${task.id}`);
             });
           }}
-          className="text-xs text-zinc-400 hover:text-red-600"
+          className="text-xs text-faint hover:text-danger"
         >
           删除任务
         </button>
@@ -148,9 +148,9 @@ function Steps({ taskId, steps }: { taskId: string; steps: TaskStep[] }) {
   return (
     <section className="space-y-2">
       <h2 className="text-sm font-medium">
-        子步骤 {steps.length > 0 && <span className="font-normal text-zinc-500 tabular-nums">{steps.filter((s) => s.done).length}/{steps.length}</span>}
+        子步骤 {steps.length > 0 && <span className="font-normal text-muted tabular-nums">{steps.filter((s) => s.done).length}/{steps.length}</span>}
       </h2>
-      {steps.length === 0 && <p className="text-sm text-zinc-500">还没有子步骤。可以自己加，也可以让 AI 帮你拆。</p>}
+      {steps.length === 0 && <p className="text-sm text-muted">还没有子步骤。可以自己加，也可以让 AI 帮你拆。</p>}
       <ul className="space-y-1">
         {steps.map((s) => (
           <li key={s.id} className="group flex items-start gap-2 text-sm">
@@ -161,8 +161,8 @@ function Steps({ taskId, steps }: { taskId: string; steps: TaskStep[] }) {
               onChange={(e) => save(steps.map((x) => (x.id === s.id ? { ...x, done: e.target.checked } : x)))}
               className="mt-1"
             />
-            <span className={`flex-1 ${s.done ? "text-zinc-400 line-through" : ""}`}>{s.title}</span>
-            <button onClick={() => save(steps.filter((x) => x.id !== s.id))} className="text-xs text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-red-600">
+            <span className={`flex-1 ${s.done ? "text-faint line-through" : ""}`}>{s.title}</span>
+            <button onClick={() => save(steps.filter((x) => x.id !== s.id))} className="text-xs text-faint opacity-0 group-hover:opacity-100 hover:text-danger">
               删除
             </button>
           </li>

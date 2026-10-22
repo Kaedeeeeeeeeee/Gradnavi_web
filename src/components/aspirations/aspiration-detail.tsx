@@ -26,55 +26,55 @@ export function AspirationDetail({ a, documents, aiText }: Props) {
   const s = a.school;
 
   return (
-    <div className="@container mx-auto max-w-4xl space-y-6 px-4 py-6">
+    <div className="@container mx-auto max-w-4xl space-y-6 px-6 py-8">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">{p.name}</h1>
-        <p className="text-sm text-zinc-500">{professorAffiliation(p)}</p>
+        <h1 className="page-title">{p.name}</h1>
+        <p className="text-sm text-muted">{professorAffiliation(p)}</p>
         <ContactStepper id={p.id} status={p.status} />
       </div>
 
       <div className="grid gap-6 @2xl:grid-cols-2">
         <section className="space-y-3">
-          <h2 className="text-sm font-medium text-zinc-500">教授这边</h2>
+          <h2 className="section-title">教授这边</h2>
           {p.fit && (
             <p className="text-sm leading-relaxed">
-              <span className="mr-1 text-xs text-zinc-500">为什么适合</span>
+              <span className="mr-1 text-xs text-muted">为什么适合</span>
               {p.fit}
             </p>
           )}
-          {p.research && <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">{p.research}</p>}
+          {p.research && <p className="text-sm leading-relaxed text-muted">{p.research}</p>}
           <div className="space-y-1">
-            <h3 className="text-xs text-zinc-500">近期论文</h3>
+            <h3 className="text-xs text-muted">近期论文</h3>
             <PaperList refs={p.paperRefs} papers={p.papers} />
           </div>
-          {p.acceptsInternational && <p className="text-sm text-zinc-600 dark:text-zinc-400">留学生：{p.acceptsInternational}</p>}
+          {p.acceptsInternational && <p className="text-sm text-muted">留学生：{p.acceptsInternational}</p>}
           <SourceLinks sources={p.sources} />
           <FollowUp professor={p} />
           <Note professor={p} />
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-sm font-medium text-zinc-500">研究科这边</h2>
+          <h2 className="section-title">研究科这边</h2>
           {s ? (
             <>
               <p className="text-sm font-medium">
                 {s.university} {s.name}
-                <OpenTabLink tab={{ kind: "web", url: s.url, title: `${s.university} ${s.name}` }} href={s.url} className="ml-2 text-xs font-normal text-blue-600 hover:underline dark:text-blue-400">
+                <OpenTabLink tab={{ kind: "web", url: s.url, title: `${s.university} ${s.name}` }} href={s.url} className="ml-2 text-xs font-normal text-accent hover:underline">
                   要项页面
                 </OpenTabLink>
               </p>
               <SchoolFacts school={s} />
               <Gaps gaps={a.gaps} />
-              {s.problem && <p className="text-xs text-amber-700 dark:text-amber-400">{s.problem}</p>}
+              {s.problem && <p className="text-xs text-warn">{s.problem}</p>}
               {s.events.length > 0 && (
                 <details className="text-sm">
-                  <summary className="cursor-pointer text-zinc-500">
+                  <summary className="cursor-pointer text-muted">
                     {s.guideYear} 年度要项日程{s.tentative && "（按往年推算）"}
                   </summary>
                   <ul className="mt-1 space-y-0.5 text-xs">
                     {s.events.map((e) => (
                       <li key={e.key} className="flex gap-2">
-                        <span className="w-40 shrink-0 tabular-nums text-zinc-500">
+                        <span className="w-40 shrink-0 tabular-nums text-muted">
                           {e.date}
                           {e.endDate && `〜${e.endDate.slice(5)}`}
                           {s.tentative && <Tentative />}
@@ -87,7 +87,7 @@ export function AspirationDetail({ a, documents, aiText }: Props) {
               )}
             </>
           ) : (
-            <div className="space-y-2 text-sm text-zinc-500">
+            <div className="space-y-2 text-sm text-muted">
               <p>还没关联研究科：要不要先联系教授、考什么、语言要求多少，都要看教授所在研究科的募集要项。</p>
               <FindSchoolButton professor={p} />
             </div>
@@ -96,7 +96,7 @@ export function AspirationDetail({ a, documents, aiText }: Props) {
       </div>
 
       <section className="space-y-2">
-        <h2 className="text-sm font-medium text-zinc-500">接下来</h2>
+        <h2 className="section-title">接下来</h2>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => ask(`用中文给我讲讲${p.name}教授的代表论文：各在研究什么、用了什么方法，和我的方向能怎么结合。`)} className={btn}>
             讲解代表论文
@@ -111,9 +111,9 @@ export function AspirationDetail({ a, documents, aiText }: Props) {
         </div>
         {documents.length > 0 && (
           <p className="flex flex-wrap gap-x-3 text-sm">
-            <span className="text-zinc-500">相关文书</span>
+            <span className="text-muted">相关文书</span>
             {documents.map((d) => (
-              <OpenTabLink key={d.id} tab={{ kind: "doc", id: d.id, title: d.title }} href={`/documents/${d.id}`} className="text-blue-600 hover:underline dark:text-blue-400">
+              <OpenTabLink key={d.id} tab={{ kind: "doc", id: d.id, title: d.title }} href={`/documents/${d.id}`} className="text-accent hover:underline">
                 {d.title}
               </OpenTabLink>
             ))}
@@ -130,7 +130,7 @@ export function AspirationDetail({ a, documents, aiText }: Props) {
             closeTab(`professor:${p.id}`);
           })
         }
-        className="text-xs text-zinc-400 hover:text-red-600"
+        className="text-xs text-faint hover:text-danger"
       >
         移出志愿
       </button>
@@ -156,7 +156,7 @@ function Note({ professor: p }: { professor: ProfessorView }) {
       rows={3}
       maxLength={1000}
       disabled={pending}
-      className="w-full rounded-md border border-zinc-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+      className="input w-full px-3 py-1.5 text-sm"
     />
   );
 }

@@ -10,18 +10,18 @@ import { TASK_STATUS_LABELS, type TaskStatus, type TaskView } from "@/lib/tasks"
 // 任务卡和任务详情共用的小部件：状态标签、「让 AI 开始」、AI 提议的同意 / 改 / 拒绝。
 
 const STATUS_STYLES: Record<TaskStatus, string> = {
-  todo: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
-  doing: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-  review: "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  done: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  todo: "bg-subtle text-muted",
+  doing: "bg-info-soft text-info",
+  review: "bg-warn-soft text-warn",
+  done: "bg-ok-soft text-ok",
 };
 
 export function StatusChip({ status }: { status: TaskStatus }) {
   return <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${STATUS_STYLES[status]}`}>{TASK_STATUS_LABELS[status]}</span>;
 }
 
-export const btn = "shrink-0 rounded-md border border-zinc-300 px-2 py-0.5 text-xs hover:border-zinc-500 disabled:opacity-50 dark:border-zinc-700";
-export const primaryBtn = "shrink-0 rounded-md bg-foreground px-2 py-0.5 text-xs text-background disabled:opacity-50";
+export const btn = "btn px-2 py-0.5 text-xs";
+export const primaryBtn = "btn-primary px-2 py-0.5 text-xs";
 
 /** 「让 AI 开始」：在文稿栏打开任务详情，AI 栏切到这个任务的对话并开工；聊过的显示「继续和 AI 做」 */
 export function StartButton({ task, started, primary = false }: { task: Pick<TaskView, "id" | "title">; started: boolean; primary?: boolean }) {
@@ -72,7 +72,7 @@ export function ProposalButtons({
   if (editing)
     return (
       <span className="flex shrink-0 items-center gap-1">
-        <input type="date" value={value} onChange={(e) => setValue(e.target.value)} className="rounded border border-zinc-300 bg-transparent px-1 text-xs dark:border-zinc-700" />
+        <input type="date" value={value} onChange={(e) => setValue(e.target.value)} className="rounded border border-line-strong bg-transparent px-1 text-xs" />
         <button
           disabled={pending || !value}
           className={primaryBtn}
@@ -109,7 +109,7 @@ export function ProposalButtons({
           改
         </button>
       )}
-      <button disabled={pending} className={`${btn} text-zinc-500`} onClick={() => run(() => rejectProposalAction({ kind, id }))}>
+      <button disabled={pending} className={`${btn} text-muted`} onClick={() => run(() => rejectProposalAction({ kind, id }))}>
         拒绝
       </button>
     </span>
