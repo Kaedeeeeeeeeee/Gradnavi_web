@@ -28,6 +28,25 @@
   --warn-soft: #fbf0dc;
   --danger: #d4403a;
   --danger-soft: #fdeceb;
+  /* 文书里的文字颜色、背景色（Notion 的 9 色；PDF 用 lib/doc-color.ts 里的浅色值） */
+  --doc-gray: #787774;
+  --doc-gray-bg: #f1f1ef;
+  --doc-brown: #9f6b53;
+  --doc-brown-bg: #f4eeee;
+  --doc-orange: #d9730d;
+  --doc-orange-bg: #fbecdd;
+  --doc-yellow: #cb912f;
+  --doc-yellow-bg: #fbf3db;
+  --doc-green: #448361;
+  --doc-green-bg: #edf3ec;
+  --doc-blue: #337ea9;
+  --doc-blue-bg: #e7f3f8;
+  --doc-purple: #9065b0;
+  --doc-purple-bg: #f6f3f9;
+  --doc-pink: #c14c8a;
+  --doc-pink-bg: #faf1f5;
+  --doc-red: #d44c47;
+  --doc-red-bg: #fdebec;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -55,6 +74,24 @@
     --warn-soft: #34291a;
     --danger: #ef7a73;
     --danger-soft: #3a2120;
+    --doc-gray: #9b9b9b;
+    --doc-gray-bg: #2f2f2f;
+    --doc-brown: #ba856f;
+    --doc-brown-bg: #4a3228;
+    --doc-orange: #c77d48;
+    --doc-orange-bg: #5c3b23;
+    --doc-yellow: #ca9849;
+    --doc-yellow-bg: #56452f;
+    --doc-green: #529e72;
+    --doc-green-bg: #243d30;
+    --doc-blue: #379ad3;
+    --doc-blue-bg: #143a4e;
+    --doc-purple: #9d68d3;
+    --doc-purple-bg: #3c2d49;
+    --doc-pink: #d15796;
+    --doc-pink-bg: #4e2c3c;
+    --doc-red: #df5452;
+    --doc-red-bg: #522e2a;
     color-scheme: dark;
   }
 }
@@ -310,6 +347,83 @@ body {
 }
 .doc-prose hr {
   border-color: var(--line-strong);
+}
+
+/* 空白行的提示（按空格让 AI 写、输入「/」选择格式） */
+.doc-prose p.is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--faint);
+  font-family: var(--font-sans), sans-serif;
+  font-size: 0.875rem;
+}
+.doc-bg-gray,
+.doc-bg-brown,
+.doc-bg-orange,
+.doc-bg-yellow,
+.doc-bg-green,
+.doc-bg-blue,
+.doc-bg-purple,
+.doc-bg-pink,
+.doc-bg-red {
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.doc-color-gray {
+  color: var(--doc-gray);
+}
+.doc-bg-gray {
+  background-color: var(--doc-gray-bg);
+}
+.doc-color-brown {
+  color: var(--doc-brown);
+}
+.doc-bg-brown {
+  background-color: var(--doc-brown-bg);
+}
+.doc-color-orange {
+  color: var(--doc-orange);
+}
+.doc-bg-orange {
+  background-color: var(--doc-orange-bg);
+}
+.doc-color-yellow {
+  color: var(--doc-yellow);
+}
+.doc-bg-yellow {
+  background-color: var(--doc-yellow-bg);
+}
+.doc-color-green {
+  color: var(--doc-green);
+}
+.doc-bg-green {
+  background-color: var(--doc-green-bg);
+}
+.doc-color-blue {
+  color: var(--doc-blue);
+}
+.doc-bg-blue {
+  background-color: var(--doc-blue-bg);
+}
+.doc-color-purple {
+  color: var(--doc-purple);
+}
+.doc-bg-purple {
+  background-color: var(--doc-purple-bg);
+}
+.doc-color-pink {
+  color: var(--doc-pink);
+}
+.doc-bg-pink {
+  background-color: var(--doc-pink-bg);
+}
+.doc-color-red {
+  color: var(--doc-red);
+}
+.doc-bg-red {
+  background-color: var(--doc-red-bg);
 }
 
 /* 文稿栏按需滑入（三栏外壳） */
