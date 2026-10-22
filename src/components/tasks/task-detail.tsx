@@ -8,7 +8,7 @@ import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { DateInput } from "@/components/ui/date-input";
 import { uuid } from "@/lib/browser";
 import type { ReportItem, ReportLink } from "@/lib/task-report";
-import { TASK_STATUS_LABELS, TASK_STATUSES, type TaskStep, type TaskView } from "@/lib/tasks";
+import { TASK_AREA_LABELS, TASK_AREAS, TASK_STATUS_LABELS, TASK_STATUSES, taskGroup, type TaskArea, type TaskStep, type TaskView } from "@/lib/tasks";
 import { btn, formatDay, ProposalButtons, StartButton } from "./task-ui";
 
 // 文稿栏里的任务详情：说明、子步骤、关联的教授 / 文书 / 研究科。AI 栏同时切到这个任务的对话。
@@ -28,6 +28,9 @@ export function TaskDetail({ task, links, started, aiText, report }: { task: Tas
   const [title, setTitle] = useState(task.title);
   const [note, setNote] = useState(task.note ?? "");
   const run = (fn: () => Promise<unknown>) => startTransition(async () => void (await fn()));
+  // 没手动设分类时，主页按什么归的组
+  const auto = taskGroup({ ...task, area: null });
+  const autoArea = auto.kind === "area" ? TASK_AREA_LABELS[auto.area] : "";
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-6 py-8">
@@ -76,6 +79,25 @@ export function TaskDetail({ task, links, started, aiText, report }: { task: Tas
           clearable
           className={field}
         />
+        {!task.professorId && !task.schoolId && (
+          <>
+            <span className="ml-3 text-muted">分类</span>
+            <select
+              aria-label="分类"
+              value={task.area ?? ""}
+              disabled={pending}
+              onChange={(e) => run(() => updateTaskAction(task.id, { area: (e.target.value || null) as TaskArea | null }))}
+              className={`${field} cursor-pointer`}
+            >
+              <option value="">自动（{autoArea}）</option>
+              {TASK_AREAS.map((a) => (
+                <option key={a} value={a}>
+                  {TASK_AREA_LABELS[a]}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         {task.proposedChange && (
           <span className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-line-strong px-2 py-1 text-xs">
             AI 提议改到 {task.proposedChange.dueDate ? formatDay(task.proposedChange.dueDate) : "不设截止日"}

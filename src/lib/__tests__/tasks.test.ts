@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CalendarItem } from "../calendar";
 import { professorStepKey } from "../next-steps";
-import { agenda, briefing, buildSteps, countAwaiting, groupTasks, keyDates, kickoffPrompt, weekEnd, type TaskView } from "../tasks";
+import { agenda, briefing, buildSteps, countAwaiting, groupTasks, groupTasksByProject, keyDates, kickoffPrompt, shortTitle, taskGroup, weekEnd, type TaskView } from "../tasks";
 
 const TODAY = "2026-10-21"; // 周三
 
@@ -20,6 +20,7 @@ const task = (patch: Partial<TaskView> = {}): TaskView => ({
   professorId: null,
   documentId: null,
   schoolId: null,
+  area: null,
   sortOrder: n,
   ...patch,
 });
@@ -48,7 +49,7 @@ test("本周 / 之后 / 已完成分组；AI 提议单独放", () => {
   assert.deepEqual(g.proposals.map((t) => t.title), ["AI 提议"]);
 });
 
-test("待办和日程：有日期的 7 天内在前，没日期的另列，更远的折叠；待你确认和任务截止日生成的日程不重复", () => {
+test("待办和日程：有日期的 7 天内在前，没日期和更远的任务另列（分组），更远的日程折叠；待你确认和任务截止日生成的日程不重复", () => {
   const ev = (patch: Partial<CalendarItem>): CalendarItem => ({ key: `e${++n}`, source: "event", title: "日程", date: TODAY, kind: "other", ...patch });
   const noDate = task({ title: "没有截止日" });
   const overdue = task({ title: "过期", dueDate: "2026-10-01" });
@@ -67,8 +68,8 @@ test("待办和日程：有日期的 7 天内在前，没日期的另列，更�
   const a = agenda([noDate, overdue, doing, far, done, proposed, review], items, TODAY);
   const titles = (rows: typeof a.near) => rows.map((r) => r.task?.title ?? r.item!.title);
   assert.deepEqual(titles(a.near), ["过期", "TOEFL", "进行中"]);
-  assert.deepEqual(a.undated.map((t) => t.title), ["没有截止日"]);
-  assert.deepEqual(titles(a.far), ["下个月", "出愿截止"]);
+  assert.deepEqual(a.rest.map((t) => t.title), ["下个月", "没有截止日"]);
+  assert.deepEqual(titles(a.far), ["出愿截止"]);
 });
 
 test("待处理数量 = 待你确认 + AI 提议（任务、改期、日程）", () => {
@@ -123,4 +124,39 @@ test("「让 AI 开始」按任务类型给开场消息", () => {
   // 用户自己加的任务：先拆子步骤，只能用户做的告诉怎么做
   const custom = kickoffPrompt({ ...t, stepKey: null, title: "缴纳报名费" });
   assert.ok(custom.includes("「缴纳报名费」") && custom.includes("子步骤"));
+});
+
+test("按教授分组时的短标题：去掉重复的教授名", () => {
+  assert.equal(shortTitle("查清藤本 徹教授所在研究科怎么考", "藤本 徹"), "查清研究科怎么考");
+  assert.equal(shortTitle("结合藤本 徹教授的研究方向写计划书草稿", "藤本 徹"), "结合研究方向写计划书草稿");
+  assert.equal(shortTitle("给藤本 徹教授写套磁信并发送", "藤本 徹"), "写套磁信并发送");
+  assert.equal(shortTitle("等藤本 徹教授回复，到期没回就礼貌跟进", "藤本 徹"), "等教授回复，到期没回就礼貌跟进");
+  assert.equal(shortTitle("准备和藤本 徹教授的面谈", "藤本 徹"), "准备和教授的面谈");
+  assert.equal(shortTitle("读论文", "藤本 徹"), "读论文");
+  assert.equal(shortTitle("查清藤本 徹教授所在研究科怎么考", ""), "查清藤本 徹教授所在研究科怎么考");
+});
+
+test("任务归类：教授 > 研究科 > 手动分类 > 流程 key > 按标题猜 > 其他", () => {
+  assert.deepEqual(taskGroup(task({ professorId: "p1", schoolId: "s1", area: "study" })), { kind: "professor", id: "p1" });
+  assert.deepEqual(taskGroup(task({ schoolId: "s1" })), { kind: "school", id: "s1" });
+  assert.deepEqual(taskGroup(task({ title: "报名 TOEFL", area: "study" })), { kind: "area", area: "study" });
+  assert.deepEqual(taskGroup(task({ stepKey: "japanese", title: "日语学习计划" })), { kind: "area", area: "language" });
+  assert.deepEqual(taskGroup(task({ stepKey: "pick_schools", title: "确定目标大学和研究科" })), { kind: "area", area: "prep" });
+  assert.deepEqual(taskGroup(task({ title: "报名 12 月 JLPT N1" })), { kind: "area", area: "language" });
+  assert.deepEqual(taskGroup(task({ title: "toefl 刷到 80 分" })), { kind: "area", area: "language" });
+  assert.deepEqual(taskGroup(task({ title: "复习统计学" })), { kind: "area", area: "study" });
+  assert.deepEqual(taskGroup(task({ title: "办签证" })), { kind: "area", area: "other" });
+});
+
+test("按项目分组：进行中的组排前面，其他总在最后", () => {
+  const o = task({ title: "办签证", status: "doing" });
+  const a1 = task({ title: "a1", professorId: "pa" });
+  const b1 = task({ title: "b1", professorId: "pb", status: "doing" });
+  const a2 = task({ title: "a2", professorId: "pa" });
+  const l = task({ title: "报名 JLPT" });
+  const groups = groupTasksByProject([a1, o, b1, a2, l]);
+  assert.deepEqual(
+    groups.map((g) => g.tasks.map((t) => t.title)),
+    [["b1"], ["a1", "a2"], ["报名 JLPT"], ["办签证"]],
+  );
 });

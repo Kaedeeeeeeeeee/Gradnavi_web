@@ -9,7 +9,7 @@ import type { ZhEntry } from "../lib/doc-zh";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { PaperRef, ProfessorCandidate, ProfessorStatus, SourceLink } from "../lib/professors";
 import type { OnboardingAnswers } from "../lib/onboarding";
-import type { TaskChange, TaskStatus, TaskStep } from "../lib/tasks";
+import type { TaskArea, TaskChange, TaskStatus, TaskStep } from "../lib/tasks";
 
 // 以下四张表是 Better Auth 的核心表，字段名需与 Better Auth 保持一致。
 
@@ -116,6 +116,8 @@ export const todo = pgTable(
     schoolId: text("school_id").references(() => graduateSchool.id, { onDelete: "set null" }),
     /** 流程任务的 key（见 src/lib/next-steps.ts），系统按进度自动增删勾选；用户和 AI 加的为空 */
     stepKey: text("step_key"),
+    /** 分类（语言考试 / 专业课和备考 / 申请准备 / 其他）；为空时按关联对象、流程 key 和标题自动归类（见 lib/tasks.ts taskGroup） */
+    area: text("area").$type<TaskArea>(),
     /** 用户删掉的流程任务只做标记，免得下次对账又加回来 */
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

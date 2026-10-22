@@ -10,7 +10,7 @@ export type PageContext = {
 };
 
 const PAGE_NAMES: Record<string, string> = {
-  "/workbench": "主页（今日简报、待办和日程列表（默认近 7 天）、月历、AI 的提议）",
+  "/workbench": "主页（今日简报、待办和日程列表（上面近 7 天按日期，下面其余任务按教授、研究科和分类分组）、月历、AI 的提议）",
   "/web": "文稿栏里的网页（用户在看的外部网页，页面标题是网页标题）",
   "/profile": "「AI 对你的了解」页（user.md，用户可以直接查看和修改）",
   "/documents": "文书列表",

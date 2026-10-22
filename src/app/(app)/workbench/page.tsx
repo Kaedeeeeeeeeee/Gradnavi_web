@@ -13,7 +13,7 @@ import { listSavedProfessors } from "@/server/professors";
 import { listGuideAlerts, listWatchedSchools } from "@/server/schools";
 import { diffGuideEvents } from "@/lib/admissions";
 import { listTodos, toTaskView } from "@/server/todos";
-import { Home, type HomeTask } from "./home";
+import { Home, type GroupNames, type HomeTask } from "./home";
 
 export const metadata = { title: "主页 · GradNavi" };
 
@@ -74,7 +74,11 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
     return [{ ...al, changes: diffGuideEvents(al.previous, al.events), task: t ? { id: t.id, title: t.title, started: started.has(t.id) } : null }];
   });
   const path = answers.path === "unsure" ? `${PATH_LABELS[suggestPath(answers, profileScores(profile.markdown, answers).jlpt)]}（建议，待确认）` : PATH_LABELS[answers.path];
-  const { near, undated, far } = agenda(tasks.map(toHome), calendar, today);
+  const { near, rest, far } = agenda(tasks.map(toHome), calendar, today);
+  const groupNames: GroupNames = {
+    professors: Object.fromEntries(professors.map((p) => [p.id, { name: p.name, school: [p.university, p.department].filter(Boolean).join(" ") }])),
+    schools: Object.fromEntries(schools.map(({ school }) => [school.id, { name: `${school.university} ${school.name}`, url: school.url }])),
+  };
 
   return (
     <Home
@@ -93,7 +97,8 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
         followUps: followUps.map((p) => ({ id: p.id, name: p.name, date: p.followUpDate, proposed: p.proposedFollowUp!.date })),
       }}
       near={near}
-      undated={undated}
+      rest={rest}
+      groupNames={groupNames}
       far={far.filter((r) => !r.date || r.date <= horizon)}
       done={groups.done.map(toHome)}
       tasks={tasks.map(toHome)}

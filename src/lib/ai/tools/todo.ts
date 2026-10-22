@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { AI_TASK_STATUSES, TASK_STATUS_LABELS } from "@/lib/tasks";
+import { AI_TASK_STATUSES, TASK_AREAS, TASK_STATUS_LABELS } from "@/lib/tasks";
 import { syncNextSteps } from "@/server/next-steps";
 import { addTodos, deleteTodo, listTodos, updateTodo } from "@/server/todos";
 import { defineTool } from "./registry";
@@ -10,6 +10,12 @@ const links = {
   documentId: z.string().optional().describe("挂在某份文书下（文书 ID）"),
   schoolId: z.string().optional().describe("挂在某个关注的研究科下（研究科 ID，用 list_watched_schools 查）"),
 };
+
+const areaSchema = z
+  .enum(TASK_AREAS)
+  .describe(
+    "分类（主页按它分组）：language 语言考试（JLPT、TOEFL 等）/ study 专业课和备考（复习、笔试、课程）/ prep 申请准备（选校、计划书、出愿材料）/ other 其他（签证、住宿等）。挂在教授或研究科下的任务按教授 / 研究科分组，可以不填。",
+  );
 
 const stepsSchema = z
   .array(z.object({ title: z.string().min(1).max(100), done: z.boolean().optional() }))
@@ -40,6 +46,7 @@ export const listTodosTool = defineTool({
       professorId: t.professorId,
       documentId: t.documentId,
       schoolId: t.schoolId,
+      area: t.area ?? undefined,
       auto: !!t.stepKey,
       proposed: t.proposed || undefined,
     }));
@@ -58,6 +65,7 @@ export const addTodosTool = defineTool({
           note: z.string().max(500).optional(),
           dueDate: dateSchema.optional(),
           steps: stepsSchema.optional(),
+          area: areaSchema.optional(),
           ...links,
         }),
       )
@@ -84,6 +92,7 @@ export const updateTodoTool = defineTool({
     professorId: z.string().nullable().optional(),
     documentId: z.string().nullable().optional(),
     schoolId: z.string().nullable().optional(),
+    area: areaSchema.nullable().optional(),
   }),
   execute: async ({ id, ...patch }, { userId }) => {
     const row = await updateTodo(userId, id, patch, "ai");

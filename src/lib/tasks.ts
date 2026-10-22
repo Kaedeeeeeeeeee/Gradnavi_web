@@ -16,6 +16,20 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
 /** AI 能设的状态：只有用户能标「完成」，AI 认为做完了就设成「待你确认」 */
 export const AI_TASK_STATUSES = ["todo", "doing", "review"] as const;
 
+/**
+ * 任务分类（主页「待办和日程」按这个分组）。挂在教授、研究科下的任务按教授 / 研究科分组，不用这个字段。
+ * 用户和 AI 可以手动设；没设的按流程 key 和标题自动归类（taskGroup）。
+ */
+export const TASK_AREAS = ["language", "study", "prep", "other"] as const;
+export type TaskArea = (typeof TASK_AREAS)[number];
+
+export const TASK_AREA_LABELS: Record<TaskArea, string> = {
+  language: "语言考试",
+  study: "专业课和备考",
+  prep: "申请准备",
+  other: "其他",
+};
+
 /** 任务内的小清单 */
 export type TaskStep = { id: string; title: string; done: boolean };
 
@@ -37,6 +51,7 @@ export type TaskView = {
   professorId: string | null;
   documentId: string | null;
   schoolId: string | null;
+  area: TaskArea | null;
   sortOrder: number;
 };
 
@@ -85,8 +100,8 @@ export type AgendaRow<T extends TaskView> = { date: string | null } & ({ task: T
 /**
  * 主页「待办和日程」：任务和日程合成一个按日期排的列表。
  * - near：有日期的，今天起 AGENDA_DAYS 天内（含已过期的任务），按日期排在最上面
- * - undated：没有截止日的任务（随时可以做），收在下面
- * - far：更远的（不限天数），默认折叠
+ * - rest：没有截止日、或截止日在 AGENDA_DAYS 天以后的任务，在下面按教授 / 研究科 / 分类分组
+ * - far：更远的日程（不限天数），默认折叠
  * 待你确认的任务放在上面的「等你处理」里，不在这里重复；日程里由任务截止日生成的条目（source = todo）不重复列；
  * 已完成的任务和 AI 提议的新任务也不在这里。
  */
@@ -101,9 +116,71 @@ export function agenda<T extends TaskView>(tasks: T[], items: CalendarItem[], to
   rows.sort((a, b) => a.date!.localeCompare(b.date!) || (a.task ? 0 : 1) - (b.task ? 0 : 1) || (a.task && b.task ? compareTasks(a.task, b.task) : 0));
   return {
     near: rows.filter((r) => r.date! <= last),
-    undated: open.filter((t) => !t.dueDate).sort(compareTasks),
-    far: rows.filter((r) => r.date! > last),
+    rest: open.filter((t) => !t.dueDate || t.dueDate > last).sort(compareTasks),
+    far: rows.filter((r) => r.date! > last && !r.task),
   };
+}
+
+/**
+ * 按教授分组时组里显示的短标题：组名已经是教授，标题里不再重复。
+ * 「查清藤本 徹教授所在研究科怎么考」→「查清研究科怎么考」，「给藤本 徹教授写套磁信并发送」→「写套磁信并发送」，
+ * 「结合…教授的研究方向写计划书草稿」→「结合研究方向写计划书草稿」，其余的「藤本 徹教授」换成「教授」。
+ */
+export function shortTitle(title: string, professorName: string) {
+  const who = `${professorName.trim()}教授`;
+  if (!professorName.trim() || !title.includes(who)) return title;
+  const short = title
+    .replace(`给${who}`, "")
+    .replace(`${who}所在`, "")
+    .replace(`结合${who}的`, "结合")
+    .replaceAll(who, "教授")
+    .trim();
+  return short || title;
+}
+
+const STEP_AREAS: Record<string, TaskArea> = {
+  japanese: "language",
+  english: "language",
+  confirm_path: "prep",
+  pick_schools: "prep",
+  find_professors: "prep",
+  write_plan: "prep",
+  achievements: "prep",
+  application: "prep",
+};
+
+/** 按标题猜分类（用户自己加的、AI 没给分类的任务） */
+const AREA_GUESS: [TaskArea, RegExp][] = [
+  ["language", /JLPT|日语|日本语|N[1-3]\b|TOEFL|TOEIC|IELTS|托福|雅思|英语|托业/i],
+  ["study", /复习|笔试|口试|专业课|课程|过去问|往年|真题|备考|刷题|数学|统计|线代|网课|学习/],
+  ["prep", /计划书|套磁|出愿|推荐信|成绩单|申请材料|研究成果|选校|研究科|志愿|找教授/],
+];
+
+export type TaskGroupKey = { kind: "professor"; id: string } | { kind: "school"; id: string } | { kind: "area"; area: TaskArea };
+
+/** 任务归到哪一组：教授 > 研究科 > 手动设的分类 > 流程 key > 按标题猜 > 其他 */
+export function taskGroup(t: Pick<TaskView, "professorId" | "schoolId" | "area" | "stepKey" | "title">): TaskGroupKey {
+  if (t.professorId) return { kind: "professor", id: t.professorId };
+  if (t.schoolId) return { kind: "school", id: t.schoolId };
+  const area = t.area ?? (t.stepKey ? STEP_AREAS[t.stepKey] : undefined) ?? AREA_GUESS.find(([, re]) => re.test(t.title))?.[0] ?? "other";
+  return { kind: "area", area };
+}
+
+const groupId = (g: TaskGroupKey) => (g.kind === "area" ? `area:${g.area}` : `${g.kind}:${g.id}`);
+
+/**
+ * 主页「待办和日程」下半部分的分组：每位教授一组、每个研究科一组、再按分类各一组。
+ * 组按里面最靠前的任务排（进行中、快到期的在前），「其他」总在最后。
+ */
+export function groupTasksByProject<T extends TaskView>(tasks: T[]) {
+  const groups = new Map<string, { key: TaskGroupKey; tasks: T[] }>();
+  for (const t of [...tasks].sort(compareTasks)) {
+    const key = taskGroup(t);
+    const id = groupId(key);
+    groups.set(id, { key, tasks: [...(groups.get(id)?.tasks ?? []), t] });
+  }
+  const isOther = (g: { key: TaskGroupKey }) => g.key.kind === "area" && g.key.area === "other";
+  return [...groups.values()].sort((a, b) => Number(isOther(a)) - Number(isOther(b)));
 }
 
 /** 等你处理：待你确认的任务（快到期的在前） */
