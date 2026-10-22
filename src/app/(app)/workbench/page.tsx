@@ -83,6 +83,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
       profileLine={`路径：${path} · 目标入学：${answers.targetEntry} · 路线：${TRACK_LABELS[decideTrack(answers)]}`}
       briefing={briefing(tasks, proposedEvents.length + followUps.length, today)}
       alerts={alerts}
+      pausedMonitors={schools.filter(({ school }) => school.pausedAt).map(({ school }) => `${school.university} ${school.name}`)}
       countdown={keyDates(calendar, today)}
       review={awaitingReview(tasks).map(toHome)}
       proposals={{

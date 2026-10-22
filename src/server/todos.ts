@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, eq, isNull, max, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { graduateSchool, schoolWatch, todo } from "@/db/schema";
+import { getWatchedSchool } from "./schools";
 import { buildSteps, type TaskStatus, type TaskStep, type TaskView } from "@/lib/tasks";
 import { getDocument } from "./documents";
 import { getSavedProfessor } from "./professors";
@@ -54,7 +55,10 @@ export async function taskLinks(userId: string, t: Pick<TodoRow, "professorId" |
   const [professor, doc, school] = await Promise.all([
     t.professorId ? getSavedProfessor(userId, t.professorId) : null,
     t.documentId ? getDocument(userId, t.documentId) : null,
-    t.schoolId ? db.select().from(graduateSchool).where(eq(graduateSchool.id, t.schoolId)).then((r) => r[0] ?? null) : null,
+    // 用户自己关注时用他的入试页面链接；不再关注了就用研究科第一次被关注时的链接
+    t.schoolId
+      ? getWatchedSchool(userId, t.schoolId).then(async (w) => w ?? (await db.select().from(graduateSchool).where(eq(graduateSchool.id, t.schoolId!)))[0] ?? null)
+      : null,
   ]);
   return {
     professor: professor ? { id: professor.id, name: professor.name, label: `${professor.name}（${professor.university}）` } : null,

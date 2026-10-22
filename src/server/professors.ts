@@ -34,15 +34,18 @@ export async function getSavedProfessor(userId: string, id: string): Promise<Sav
 }
 
 /**
- * 教授所在的研究科已经有人关注过（系统里有这个研究科）时，自动关联并替用户关注：
- * 入试要点、募集要项日程马上带出来，不花检索费用。对不上的由 AI 查到入试页面后用 watch_school 关联。
+ * 教授所在的研究科用户已经关注了时，自动关联：入试要点、募集要项日程马上带出来。
+ * 只看用户自己关注的（监控结果不跨用户共用）；对不上的由 AI 查到入试页面后用 watch_school 关注并关联。
  */
 export async function linkKnownSchool(userId: string, p: Pick<SavedProfessorRow, "id" | "university" | "department" | "schoolId">) {
   if (p.schoolId || !p.department) return null;
-  const candidates = await db.select().from(graduateSchool).where(eq(graduateSchool.university, p.university.trim()));
+  const candidates = await db
+    .select({ id: graduateSchool.id, university: graduateSchool.university, name: graduateSchool.name })
+    .from(schoolWatch)
+    .innerJoin(graduateSchool, eq(schoolWatch.schoolId, graduateSchool.id))
+    .where(and(eq(schoolWatch.userId, userId), eq(graduateSchool.university, p.university.trim())));
   const school = matchSchool(p, candidates);
   if (!school) return null;
-  await db.insert(schoolWatch).values({ userId, schoolId: school.id }).onConflictDoNothing();
   await db.update(savedProfessor).set({ schoolId: school.id }).where(and(eq(savedProfessor.id, p.id), eq(savedProfessor.userId, userId)));
   return school;
 }

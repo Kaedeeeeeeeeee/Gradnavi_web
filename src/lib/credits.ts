@@ -8,7 +8,7 @@ export type Feature = (typeof FEATURES)[number];
 export const FEATURE_LABELS: Record<Feature, string> = {
   chat: "AI 对话",
   professor_search: "找教授检索",
-  admission_monitor: "募集要项监控（系统）",
+  admission_monitor: "募集要项监控",
   doc_assist: "文书 AI（改写、翻译、审阅）",
 };
 

@@ -19,7 +19,7 @@ export const CONTACT_RULE_LABELS: Record<ContactRule, string> = {
 };
 
 /**
- * 研究科的入试要点（志愿列表里「研究科这边」的信息），跨用户共享。
+ * 研究科的入试要点（志愿列表里「研究科这边」的信息），每个用户自己的一份（监控解析或 AI 在对话里查到）。
  * 募集要项监控解析出来的 source = monitor；监控还没解析到时，AI 在对话里查到的先填上（source = ai），之后被监控结果覆盖。
  */
 export type AdmissionRequirements = {

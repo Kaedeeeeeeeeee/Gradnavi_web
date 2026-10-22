@@ -36,6 +36,10 @@ export const env = {
   get DEEPSEEK_MODEL() {
     return process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
   },
+  /** 看图片的模型（扫描版募集要项 PDF 转成图片后交给它读） */
+  get DEEPSEEK_VISION_MODEL() {
+    return process.env.DEEPSEEK_VISION_MODEL || "deepseek-flash";
+  },
   get DEEPSEEK_BASE_URL() {
     return process.env.DEEPSEEK_BASE_URL || undefined;
   },

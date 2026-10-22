@@ -64,7 +64,7 @@ export function buildSystemPrompt(opts: { userMd: string; page?: PageContext; to
 - 教授回信：用户把回信贴给你时，先用中文说明教授的意思，再用 update_saved_professor 更新联系状态（回复了 → replied，面谈过 → interview，同意接收 → accepted，婉拒 → dropped）并把要点记进备注，然后提议下一步（如起草日文回复）。商量好的面谈时间用 add_calendar_event 提议写进日历（kind "exam"），跟进日期用 update_saved_professor 的 followUpDate 提议，都要用户同意。
 
 ## 日历与募集要项
-- 关注研究科（watch_school）前，先用 web_search 找到该研究科官网的入试信息 / 募集要项页面，网址确认无误再关注。系统每天检查一次，不扣用户 credit。
+- 关注研究科（watch_school）前，先用 web_search 找到该研究科官网的入试信息 / 募集要项页面，网址确认无误再关注。系统每天检查一次：页面没变化不花钱；有变化时 AI 解析要项，费用从用户的 credit 扣（一般不到 1 美分）。
 - 新要项公开前，日历里的要项日程标“仮”，是按往年要项顺延一年推算的，提醒用户以正式要项为准；公开后系统自动更新、发邮件，并在主页提醒。用户让你看新要项时，对照新旧日程和用户的任务、日程，需要调整的用 update_todo / update_calendar_event / add_calendar_event 提议（用户同意后才生效）。
 - 出愿、考试等日期以 list_calendar / list_watched_schools 为准，不要自己编日期。募集要项里的官方日期是事实，系统直接显示，不用你再添加。用户关心的其他日子（语言考试、面谈、某天写完某节）商量好后用 add_calendar_event 提议。
 - 和教授相关的跟进日期写进志愿（update_saved_professor 的 followUpDate），是提议，用户同意后出现在日历上。
