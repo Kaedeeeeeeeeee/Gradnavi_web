@@ -30,6 +30,8 @@ import {
   snapshotAction,
   translateAction,
 } from "../actions";
+import { createMenuStore, DocBgMark, DocColorMark, EmptyLineHint, SlashCommand, SpaceToAi, type MenuStore } from "./doc-marks";
+import { AiWriter, BlockHandle, FormatBar, SlashMenu } from "./editor-menus";
 import { createOverlayStore, DocOverlay, findTextRange, isInlineReplace, overlayKey, type OverlayMark } from "./doc-overlay";
 import { HistoryView } from "./history-view";
 import { LetterPanel, ProfessorForm, TailoredCopies, type DocLink, type PlanOption, type ProfessorOption } from "./panels";
@@ -106,16 +108,26 @@ export function DocumentEditor(props: Props) {
   // 段落指纹的缓存（ProseMirror 节点不可变，按节点缓存）；叠加显示的数据由下面的 effect 更新
   const [keyCache] = useState(() => new WeakMap<PmNode, string>());
   const [overlay] = useState(createOverlayStore);
+  const [menus] = useState(createMenuStore);
 
   const editor = useEditor({
-    extensions: [StarterKit.configure({ link: false }), Markdown, DocOverlay.configure({ get: overlay.get })],
+    extensions: [
+      StarterKit.configure({ link: false }),
+      Markdown,
+      DocOverlay.configure({ get: overlay.get }),
+      DocColorMark,
+      DocBgMark,
+      SlashCommand.configure({ store: menus }),
+      SpaceToAi.configure({ store: menus }),
+      EmptyLineHint,
+    ],
     content: doc.markdown,
     contentType: "markdown",
     immediatelyRender: false,
     editorProps: {
       attributes: {
         lang: "ja",
-        class: "doc-prose min-h-[60vh] rounded-xl border border-line px-6 py-5 outline-none focus:border-line-strong",
+        class: "doc-prose min-h-[60vh] rounded-xl border border-line py-5 pl-12 pr-6 outline-none focus:border-line-strong",
       },
     },
     onCreate: ({ editor }) => {
@@ -125,7 +137,8 @@ export function DocumentEditor(props: Props) {
     onUpdate: ({ editor }) => {
       const md = editor.getMarkdown();
       setMarkdown(md);
-      if (md === baseline.current) return;
+      // 载入时编辑器可能在 onCreate 之前先触发一次更新，那时还没有“已保存”基准，不算用户修改
+      if (baseline.current === null || md === baseline.current) return;
       setSaveState((s) => (s === "conflict" ? s : "dirty"));
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => void save(editor), AUTOSAVE_MS);
@@ -138,7 +151,11 @@ export function DocumentEditor(props: Props) {
       timer.current = null;
       if (saving.current) await saving.current;
       const md = ed.getMarkdown();
-      if (md === baseline.current) return;
+      if (md === baseline.current) {
+        // 改了又改回去：内容和已保存的一样
+        setSaveState((st) => (st === "dirty" ? "saved" : st));
+        return;
+      }
       const run = (async () => {
         setSaveState("saving");
         try {
@@ -468,7 +485,7 @@ export function DocumentEditor(props: Props) {
             </div>
           )}
 
-          <SelectionArea editor={editor} zhOn={zhOn} docId={doc.id} flush={flush} />
+          <SelectionArea editor={editor} zhOn={zhOn} docId={doc.id} flush={flush} menus={menus} />
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-sm">
             <span className="text-muted">{SAVE_LABELS[saveState]}</span>
@@ -525,8 +542,14 @@ const SAVE_LABELS: Record<SaveState, string> = {
 };
 
 /** 编辑区 + 选中文字后弹出的小菜单（改得更自然 / 更简短 / 解释这句 / 翻成中文 / 加入对话） */
-function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; zhOn: boolean; docId: string; flush: () => Promise<void> }) {
+function SelectionArea({ editor, zhOn, docId, flush, menus }: { editor: Editor | null; zhOn: boolean; docId: string; flush: () => Promise<void>; menus: MenuStore }) {
   const wrap = useRef<HTMLDivElement>(null);
+  // 光标处的「让 AI 写」（空白行按空格、「/」菜单里的 AI 项）
+  const [writer, setWriter] = useState<{ at: number; initial?: string; n: number } | null>(null);
+  useEffect(() => {
+    menus.onOpenAi((at, initial) => setWriter((w) => ({ at, initial, n: (w?.n ?? 0) + 1 })));
+  }, [menus]);
+  const [instruction, setInstruction] = useState("");
   const addToChat = useAddToChat();
   const sel = useEditorState({
     editor,
@@ -548,13 +571,13 @@ function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; 
       // 编辑区（view.dom）贴着外层容器的左上角，按它算相对位置
       const start = editor.view.coordsAtPos(sel.from);
       const box = editor.view.dom.getBoundingClientRect();
-      return { top: start.top - box.top, left: Math.max(0, Math.min(start.left - box.left, box.width - 400)) };
+      return { top: start.top - box.top, left: Math.max(0, Math.min(start.left - box.left, box.width - 544)) };
     } catch {
       return null;
     }
   })();
 
-  async function run(action: SelectionAction) {
+  async function run(action: SelectionAction, extra = "") {
     if (!editor || !sel) return;
     // 选中的是原文里第几处相同的文字（原文重复出现时定位用）
     const before = editor.state.doc.textBetween(0, sel.from, "\n");
@@ -563,11 +586,14 @@ function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; 
     setRunning(action);
     setResult(null);
     await flush();
-    const r = await assistSelectionAction(docId, { action, text: sel.text, nth });
+    const r = await assistSelectionAction(docId, { action, text: sel.text, nth, instruction: extra });
     setRunning(null);
     if (!r.ok) setResult({ for: sel.text, text: r.error, error: true });
     else if (r.value.kind === "text") setResult({ for: sel.text, text: r.value.text });
-    else setResult({ for: sel.text, text: "已生成修改建议，在旁边接受或拒绝。" });
+    else {
+      setResult({ for: sel.text, text: "已生成修改建议，在旁边接受或拒绝。" });
+      setInstruction("");
+    }
   }
 
   // 选中的文字作为引用加进 AI 输入框；DOM 选区用来在原文上标编号
@@ -593,32 +619,54 @@ function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; 
   return (
     <div ref={wrap} className={`@container relative ${zhOn ? "zh-on" : ""}`}>
       <EditorContent editor={editor} />
-      {sel && pos && (
+      {editor && <BlockHandle editor={editor} wrap={wrap} />}
+      <SlashMenu store={menus} wrap={wrap} />
+      {editor && writer && (
+        <AiWriter key={writer.n} editor={editor} docId={docId} at={writer.at} initial={writer.initial} wrap={wrap} flush={flush} onClose={() => setWriter(null)} />
+      )}
+      {editor && sel && pos && (
         <div
           data-testid="selection-menu"
-          className="absolute z-20 w-[25rem] max-w-full -translate-y-full pb-1"
+          className="absolute z-20 w-[34rem] max-w-full -translate-y-full pb-1"
           style={{ top: pos.top, left: pos.left }}
-          onMouseDown={(e) => e.preventDefault()}
+          onMouseDown={(e) => {
+            if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement)) e.preventDefault();
+          }}
         >
           {showResult && (
             <div className={`mb-1 rounded-md border bg-background p-2 text-sm shadow-md ${result.error ? "border-danger/40 text-danger" : "border-line"}`} lang="zh-CN">
               {result.text}
             </div>
           )}
-          <div className="inline-flex overflow-hidden rounded-md border border-line-strong bg-background text-sm shadow-md">
-            {SELECTION_ACTIONS.map((a) => (
-              <button
-                key={a}
+          <div className="inline-block max-w-full rounded-md border border-line-strong bg-background text-sm shadow-md">
+            <form
+              className="flex items-center gap-2 border-b border-line px-2.5 py-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (instruction.trim()) void run("custom", instruction.trim());
+              }}
+            >
+              <span className="text-accent">✦</span>
+              <input
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                maxLength={500}
                 disabled={!!running}
-                onClick={() => void run(a)}
-                className="border-r border-line px-2.5 py-1 last:border-r-0 hover:bg-subtle disabled:opacity-50"
-              >
-                {running === a ? (isRewrite(a) ? "改写中…" : "思考中…") : SELECTION_ACTION_LABELS[a]}
+                placeholder={running === "custom" ? "AI 正在改…" : "让 AI 改这段，例如：语气更谦虚、加上研究方法"}
+                className="min-w-0 flex-1 bg-transparent py-0.5 outline-none"
+              />
+            </form>
+            <div className="flex flex-wrap border-b border-line">
+              {SELECTION_ACTIONS.map((a) => (
+                <button key={a} disabled={!!running} onClick={() => void run(a)} className="px-2.5 py-1 hover:bg-subtle disabled:opacity-50">
+                  {running === a ? (isRewrite(a) ? "改写中…" : "思考中…") : SELECTION_ACTION_LABELS[a]}
+                </button>
+              ))}
+              <button onClick={quote} title="把这段加进右边 AI 输入框，和你下一条消息一起发" className="px-2.5 py-1 hover:bg-subtle">
+                加入对话
               </button>
-            ))}
-            <button onClick={quote} title="把这段加进右边 AI 输入框，和你下一条消息一起发" className="px-2.5 py-1 hover:bg-subtle">
-              加入对话
-            </button>
+            </div>
+            <FormatBar editor={editor} />
           </div>
         </div>
       )}

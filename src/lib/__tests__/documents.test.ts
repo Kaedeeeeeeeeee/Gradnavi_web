@@ -55,6 +55,12 @@ test("PDF 用 HTML：渲染 Markdown，转义原样 HTML", () => {
   assert.match(html, /&lt;script&gt;/);
 });
 
+test("PDF 用 HTML：文字颜色、背景色（可嵌套），未知颜色原样保留", () => {
+  const html = markdownToHtml("{color:red}赤い{bg:yellow}**強調**{/bg}{/color}と{color:navy}そのまま{/color}");
+  assert.match(html, /<span style="color:#d44c47">赤い<span style="background-color:#fbf3db"><strong>強調<\/strong><\/span><\/span>/);
+  assert.match(html, /\{color:navy\}そのまま\{\/color\}/);
+});
+
 test("演示模式：在文书页面“写入：”会调用文书工具", () => {
   const reply = demoReply([
     { role: "system", content: "…\n文档 ID：abc-123\n…" },

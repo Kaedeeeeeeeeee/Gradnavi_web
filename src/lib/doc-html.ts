@@ -1,9 +1,27 @@
-import { Marked } from "marked";
+import { Marked, type TokenizerAndRendererExtension } from "marked";
+import { colorSpanStart, matchColorSpan, PRINT_COLORS, type ColorKind, type DocColor } from "./doc-color";
 
 // 文书 Markdown → 打印用 HTML（A4，日文明朝体），供服务器端 Chromium 生成 PDF。
 
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
+// 文字颜色、背景色：{color:red}…{/color}、{bg:yellow}…{/bg}（见 doc-color.ts）
+const colorSpan: TokenizerAndRendererExtension = {
+  name: "docColor",
+  level: "inline",
+  start: colorSpanStart,
+  tokenizer(src) {
+    const m = matchColorSpan(src);
+    if (!m) return;
+    return { type: "docColor", raw: m.raw, kind: m.kind, color: m.color, tokens: this.lexer.inlineTokens(m.inner) };
+  },
+  renderer(token) {
+    const c = PRINT_COLORS[token.color as DocColor];
+    const style = (token.kind as ColorKind) === "color" ? `color:${c.text}` : `background-color:${c.bg}`;
+    return `<span style="${style}">${this.parser.parseInline(token.tokens ?? [])}</span>`;
+  },
+};
 
 // 原样 HTML 一律转义，只渲染 Markdown 语法
 const marked = new Marked({
@@ -11,6 +29,7 @@ const marked = new Marked({
   renderer: {
     html: ({ text }) => escapeHtml(text),
   },
+  extensions: [colorSpan],
 });
 
 export function markdownToHtml(md: string): string {

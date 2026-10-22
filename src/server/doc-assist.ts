@@ -8,6 +8,7 @@ import {
   demoReview,
   demoSelection,
   demoTranslation,
+  demoWrite,
   isRewrite,
   MAX_TRANSLATE_BLOCKS,
   parseApplyComment,
@@ -19,6 +20,7 @@ import {
   SELECTION_ACTION_LABELS,
   translatePrompt,
   type SelectionAction,
+  writePrompt,
 } from "@/lib/doc-assist";
 import { alignZh, blockKey, isHeadingBlock, splitBlocks, withZh } from "@/lib/doc-zh";
 import { assertCanSpend, recordUsageSafe } from "./credits";
@@ -47,12 +49,12 @@ async function docOrThrow(userId: string, id: string) {
 export type SelectionResult = { kind: "suggestion"; id: string } | { kind: "text"; text: string };
 
 /** 选中文字后的小菜单。改写类生成修改建议（nth：选中的是原文里第几处相同文字），解释/翻译只返回文字 */
-export async function assistSelection(userId: string, id: string, action: SelectionAction, text: string, nth: number): Promise<SelectionResult> {
+export async function assistSelection(userId: string, id: string, action: SelectionAction, text: string, nth: number, instruction = ""): Promise<SelectionResult> {
   const doc = await docOrThrow(userId, id);
   let result: { ja: string; zh: string } | string;
   if (isDemoMode()) result = demoSelection(action, text);
   else {
-    const reply = await run(userId, id, selectionPrompt(action, text, doc.title, doc.markdown));
+    const reply = await run(userId, id, selectionPrompt(action, text, doc.title, doc.markdown, instruction));
     result = isRewrite(action) ? parseRewrite(reply) : reply.trim();
   }
   if (typeof result === "string") return { kind: "text", text: result };
@@ -60,13 +62,20 @@ export async function assistSelection(userId: string, id: string, action: Select
     const s = await createSuggestion(userId, id, {
       op: { type: "replace", find: text, replace: result.ja, nth },
       zh: [result.zh],
-      summary: SELECTION_ACTION_LABELS[action],
+      summary: action === "custom" ? instruction.slice(0, 60) : SELECTION_ACTION_LABELS[action],
       source: "selection",
     });
     return { kind: "suggestion", id: s.id };
   } catch {
     throw new Error("选中的内容带格式（如加粗、列表），没法直接定位。可以在右边对话里让 AI 改这段。");
   }
+}
+
+/** 光标处让 AI 写一段：只返回文字，用户在编辑器里看过后点「插入」才写进正文 */
+export async function writeAtCursor(userId: string, id: string, p: { instruction: string; before: string; after: string; heading: string }) {
+  const doc = await docOrThrow(userId, id);
+  if (isDemoMode()) return demoWrite(p.instruction);
+  return parseRewrite(await run(userId, id, writePrompt(p, doc.title)));
 }
 
 /** 重新翻译中文对照里缺失或「待更新」的段落（keys 指定只翻这几段） */

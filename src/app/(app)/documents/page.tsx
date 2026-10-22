@@ -1,14 +1,11 @@
-import { OpenTabLink } from "@/components/shell/app-shell";
-import { DOC_KIND_LABELS } from "@/lib/documents";
 import { requireUser } from "@/lib/session";
 import { listDocuments } from "@/server/documents";
 import { answerField } from "@/lib/onboarding";
 import { getProfile } from "@/server/profile";
 import { createDocumentAction } from "./actions";
+import { DocumentList } from "./document-list";
 
 export const metadata = { title: "文书 · GradNavi" };
-
-const fmt = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Tokyo" });
 
 export default async function DocumentsPage() {
   const user = await requireUser();
@@ -43,23 +40,7 @@ export default async function DocumentsPage() {
         ))}
       </div>
 
-      {docs.length === 0 ? (
-        <p className="text-sm text-muted">还没有文书。新建一份研究计划书，AI 会分步带你写。</p>
-      ) : (
-        <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
-          {docs.map((d) => (
-            <li key={d.id}>
-              <OpenTabLink tab={{ kind: "doc", id: d.id, title: d.title }} href={`/documents/${d.id}`} className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-subtle">
-                <span className="min-w-0 truncate">
-                  <span className="mr-2 text-xs text-muted">{DOC_KIND_LABELS[d.kind]}</span>
-                  {d.title}
-                </span>
-                <span className="shrink-0 text-xs text-muted">{fmt.format(d.updatedAt)}</span>
-              </OpenTabLink>
-            </li>
-          ))}
-        </ul>
-      )}
+      <DocumentList docs={docs.map((d) => ({ id: d.id, kind: d.kind, title: d.title, updatedAt: d.updatedAt.toISOString() }))} />
     </div>
   );
 }

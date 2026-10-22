@@ -10,6 +10,8 @@ const md = "# 研究計画書\n\n## 研究背景\n\n日本語教育は重要で�
 
 test("段落指纹忽略 Markdown 符号和空白", () => {
   assert.equal(blockKey("**日本語** 教育"), "日本語教育");
+  // 加颜色不算改了这段（中文对照不变成「待更新」）
+  assert.equal(blockKey("{color:red}日本語{/color} {bg:yellow}教育{/bg}"), "日本語教育");
   assert.equal(blockKey("- インタビュー\n- アンケート"), "インタビューアンケート");
   assert.deepEqual(translatableKeys(md), ["日本語教育は重要である。", "留学生が増えている。", "インタビューアンケート"]);
 });

@@ -11,6 +11,8 @@ import {
   createDocument,
   createTailoredCopy,
   deleteDocument,
+  reorderDocuments,
+  restoreDocument,
   getDocument,
   listPendingSuggestions,
   listVersions,
@@ -24,7 +26,7 @@ import {
   snapshotVersion,
   updateDocument,
 } from "@/server/documents";
-import { applyComment, assistSelection, reviewAsProfessor, translateParagraphs, type SelectionResult } from "@/server/doc-assist";
+import { applyComment, assistSelection, reviewAsProfessor, translateParagraphs, writeAtCursor, type SelectionResult } from "@/server/doc-assist";
 import { SELECTION_ACTIONS } from "@/lib/doc-assist";
 import { professorToTarget } from "@/lib/professors";
 import { answerField } from "@/lib/onboarding";
@@ -96,6 +98,20 @@ export async function deleteDocumentAction(id: string) {
   revalidatePath("/", "layout");
 }
 
+/** 撤销删除 */
+export async function restoreDocumentAction(id: string) {
+  const user = await requireUser();
+  await restoreDocument(user.id, id);
+  revalidatePath("/", "layout");
+}
+
+/** 文书列表拖动排序后保存顺序 */
+export async function reorderDocumentsAction(ids: string[]) {
+  const user = await requireUser();
+  await reorderDocuments(user.id, z.array(z.string().max(100)).max(500).parse(ids));
+  revalidatePath("/", "layout");
+}
+
 // ---------- AI 修改建议、批注、中文对照、版本历史（文书改版） ----------
 
 type Result<T = undefined> = { ok: true; value: T } | { ok: false; error: string };
@@ -139,12 +155,31 @@ export async function acceptAllSuggestionsAction(docId: string) {
   });
 }
 
-const selectionSchema = z.object({ action: z.enum(SELECTION_ACTIONS), text: z.string().trim().min(1).max(5000), nth: z.number().int().min(0).max(1000) });
+const selectionSchema = z.object({
+  action: z.enum([...SELECTION_ACTIONS, "custom"]),
+  text: z.string().trim().min(1).max(5000),
+  nth: z.number().int().min(0).max(1000),
+  instruction: z.string().trim().max(500).default(""),
+});
 
-export async function assistSelectionAction(docId: string, input: z.infer<typeof selectionSchema>) {
+export async function assistSelectionAction(docId: string, input: z.input<typeof selectionSchema>) {
   const user = await requireUser();
   const p = selectionSchema.parse(input);
-  return attempt<SelectionResult>(() => assistSelection(user.id, docId, p.action, p.text, p.nth));
+  if (p.action === "custom" && !p.instruction) return { ok: false as const, error: "先写下想怎么改" };
+  return attempt<SelectionResult>(() => assistSelection(user.id, docId, p.action, p.text, p.nth, p.instruction));
+}
+
+const writeSchema = z.object({
+  instruction: z.string().trim().max(500),
+  before: z.string().max(200000),
+  after: z.string().max(200000),
+  heading: z.string().max(200),
+});
+
+export async function writeAtCursorAction(docId: string, input: z.input<typeof writeSchema>) {
+  const user = await requireUser();
+  const p = writeSchema.parse(input);
+  return attempt(() => writeAtCursor(user.id, docId, p));
 }
 
 export async function translateAction(docId: string, keys?: string[]) {

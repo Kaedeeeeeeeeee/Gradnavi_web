@@ -5,18 +5,21 @@ import { z } from "zod";
 import { COMMENT_CATEGORIES, type CommentCategory, type TargetProfessor } from "./documents";
 import { isHeadingBlock, splitBlocks } from "./doc-zh";
 
-export const SELECTION_ACTIONS = ["natural", "shorter", "explain", "translate"] as const;
-export type SelectionAction = (typeof SELECTION_ACTIONS)[number];
+export const SELECTION_ACTIONS = ["natural", "shorter", "longer", "explain", "translate"] as const;
+/** custom：用户自己写要求（「让 AI 改…」） */
+export type SelectionAction = (typeof SELECTION_ACTIONS)[number] | "custom";
 
 export const SELECTION_ACTION_LABELS: Record<SelectionAction, string> = {
   natural: "改得更自然",
   shorter: "更简短",
+  longer: "扩写",
   explain: "解释这句",
   translate: "翻成中文",
+  custom: "按你的要求改",
 };
 
 /** 改写类的操作会生成修改建议，其余只显示结果 */
-export const isRewrite = (a: SelectionAction) => a === "natural" || a === "shorter";
+export const isRewrite = (a: SelectionAction) => a === "natural" || a === "shorter" || a === "longer" || a === "custom";
 
 export const MAX_REVIEW_COMMENTS = 8;
 export const MAX_TRANSLATE_BLOCKS = 40;
@@ -37,8 +40,10 @@ export function extractJson(reply: string): unknown {
 
 const docContext = (title: string, markdown: string) => `文书标题：${title}\n\n--- 正文开始 ---\n${markdown.slice(0, 16000)}\n--- 正文结束 ---`;
 
-export function selectionPrompt(action: SelectionAction, text: string, title: string, markdown: string) {
+export function selectionPrompt(action: SelectionAction, text: string, title: string, markdown: string, instruction = "") {
   const ask: Record<SelectionAction, string> = {
+    custom: `按用户的要求修改下面这段日文：「${instruction}」。保持文书原有的文体（である体；套磁信用敬语），只改这段。只输出 JSON：{"ja": "改好的日文", "zh": "改好的日文对应的中文意思"}`,
+    longer: '把下面这段日文扩写得更充实（补充具体说明、理由或例子，但不要编造经历、数据或文献），保持原有文体。只输出 JSON：{"ja": "改好的日文", "zh": "改好的日文对应的中文意思"}',
     natural:
       '把下面这段日文改得更自然、更符合日本学术文书的习惯（である体；套磁信用敬语），保持原意，不要添加新内容。只输出 JSON：{"ja": "改好的日文", "zh": "改好的日文对应的中文意思"}',
     shorter: '把下面这段日文改得更简短（删掉重复和冗余，保留关键信息和原有文体）。只输出 JSON：{"ja": "改好的日文", "zh": "改好的日文对应的中文意思"}',
@@ -47,6 +52,26 @@ export function selectionPrompt(action: SelectionAction, text: string, title: st
   };
   return `你在帮一位中国学生写申请日本大学院的文书。${ask[action]}\n\n要处理的原文：\n「${text}」\n\n（上下文）\n${docContext(title, markdown)}`;
 }
+
+/** 光标处让 AI 写（空白行按空格、斜杠菜单）：before/after 是光标前后的正文，heading 是所在小节的标题 */
+export function writePrompt(p: { instruction: string; before: string; after: string; heading: string }, title: string) {
+  const task = p.instruction || (p.before.trim() ? "接着上文往下写一段" : "写这份文书的开头一段");
+  return `你在帮一位中国学生写申请日本大学院的文书。要在光标处插入新的日文内容。用户的要求：「${task}」。
+要求：日文，和上下文衔接，保持文书原有的文体（研究计划书用である体；套磁信用敬语）；不要重复上下文已有的内容；不要编造学生的经历、成绩、数据或文献，需要学生补充的地方写成【　】让学生自己填。
+${p.heading ? `光标所在的小节：${p.heading}\n` : ""}可以写多段（段落之间空一行），可以用 Markdown 列表，不要写标题。
+只输出 JSON：{"ja": "要插入的日文", "zh": "对应的中文意思"}
+
+文书标题：${title}
+--- 光标前 ---
+${p.before.slice(-6000)}
+--- 光标后 ---
+${p.after.slice(0, 3000)}`;
+}
+
+export const demoWrite = (instruction: string) => ({
+  ja: `（演示）${instruction ? `「${instruction.slice(0, 20)}」について` : "ここに続きの文章が入ります。"}本研究では【　】を対象に、具体的な課題を明らかにする。`,
+  zh: "（演示）这里是 AI 写的中文意思。",
+});
 
 export const rewriteSchema = z.object({ ja: z.string().min(1).max(5000), zh: z.string().max(5000).default("") });
 
@@ -132,6 +157,7 @@ export function parseApplyComment(reply: string) {
 
 export function demoSelection(action: SelectionAction, text: string): { ja: string; zh: string } | string {
   if (action === "natural") return { ja: `${text.replace(/[。．]$/, "")}（演示：已润色）。`, zh: `（演示）这句话的中文意思` };
+  if (action === "longer" || action === "custom") return { ja: `${text.replace(/[。．]$/, "")}。（演示：已${action === "longer" ? "扩写" : "按要求修改"}）`, zh: "（演示）修改后的中文意思" };
   if (action === "shorter") return { ja: text.slice(0, Math.max(1, Math.ceil(text.length * 0.6))), zh: "（演示）缩短后的中文意思" };
   if (action === "explain") return `（演示模式）这句话的意思是「${text.slice(0, 20)}…」，在文中用来说明研究动机。正式环境下这里会是 AI 的中文解释。`;
   return `（演示模式）中文翻译：${text.slice(0, 30)}…`;

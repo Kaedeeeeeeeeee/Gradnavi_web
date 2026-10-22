@@ -1,5 +1,5 @@
 {
-  "id": "8361f97d-9c9f-4141-8f68-550cff3188da",
+  "id": "189b3def-d21d-436f-8c54-2345eebe0540",
   "prevId": "da78b4a5-295e-43ad-aa9a-167b04bd6145",
   "version": "7",
   "dialect": "postgresql",
@@ -1167,6 +1167,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "last_edited_at": {
           "name": "last_edited_at",
@@ -2353,12 +2366,6 @@
         },
         "step_key": {
           "name": "step_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "area": {
-          "name": "area",
           "type": "text",
           "primaryKey": false,
           "notNull": false

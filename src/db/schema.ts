@@ -204,6 +204,10 @@ export const document = pgTable(
     attachmentId: text("attachment_id").references((): AnyPgColumn => document.id, { onDelete: "set null" }),
     /** 上次存版以来做过的修改（合成版本说明用） */
     pendingChanges: jsonb("pending_changes").$type<string[]>().notNull().default([]),
+    /** 文书列表里的顺序（用户拖动调整），小的在前；新建的排最前 */
+    position: integer("position").notNull().default(0),
+    /** 删除先放进回收（可撤销），30 天后清掉 */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     /** 正文最后一次被修改的时间（判断“停手 30 分钟”） */
     lastEditedAt: timestamp("last_edited_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
