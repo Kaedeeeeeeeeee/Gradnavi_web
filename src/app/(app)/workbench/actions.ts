@@ -6,7 +6,7 @@ import { z } from "zod";
 import { CALENDAR_KINDS } from "@/lib/calendar";
 import { requireUser } from "@/lib/session";
 import { kickoffPrompt, TASK_STATUSES } from "@/lib/tasks";
-import { acceptEventProposal, addCalendarEvent, deleteCalendarEvent, listProposedEvents, rejectEventProposal, rescheduleEvent } from "@/server/calendar";
+import { acceptEventProposal, addCalendarEvent, deleteCalendarEvent, listProposedEvents, rejectEventProposal, rescheduleEvent, updateCalendarEvent } from "@/server/calendar";
 import { getTaskConversation, loadMessages } from "@/server/conversations";
 import { getSavedProfessor, listFollowUpProposals, resolveFollowUpProposal } from "@/server/professors";
 import {
@@ -148,6 +148,19 @@ export async function addEventAction(input: z.input<typeof eventSchema>): Promis
     await addCalendarEvent(user.id, parsed.data, "user");
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "添加失败" };
+  }
+  refresh();
+  return { ok: true };
+}
+
+export async function updateEventAction(id: string, input: z.input<typeof eventSchema>): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireUser();
+  const parsed = eventSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "输入有误" };
+  try {
+    await updateCalendarEvent(user.id, id, { ...parsed.data, note: parsed.data.note ?? null }, "user");
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "保存失败" };
   }
   refresh();
   return { ok: true };
