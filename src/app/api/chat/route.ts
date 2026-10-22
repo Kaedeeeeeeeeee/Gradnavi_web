@@ -14,6 +14,7 @@ import { buildSystemPrompt } from "@/lib/ai/prompt";
 import { buildTools } from "@/lib/ai/tools";
 import { auth } from "@/lib/auth";
 import { UsageMeter } from "@/lib/credits";
+import { parseQuotes, quotesForModel } from "@/lib/quotes";
 import { describeTask } from "@/lib/tasks";
 import { getOrCreateConversation, loadMessages, saveMessages } from "@/server/conversations";
 import { getBalance, InsufficientCreditsError, recordUsageSafe } from "@/server/credits";
@@ -70,7 +71,13 @@ export async function POST(req: Request) {
 
   const tools = buildTools({ userId, conversationId, meter });
   // 只接受用户发来的新消息，历史一律从数据库读，避免客户端伪造 AI 的发言或工具结果
-  const userMessage: UIMessage = { id: message.id, role: "user", parts: message.parts.filter((p) => p.type === "text") };
+  // 「加入对话」的引用：data-quotes 部分，校验后保留（聊天记录里显示），发给模型时转成文字
+  const quotes = parseQuotes(message.parts.flatMap((p) => (p.type === "data-quotes" && "data" in p ? [p.data] : []))[0]);
+  const userMessage: UIMessage = {
+    id: message.id,
+    role: "user",
+    parts: [...(quotes.length ? [{ type: "data-quotes" as const, data: quotes }] : []), ...message.parts.filter((p) => p.type === "text")],
+  };
   const history = await loadMessages(conversationId);
   const messages = await validateUIMessages({ messages: [...history, userMessage], tools });
 
@@ -78,7 +85,10 @@ export async function POST(req: Request) {
   const result = streamText({
     model: getChatModel(),
     instructions: buildSystemPrompt({ userMd: await getUserMd(userId), page, today, task }),
-    messages: await convertToModelMessages(messages.slice(-HISTORY_LIMIT), { tools }),
+    messages: await convertToModelMessages(messages.slice(-HISTORY_LIMIT), {
+      tools,
+      convertDataPart: (part) => (part.type === "data-quotes" ? { type: "text", text: quotesForModel(parseQuotes(part.data)) } : undefined),
+    }),
     tools,
     stopWhen: isStepCount(6),
     onStepEnd: (step) => meter.addTokens(step.usage),

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { usePageStore } from "@/components/ai/page-context";
+import { workFocus } from "@/lib/ai-context";
 import {
   activeTab,
   applyPreset,
@@ -261,9 +262,14 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
     ) : (
       <p className="px-6 py-10 text-sm text-muted">打开中…</p>
     );
+  // data-quote-source：这里选中的文字可以「加入对话」，值是引用的出处（见 add-to-chat.tsx）
   const body: Record<PaneId, React.ReactNode> = {
-    work: <div className="px-4 py-6 sm:px-6 sm:py-8">{children}</div>,
-    doc: docBody,
+    work: (
+      <div className="px-4 py-6 sm:px-6 sm:py-8" data-quote-source={`页面「${workFocus(pathname).label}」`}>
+        {children}
+      </div>
+    ),
+    doc: <div className="h-full" data-quote-source={`文稿「${current?.title || "（无标题）"}」`}>{docBody}</div>,
     ai,
   };
 

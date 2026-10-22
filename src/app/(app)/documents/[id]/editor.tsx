@@ -6,10 +6,11 @@ import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/r
 import StarterKit from "@tiptap/starter-kit";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
-import { useAiBeforeSend, useAiPageContent, useAskAi } from "@/components/ai/page-context";
+import { useAddToChat, useAiBeforeSend, useAiPageContent, useAskAi } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { takeAutoAsk } from "@/components/shell/pending-ask";
 import { copyText } from "@/lib/browser";
+import { cleanQuoteText } from "@/lib/quotes";
 import { isRewrite, SELECTION_ACTION_LABELS, SELECTION_ACTIONS, type SelectionAction } from "@/lib/doc-assist";
 import { alignZh, blockKey, type ZhEntry } from "@/lib/doc-zh";
 import { describeDocument, DOC_KIND_LABELS, type DocKind, type Outline, type TargetProfessor, type WriteMode } from "@/lib/documents";
@@ -523,9 +524,11 @@ const SAVE_LABELS: Record<SaveState, string> = {
   error: "保存失败，请检查网络后继续编辑重试",
 };
 
-/** 编辑区 + 选中文字后弹出的小菜单（改得更自然 / 更简短 / 解释这句 / 翻成中文） */
+/** 编辑区 + 选中文字后弹出的小菜单（改得更自然 / 更简短 / 解释这句 / 翻成中文 / 加入对话） */
 function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; zhOn: boolean; docId: string; flush: () => Promise<void> }) {
   const wrap = useRef<HTMLDivElement>(null);
+  const addToChat = useAddToChat();
+  const { expand } = useShell();
   const sel = useEditorState({
     editor,
     selector: ({ editor: e }) => {
@@ -546,7 +549,7 @@ function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; 
       // 编辑区（view.dom）贴着外层容器的左上角，按它算相对位置
       const start = editor.view.coordsAtPos(sel.from);
       const box = editor.view.dom.getBoundingClientRect();
-      return { top: start.top - box.top, left: Math.max(0, Math.min(start.left - box.left, box.width - 320)) };
+      return { top: start.top - box.top, left: Math.max(0, Math.min(start.left - box.left, box.width - 400)) };
     } catch {
       return null;
     }
@@ -568,6 +571,25 @@ function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; 
     else setResult({ for: sel.text, text: "已生成修改建议，在旁边接受或拒绝。" });
   }
 
+  // 选中的文字作为引用加进 AI 输入框；DOM 选区用来在原文上标编号
+  function quote() {
+    if (!editor || !sel) return;
+    const text = cleanQuoteText(sel.text);
+    if (!text) return;
+    let range: Range | null = null;
+    try {
+      const a = editor.view.domAtPos(sel.from);
+      const b = editor.view.domAtPos(sel.to);
+      range = document.createRange();
+      range.setStart(a.node, a.offset);
+      range.setEnd(b.node, b.offset);
+    } catch {
+      range = null;
+    }
+    const source = wrap.current?.closest<HTMLElement>("[data-quote-source]")?.dataset.quoteSource ?? "文书";
+    if (addToChat({ text, source, range })) expand("ai");
+  }
+
   const showResult = result && sel?.text === result.for;
   return (
     <div ref={wrap} className={`@container relative ${zhOn ? "zh-on" : ""}`}>
@@ -575,7 +597,7 @@ function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; 
       {sel && pos && (
         <div
           data-testid="selection-menu"
-          className="absolute z-20 w-80 -translate-y-full pb-1"
+          className="absolute z-20 w-[25rem] max-w-full -translate-y-full pb-1"
           style={{ top: pos.top, left: pos.left }}
           onMouseDown={(e) => e.preventDefault()}
         >
@@ -595,6 +617,9 @@ function SelectionArea({ editor, zhOn, docId, flush }: { editor: Editor | null; 
                 {running === a ? (isRewrite(a) ? "改写中…" : "思考中…") : SELECTION_ACTION_LABELS[a]}
               </button>
             ))}
+            <button onClick={quote} title="把这段加进右边 AI 输入框，和你下一条消息一起发" className="px-2.5 py-1 hover:bg-subtle">
+              加入对话
+            </button>
           </div>
         </div>
       )}

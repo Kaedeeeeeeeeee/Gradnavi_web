@@ -548,3 +548,8 @@ body {
 .chat-prose td + td {
   border-left: 1px solid var(--line);
 }
+
+/* 「加入对话」选中的原文（CSS Custom Highlight，见 add-to-chat.tsx） */
+::highlight(gn-quote) {
+  background-color: color-mix(in srgb, var(--accent) 22%, transparent);
+}
