@@ -294,8 +294,24 @@ function TaskTitle({ task, className = "" }: { task: Pick<TaskView, "id" | "titl
   );
 }
 
-/** 「随时可以做」默认露几条 */
-const UNDATED_SHOWN = 2;
+/** 「随时可以做」超过这么多条才折叠 */
+const UNDATED_SHOWN = 8;
+
+/** 「展开 / 收起」：居中、带箭头，一看就知道能点 */
+function ExpandButton({ open, onClick, children }: { open: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-expanded={open}
+      className="card-foot flex w-full items-center justify-center gap-1 text-sm text-muted hover:bg-subtle hover:text-foreground"
+    >
+      {children}
+      <svg viewBox="0 0 16 16" aria-hidden className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`}>
+        <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
+}
 
 /** 待办和日程：有日期的按日期排在上（默认近 7 天，展开看更远），没有日期的任务收在下面 */
 function Agenda({ near, undated, far, done, today }: { near: AgendaRow<HomeTask>[]; undated: HomeTask[]; far: AgendaRow<HomeTask>[]; done: HomeTask[]; today: string }) {
@@ -325,9 +341,9 @@ function Agenda({ near, undated, far, done, today }: { near: AgendaRow<HomeTask>
         </>
       )}
       {far.length > 0 && (
-        <button onClick={() => setExpanded(!expanded)} className="card-foot block w-full text-left text-sm text-muted hover:bg-subtle hover:text-foreground">
+        <ExpandButton open={expanded} onClick={() => setExpanded(!expanded)}>
           {expanded ? `收起，只看近 ${AGENDA_DAYS} 天` : `展开更远的 ${far.length} 项`}
-        </button>
+        </ExpandButton>
       )}
       {undated.length > 0 && (
         <>
@@ -338,9 +354,9 @@ function Agenda({ near, undated, far, done, today }: { near: AgendaRow<HomeTask>
             ))}
           </ul>
           {undated.length > UNDATED_SHOWN && (
-            <button onClick={() => setAllUndated(!allUndated)} className="card-foot block w-full text-left text-sm text-muted hover:bg-subtle hover:text-foreground">
+            <ExpandButton open={allUndated} onClick={() => setAllUndated(!allUndated)}>
               {allUndated ? "收起" : `展开其余 ${undated.length - UNDATED_SHOWN} 项`}
-            </button>
+            </ExpandButton>
           )}
         </>
       )}
