@@ -28,12 +28,20 @@ const refresh = () => revalidatePath("/", "layout");
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式不对");
 
-export async function addTaskAction(title: string) {
+const newTask = z.object({
+  title: z.string().trim().min(1, "请填写标题").max(100),
+  dueDate: date.or(z.literal("")).optional(),
+  note: z.string().trim().max(500).optional(),
+});
+
+/** 主页和日历里添加待办（日历里添加的带上那天作为截止日） */
+export async function addTaskAction(input: z.input<typeof newTask>): Promise<{ ok: true } | { ok: false; error: string }> {
   const user = await requireUser();
-  const t = title.trim();
-  if (!t) return;
-  await addTodos(user.id, [{ title: t.slice(0, 100) }], "user");
+  const parsed = newTask.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "输入有误" };
+  await addTodos(user.id, [{ title: parsed.data.title, dueDate: parsed.data.dueDate || null, note: parsed.data.note }], "user");
   refresh();
+  return { ok: true };
 }
 
 export async function setTaskStatusAction(id: string, status: (typeof TASK_STATUSES)[number]) {
