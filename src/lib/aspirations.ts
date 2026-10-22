@@ -5,7 +5,7 @@ import { CONTACT_RULE_LABELS } from "./admissions";
 import type { CalendarItem } from "./calendar";
 import { getSection } from "./md-sections";
 import type { OnboardingAnswers } from "./onboarding";
-import { describeProfessor, PROFESSOR_STATUS_LABELS, type PaperRef, type ProfessorStatus, type SourceLink } from "./professors";
+import { describeProfessor, PROFESSOR_STATUS_LABELS, type PaperRef, type ProfessorDetails, type ProfessorStatus, type SourceLink } from "./professors";
 
 /** 志愿里的教授（页面用） */
 export type ProfessorView = {
@@ -20,6 +20,7 @@ export type ProfessorView = {
   paperRefs: PaperRef[];
   acceptsInternational: string | null;
   sources: SourceLink[];
+  details: ProfessorDetails | null;
   status: ProfessorStatus;
   note: string | null;
   followUpDate: string | null;

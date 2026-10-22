@@ -64,6 +64,7 @@ export async function saveProfessor(userId: string, input: ProfessorInput) {
     fit: input.fit?.trim() || null,
     acceptsInternational: input.acceptsInternational?.trim() || null,
     sources: input.sources ?? [],
+    details: input.details ?? null,
   };
   const [row] = await db
     .insert(savedProfessor)

@@ -128,6 +128,7 @@ test("给 AI 的志愿描述：教授 + 研究科 + 差距", () => {
       department: "教育学研究科",
       lab: null,
       research: null,
+      details: null,
       fit: "方向一致",
       papers: [],
       paperRefs: [],

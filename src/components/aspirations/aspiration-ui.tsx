@@ -8,7 +8,19 @@ import { DateInput } from "@/components/ui/date-input";
 import { btn, formatDay, ProposalButtons } from "@/components/tasks/task-ui";
 import { formatDate } from "@/lib/calendar";
 import { contactLabel, languageLabel, type AspirationView, type ProfessorView, type SchoolView } from "@/lib/aspirations";
-import { CONTACT_FLOW, PROFESSOR_STATUS_LABELS, type PaperRef, type ProfessorStatus } from "@/lib/professors";
+import {
+  CONTACT_FLOW,
+  PROFESSOR_LINK_KINDS,
+  PROFESSOR_LINK_LABELS,
+  PROFESSOR_STATUS_LABELS,
+  profileSearchUrl,
+  retirementInfo,
+  sourceLabel,
+  type PaperRef,
+  type ProfessorDetails,
+  type ProfessorStatus,
+  type SourceLink,
+} from "@/lib/professors";
 
 // 志愿列表、志愿详情、找教授候选卡片共用的小部件：联系进度、近期论文、研究科要点、差距、跟进日。
 
@@ -254,16 +266,111 @@ export function PasteReply({ professor }: { professor: Pick<ProfessorView, "id" 
   );
 }
 
-export function SourceLinks({ sources }: { sources: { title: string; url: string }[] }) {
+/** 来源链接：写清楚是哪个网站（检索结果的标题常常只是教授名字） */
+export function SourceLinks({ sources }: { sources: SourceLink[] }) {
   if (!sources.length) return null;
   return (
-    <p className="flex flex-wrap gap-x-3 text-xs">
+    <p className="flex flex-wrap items-baseline gap-x-3 text-xs">
+      <span className="text-muted">来源</span>
       {sources.map((s) => (
         <OpenTabLink key={s.url} tab={{ kind: "web", url: s.url, title: s.title.slice(0, 40) }} href={s.url} className="max-w-full truncate text-accent hover:underline">
-          {s.title}
+          {sourceLabel(s)}
         </OpenTabLink>
       ))}
     </p>
+  );
+}
+
+const NOT_FOUND = <span className="text-faint">未查到</span>;
+
+function WebLink({ url, title, children }: { url: string; title: string; children: React.ReactNode }) {
+  return (
+    <OpenTabLink tab={{ kind: "web", url, title }} href={url} className="text-accent hover:underline">
+      {children}
+    </OpenTabLink>
+  );
+}
+
+/**
+ * 教授的详细信息（候选卡片和志愿详情共用）：一排写明是什么的链接 + 职位、定年、科研费、留学生、联系方式、事前联系。
+ * 查不到的写「未查到」；researchmap / KAKEN 没找到个人页时给站内搜索入口。
+ * contactRule：研究科已经关注了时，用监控解析出的「事前联系」规定。
+ */
+export function ProfessorFacts({
+  name,
+  details,
+  acceptsInternational,
+  contactRule,
+}: {
+  name: string;
+  details: ProfessorDetails | null | undefined;
+  acceptsInternational: string | null | undefined;
+  contactRule?: string | null;
+}) {
+  const d = details ?? {};
+  const retirement = retirementInfo(d, new Date().getFullYear());
+  const missing = PROFESSOR_LINK_KINDS.filter((k) => !d.links?.[k] && k !== "researchmap" && k !== "kaken");
+  const rows: [string, React.ReactNode][] = [
+    ["职位", d.position || NOT_FOUND],
+    ["定年", retirement ? <span className={retirement.warn ? "text-warn" : undefined}>{retirement.text}</span> : NOT_FOUND],
+    [
+      "近年科研费",
+      d.grants?.length ? (
+        <ul className="space-y-0.5" lang="ja">
+          {d.grants.map((g) => (
+            <li key={g.title}>
+              {g.url ? (
+                <WebLink url={g.url} title={g.title.slice(0, 40)}>
+                  {g.title}
+                </WebLink>
+              ) : (
+                g.title
+              )}
+              {g.years && <span className="ml-1 text-xs text-faint">{g.years}</span>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        NOT_FOUND
+      ),
+    ],
+    ["留学生 / 研究生", acceptsInternational || NOT_FOUND],
+    ["中国留学生", d.chineseStudents || NOT_FOUND],
+    ["联系方式", d.contact || NOT_FOUND],
+    ["事前联系", contactRule || d.contactRule || NOT_FOUND],
+  ];
+  return (
+    <div className="space-y-2.5">
+      <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+        {PROFESSOR_LINK_KINDS.map((k) => {
+          const url = d.links?.[k];
+          if (url)
+            return (
+              <WebLink key={k} url={url} title={`${name} · ${PROFESSOR_LINK_LABELS[k]}`}>
+                {PROFESSOR_LINK_LABELS[k]} ↗
+              </WebLink>
+            );
+          if (k === "researchmap" || k === "kaken") {
+            const search = profileSearchUrl(k, name);
+            return (
+              <WebLink key={k} url={search} title={`${PROFESSOR_LINK_LABELS[k]}：${name}`}>
+                在 {k === "kaken" ? "KAKEN" : "researchmap"} 搜索 ↗
+              </WebLink>
+            );
+          }
+          return null;
+        })}
+        {missing.length > 0 && <span className="text-xs text-faint">未查到：{missing.map((k) => PROFESSOR_LINK_LABELS[k]).join("、")}</span>}
+      </p>
+      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-muted">{label}</dt>
+            <dd className="min-w-0">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
