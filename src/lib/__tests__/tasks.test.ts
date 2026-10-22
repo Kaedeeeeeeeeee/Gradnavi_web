@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CalendarItem } from "../calendar";
 import { professorStepKey } from "../next-steps";
-import { briefing, buildSteps, countAwaiting, groupTasks, keyDates, kickoffPrompt, weekEnd, type TaskView } from "../tasks";
+import { agenda, briefing, buildSteps, countAwaiting, groupTasks, keyDates, kickoffPrompt, weekEnd, type TaskView } from "../tasks";
 
 const TODAY = "2026-10-21"; // 周三
 
@@ -46,6 +46,27 @@ test("本周 / 之后 / 已完成分组；AI 提议单独放", () => {
   assert.deepEqual(g.later.map((t) => t.title), ["下周"]);
   assert.deepEqual(g.done.map((t) => t.title), ["完成"]);
   assert.deepEqual(g.proposals.map((t) => t.title), ["AI 提议"]);
+});
+
+test("待办和日程：7 天内的在前，更远的折叠；任务截止日生成的日程不重复", () => {
+  const ev = (patch: Partial<CalendarItem>): CalendarItem => ({ key: `e${++n}`, source: "event", title: "日程", date: TODAY, kind: "other", ...patch });
+  const noDate = task({ title: "没有截止日" });
+  const overdue = task({ title: "过期", dueDate: "2026-10-01" });
+  const doing = task({ title: "进行中", status: "doing", dueDate: "2026-10-27" });
+  const far = task({ title: "下个月", dueDate: "2026-11-20" });
+  const done = task({ title: "完成", status: "done", dueDate: "2026-10-22" });
+  const proposed = task({ title: "AI 提议", proposed: true });
+  const items = [
+    ev({ title: "TOEFL", date: "2026-10-22", kind: "exam" }),
+    ev({ title: "出愿截止", date: "2027-01-08", source: "guide", kind: "deadline" }),
+    ev({ title: "过去的", date: "2026-10-10" }),
+    ev({ title: "做完的跟进", date: "2026-10-23", done: true }),
+    ev({ title: "进行中", date: "2026-10-27", source: "todo" }),
+  ];
+  const a = agenda([noDate, overdue, doing, far, done, proposed], items, TODAY);
+  const titles = (rows: typeof a.near) => rows.map((r) => r.task?.title ?? r.item!.title);
+  assert.deepEqual(titles(a.near), ["过期", "没有截止日", "TOEFL", "进行中"]);
+  assert.deepEqual(titles(a.far), ["下个月", "出愿截止"]);
 });
 
 test("待处理数量 = 待你确认 + AI 提议（任务、改期、日程）", () => {

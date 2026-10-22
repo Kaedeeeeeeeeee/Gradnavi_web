@@ -5,7 +5,7 @@ import { updateProfessorAction } from "@/app/(app)/professors/actions";
 import { acceptProposalAction, rejectProposalAction, rescheduleEventAction, setTaskStatusAction, updateTaskAction } from "@/app/(app)/workbench/actions";
 import { useStartTask } from "@/components/ai/page-context";
 import { useShell } from "@/components/shell/app-shell";
-import { TASK_STATUS_LABELS, type TaskStatus, type TaskView } from "@/lib/tasks";
+import { TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus, type TaskView } from "@/lib/tasks";
 
 // 任务卡和任务详情共用的小部件：状态标签、「让 AI 开始」、AI 提议的同意 / 改 / 拒绝。
 
@@ -16,8 +16,32 @@ const STATUS_STYLES: Record<TaskStatus, string> = {
   done: "bg-ok-soft text-ok",
 };
 
-export function StatusChip({ status }: { status: TaskStatus }) {
-  return <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${STATUS_STYLES[status]}`}>{TASK_STATUS_LABELS[status]}</span>;
+/** 任务状态：点开选未开始 / 进行中 / 待你确认 / 完成（只有用户能标完成，AI 最多设到待你确认） */
+export function StatusSelect({ id, status }: { id: string; status: TaskStatus }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <span className="relative inline-flex shrink-0">
+      <select
+        aria-label="状态"
+        value={status}
+        disabled={pending}
+        onChange={(e) => {
+          const next = e.target.value as TaskStatus;
+          startTransition(() => setTaskStatusAction(id, next));
+        }}
+        className={`cursor-pointer appearance-none rounded py-0.5 pr-5 pl-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 ${STATUS_STYLES[status]}`}
+      >
+        {TASK_STATUSES.map((s) => (
+          <option key={s} value={s}>
+            {TASK_STATUS_LABELS[s]}
+          </option>
+        ))}
+      </select>
+      <span aria-hidden className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-[9px] opacity-60">
+        ▼
+      </span>
+    </span>
+  );
 }
 
 export const btn = "btn px-2 py-0.5 text-xs";
@@ -37,15 +61,6 @@ export function StartButton({ task, started, primary = false }: { task: Pick<Tas
       className={primary ? primaryBtn : btn}
     >
       {started ? "继续和 AI 做" : "让 AI 开始"}
-    </button>
-  );
-}
-
-export function CompleteButton({ id, label = "完成" }: { id: string; label?: string }) {
-  const [pending, startTransition] = useTransition();
-  return (
-    <button disabled={pending} onClick={() => startTransition(() => setTaskStatusAction(id, "done"))} className={label === "确认完成" ? primaryBtn : btn}>
-      {label}
     </button>
   );
 }
