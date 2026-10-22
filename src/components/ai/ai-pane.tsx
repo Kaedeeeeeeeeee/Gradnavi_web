@@ -344,6 +344,10 @@ function chipTarget(name: string, input: unknown, output: unknown): DocTab | nul
     const id = field(output, "id");
     return id ? { kind: "professor", id, title: field(output, "name") ?? "教授" } : null;
   }
+  if (name === "watch_school") {
+    const id = field(output, "id");
+    return id ? { kind: "school", id, title: field(output, "name") ?? "研究科" } : null;
+  }
   if (name === "search_professors") {
     const id = field(output, "searchId");
     return id ? { kind: "search", id, title: `找教授：${field(input, "keywords") ?? ""}`.slice(0, 40) } : null;

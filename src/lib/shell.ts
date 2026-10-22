@@ -20,6 +20,8 @@ export type Layout = {
 export type DocTab =
   | { kind: "doc"; id: string; title: string }
   | { kind: "professor"; id: string; title: string }
+  /** 只有研究科的志愿（id = 研究科 id） */
+  | { kind: "school"; id: string; title: string }
   | { kind: "task"; id: string; title: string }
   /** 找教授的一轮结果（候选卡片）。同时只开一个：新一轮结果替换旧的 */
   | { kind: "search"; id: string; title: string }
@@ -127,6 +129,7 @@ const layoutSchema = z.object({
 const tabSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("doc"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("professor"), id: z.string().max(64), title: z.string().max(100) }),
+  z.object({ kind: z.literal("school"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("task"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("search"), id: z.string().max(64), title: z.string().max(100) }),
   z.object({ kind: z.literal("web"), url: z.string().max(500), title: z.string().max(100) }),

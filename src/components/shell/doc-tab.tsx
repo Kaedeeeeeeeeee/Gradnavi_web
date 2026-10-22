@@ -1,6 +1,6 @@
 import { inArray } from "drizzle-orm";
 import { DocumentEditor } from "@/app/(app)/documents/[id]/editor";
-import { AspirationDetail } from "@/components/aspirations/aspiration-detail";
+import { AspirationDetail, SchoolAspirationDetail } from "@/components/aspirations/aspiration-detail";
 import { SearchResults, type CandidateView } from "@/components/aspirations/search-results";
 import { db } from "@/db";
 import { graduateSchool } from "@/db/schema";
@@ -10,7 +10,7 @@ import { todayJst } from "@/lib/calendar";
 import { decideTrack } from "@/lib/onboarding";
 import { candidateKey, describeProfessor } from "@/lib/professors";
 import type { DocTab } from "@/lib/shell";
-import { getAspiration } from "@/server/aspirations";
+import { getAspiration, getSchoolAspiration } from "@/server/aspirations";
 import { getDocumentBundle, listDocuments } from "@/server/documents";
 import { getProfile } from "@/server/profile";
 import { getProfessorSearch } from "@/server/professor-search";
@@ -29,6 +29,7 @@ export async function renderDocTab(userId: string, tab: DocTab | null): Promise<
   if (!tab) return { title: null, node: null };
   if (tab.kind === "web") return { title: tab.title, node: <WebTab key={tab.url} url={tab.url} title={tab.title} /> };
   if (tab.kind === "professor") return professorTab(userId, tab.id);
+  if (tab.kind === "school") return schoolTab(userId, tab.id);
   if (tab.kind === "task") return taskTab(userId, tab.id);
   if (tab.kind === "search") return searchTab(userId, tab.id);
   return documentTab(userId, tab.id);
@@ -84,6 +85,15 @@ async function professorTab(userId: string, id: string) {
     title: a.professor.name,
     node: <AspirationDetail key={id} a={{ ...a, professor: a.professor }} documents={related} aiText={`志愿详情（用户正在看）：\n${describeAspiration(a)}`} />,
   };
+}
+
+async function schoolTab(userId: string, id: string) {
+  const a = await getSchoolAspiration(userId, id, todayJst());
+  if (!a?.school) return { title: null, node: null };
+  // 研究科已经关联了教授：显示那条志愿（教授 + 研究科）
+  if (a.professor) return professorTab(userId, a.professor.id);
+  const title = `${a.school.university} ${a.school.name}`;
+  return { title, node: <SchoolAspirationDetail key={id} a={{ ...a, school: a.school }} aiText={`志愿详情（用户正在看，只有研究科）：\n${describeAspiration(a)}`} /> };
 }
 
 async function searchTab(userId: string, id: string) {

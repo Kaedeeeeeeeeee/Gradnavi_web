@@ -84,6 +84,7 @@ export function useShell() {
 function tabPath(tab: DocTab) {
   if (tab.kind === "doc") return `/documents/${tab.id}`;
   if (tab.kind === "professor") return `/professors/${tab.id}`;
+  if (tab.kind === "school") return `/schools/${tab.id}`;
   if (tab.kind === "task") return `/tasks/${tab.id}`;
   if (tab.kind === "search") return `/search/${tab.id}`;
   return "/web";
@@ -402,7 +403,7 @@ function WorkTabs({ pathname }: { pathname: string }) {
   );
 }
 
-const TAB_ICONS: Record<DocTab["kind"], string> = { doc: "文", professor: "志", task: "任", search: "找", web: "网" };
+const TAB_ICONS: Record<DocTab["kind"], string> = { doc: "文", professor: "志", school: "志", task: "任", search: "找", web: "网" };
 
 function DocTabBar({ tabs, onActivate, onClose }: { tabs: Tabs; onActivate: (key: string) => void; onClose: (key: string) => void }) {
   if (!tabs.tabs.length) return <span className="px-1 text-sm font-medium">文稿 / 浏览</span>;

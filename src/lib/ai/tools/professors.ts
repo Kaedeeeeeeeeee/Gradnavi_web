@@ -3,11 +3,11 @@ import { z } from "zod";
 import { CONTACT_RULES } from "@/lib/admissions";
 import { describeRequirements } from "@/lib/aspirations";
 import { todayJst } from "@/lib/calendar";
-import { DEFAULT_CANDIDATES, describeProfessor, MAX_CANDIDATES, MAX_SCHOOLS, paperLabel, PROFESSOR_STATUSES } from "@/lib/professors";
+import { candidateKey, DEFAULT_CANDIDATES, describeProfessor, MAX_CANDIDATES, MAX_SCHOOLS, paperLabel, PROFESSOR_STATUSES } from "@/lib/professors";
 import { answerField } from "@/lib/onboarding";
 import { listAspirations } from "@/server/aspirations";
 import { getProfile } from "@/server/profile";
-import { runProfessorSearch } from "@/server/professor-search";
+import { getProfessorSearch, runProfessorSearch } from "@/server/professor-search";
 import { saveProfessor, updateSavedProfessor } from "@/server/professors";
 import { updateSchoolRequirements } from "@/server/schools";
 import { fetchPage, webSearch } from "@/server/search";
@@ -21,7 +21,8 @@ const paperRef = z.object({ title: z.string().max(300), year: z.number().int().m
 export const searchProfessorsTool = defineTool({
   name: "search_professors",
   description:
-    "按研究方向和目标校检索日本大学的教授候选（researchmap、大学官网、KAKEN 等）。结果会以候选卡片显示在用户的文稿栏（为什么适合、近期论文和链接、是否收留学生），用户在卡片上点「加入志愿」或「不合适」。" +
+    "按研究方向和目标校检索日本大学的教授候选（researchmap、大学官网、KAKEN 等）。结果会以候选卡片显示在用户的文稿栏（为什么适合、近期论文和链接、是否收留学生），用户可以在卡片上点「加入志愿」或「不合适」。" +
+    "检索完在对话里推荐，并问用户要不要把其中哪几位加入志愿；用户同意后用 save_professor（带 searchId）加入。" +
     "用户说「更偏应用一点」「只要关东的」时，调整 keywords / schools / preference 再检索一轮。返回的是摘要，不要在对话里逐个重复卡片内容，只说整体情况和你的推荐。",
   inputSchema: z.object({
     keywords: z.string().min(1).max(200).describe("研究方向关键词，日文效果最好，如 第二言語習得 / 強化学習"),
@@ -48,7 +49,7 @@ export const searchProfessorsTool = defineTool({
       // 回复只能说这一轮真有的卡片：人数、名字都以下面的 candidates 为准，上一轮的教授不在卡片里
       shown: `这一轮文稿栏里有 ${n} 张候选卡片，就是下面这 ${n} 位。介绍时人数和名字只按这 ${n} 位说，不要把之前几轮的教授说成卡片里的。${
         n < want ? `用户要 ${want} 位，只找到 ${n} 位：如实告诉用户，并提议怎么扩大范围（换关键词、加学校）。` : ""
-      }`,
+      }${n ? "最后问用户要不要把其中哪几位加入志愿（用户同意后用 save_professor，带上这个 searchId）。" : ""}`,
       candidates: res.candidates.map((c) => ({
         name: c.name,
         university: c.university,
@@ -94,8 +95,10 @@ export const listAspirationsTool = defineTool({
 export const saveProfessorTool = defineTool({
   name: "save_professor",
   description:
-    "把一位教授加入志愿（同名同校会更新信息，保留联系状态和备注）。只在用户同意时调用（用户在候选卡片上点「加入志愿」时系统会自动加入，不用你再调用）。教授所在的研究科系统里已有时会自动关联。",
+    "把一位教授加入志愿（同名同校会更新信息，保留联系状态和备注）。只在用户同意时调用（用户在候选卡片上点「加入志愿」时系统会自动加入，不用你再调用）。" +
+    "教授来自 search_professors 的结果时带上 searchId，系统会把卡片上的论文、链接、为什么适合一起存下（name、university 照卡片写，其他字段可以不填）。教授所在的研究科系统里已有时会自动关联。",
   inputSchema: z.object({
+    searchId: z.string().max(64).optional().describe("search_professors 返回的 searchId：教授来自那一轮候选时填"),
     name: z.string().min(1).max(100),
     university: z.string().min(1).max(100),
     department: z.string().max(200).optional().describe("研究科・専攻"),
@@ -108,8 +111,11 @@ export const saveProfessorTool = defineTool({
     sources: z.array(z.object({ title: z.string().max(200), url: z.string().url().max(500) })).max(5).optional(),
     note: z.string().max(1000).optional(),
   }),
-  execute: async (input, { userId }) => {
-    const row = await saveProfessor(userId, { ...input, papers: input.papers ?? input.paperRefs?.map(paperLabel) });
+  execute: async ({ searchId, ...input }, { userId }) => {
+    // 从候选卡片加入：以检索到的信息为准（论文链接、来源只认检索结果），AI 只补备注
+    const fromSearch = searchId ? (await getProfessorSearch(userId, searchId))?.candidates.find((c) => candidateKey(c) === candidateKey(input)) : undefined;
+    const merged = fromSearch ? { ...fromSearch, note: input.note } : input;
+    const row = await saveProfessor(userId, { ...merged, papers: merged.papers ?? merged.paperRefs?.map(paperLabel) });
     return { id: row.id, name: row.name, university: row.university, schoolLinked: !!row.schoolId, url: "/aspirations" };
   },
 });

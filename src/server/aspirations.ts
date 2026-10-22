@@ -69,6 +69,11 @@ export async function listAspirations(userId: string, today: string): Promise<As
   return [...withProfessor.filter((a) => a.professor!.status !== "dropped"), ...schoolOnly, ...withProfessor.filter((a) => a.professor!.status === "dropped")];
 }
 
+export async function getSchoolAspiration(userId: string, schoolId: string, today: string) {
+  const list = await listAspirations(userId, today);
+  return list.find((a) => a.school?.id === schoolId && !a.professor) ?? list.find((a) => a.school?.id === schoolId) ?? null;
+}
+
 export async function getAspiration(userId: string, professorId: string, today: string) {
   const list = await listAspirations(userId, today);
   return list.find((a) => a.professor?.id === professorId) ?? null;
