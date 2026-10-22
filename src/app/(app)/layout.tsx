@@ -35,7 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   const messages = conversation ? await loadMessages(conversation.id) : [];
 
-  const link = "shrink-0 text-zinc-500 hover:text-foreground";
+  const link = "shrink-0 rounded-md px-2 py-1 text-muted hover:bg-subtle hover:text-foreground";
   const topRight = (
     <>
       <Link href="/profile" className={link}>
@@ -49,10 +49,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           管理
         </Link>
       )}
-      <Link href="/credits" className={`shrink-0 tabular-nums hover:text-foreground ${balance <= 0 ? "text-red-600" : "text-zinc-500"}`}>
+      <Link href="/credits" className={`shrink-0 rounded-md px-2 py-1 tabular-nums hover:bg-subtle hover:text-foreground ${balance <= 0 ? "text-danger" : "text-muted"}`}>
         {balance.toLocaleString()} credit
       </Link>
-      <span className="hidden truncate text-zinc-500 xl:inline">{user.email}</span>
+      <span className="hidden truncate px-2 text-faint xl:inline">{user.email}</span>
       <SignOutButton />
     </>
   );

@@ -37,18 +37,18 @@ export function ProfileEditor({ initial }: { initial: string }) {
         onChange={(e) => setValue(e.target.value)}
         rows={24}
         spellCheck={false}
-        className="w-full rounded-md border border-zinc-300 bg-transparent p-3 font-mono text-sm leading-relaxed outline-none focus:border-zinc-500 dark:border-zinc-700"
+        className="input w-full p-3 font-mono text-sm leading-relaxed"
       />
       <div className="flex items-center gap-3">
         <button
           onClick={save}
           disabled={!dirty || pending}
-          className="rounded-md bg-foreground px-4 py-2 text-sm text-background disabled:opacity-40"
+          className="btn-primary px-4 py-2 text-sm"
         >
           {pending ? "保存中…" : "保存"}
         </button>
-        <span className="text-sm text-zinc-500">{dirty ? "有未保存的修改" : "已保存"}</span>
-        {error && <span className="text-sm text-red-600">{error}</span>}
+        <span className="text-sm text-muted">{dirty ? "有未保存的修改" : "已保存"}</span>
+        {error && <span className="text-sm text-danger">{error}</span>}
       </div>
     </div>
   );

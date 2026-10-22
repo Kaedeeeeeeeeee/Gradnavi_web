@@ -13,7 +13,7 @@ type Props = {
   onAsk: (text: string) => void;
 };
 
-const box = "space-y-3 rounded-md border border-zinc-200 p-4 text-sm dark:border-zinc-800";
+const box = "space-y-3 rounded-md border border-line p-4 text-sm";
 
 export function WritingGuide({ doc, track, onAsk }: Props) {
   const [pending, startTransition] = useTransition();
@@ -34,7 +34,7 @@ export function WritingGuide({ doc, track, onAsk }: Props) {
     return (
       <div className={box} data-testid="start-card">
         <p className="font-medium">怎么开始写这份{label}？</p>
-        <p className="text-zinc-500">不用对着空白页发愁：AI 先在对话里问你五六个问题（为什么想做这个方向、有什么相关经历……），然后列出提纲，你同意后再一节一节写。</p>
+        <p className="text-muted">不用对着空白页发愁：AI 先在对话里问你五六个问题（为什么想做这个方向、有什么相关经历……），然后列出提纲，你同意后再一节一节写。</p>
         <div className="flex flex-wrap gap-2">
           <button
             disabled={pending}
@@ -42,19 +42,19 @@ export function WritingGuide({ doc, track, onAsk }: Props) {
               run(() => setWriteModeAction(doc.id, "together"));
               onAsk(`我想开始写这份${label}（文书 ID：${doc.id}）。请先在对话里一次问我 5–6 个关键问题（编号列出），我回答后用 propose_outline 给出提纲。${fit}`);
             }}
-            className="rounded-md bg-foreground px-3 py-1.5 text-background disabled:opacity-40"
+            className="btn-primary px-3 py-1.5"
           >
             和 AI 一起写（先回答几个问题）
           </button>
           <button
             disabled={pending}
             onClick={() => run(() => setWriteModeAction(doc.id, "self"))}
-            className="rounded-md border border-zinc-300 px-3 py-1.5 disabled:opacity-40 dark:border-zinc-700"
+            className="btn px-3 py-1.5"
           >
             我自己写，AI 只给意见
           </button>
         </div>
-        {error && <p className="text-red-600">{error}</p>}
+        {error && <p className="text-danger">{error}</p>}
       </div>
     );
   }
@@ -83,7 +83,7 @@ export function WritingGuide({ doc, track, onAsk }: Props) {
             disabled={self}
             onClick={() => draft(s.heading)}
             className={`rounded-full px-2.5 py-0.5 text-xs ${
-              s.written ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : s === next ? "bg-foreground text-background" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800"
+              s.written ? "bg-ok-soft text-ok" : s === next ? "bg-primary text-on-primary" : "bg-subtle text-muted"
             }`}
           >
             {s.heading}
@@ -93,23 +93,23 @@ export function WritingGuide({ doc, track, onAsk }: Props) {
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {self ? (
-          <span className="text-zinc-500">你自己写，AI 只给意见。写完一节可以点上面的「让 AI 当教授审一遍」。</span>
+          <span className="text-muted">你自己写，AI 只给意见。写完一节可以点上面的「让 AI 当教授审一遍」。</span>
         ) : next ? (
-          <button onClick={() => draft(next.heading)} className="rounded-md bg-foreground px-3 py-1.5 text-background">
+          <button onClick={() => draft(next.heading)} className="btn-primary px-3 py-1.5">
             AI 起草：{next.heading}
           </button>
         ) : (
-          <span className="text-zinc-500">各节都有内容了。可以让 AI 当教授审一遍，看看还有哪里要改。</span>
+          <span className="text-muted">各节都有内容了。可以让 AI 当教授审一遍，看看还有哪里要改。</span>
         )}
         <button
           disabled={pending}
           onClick={() => run(() => setWriteModeAction(doc.id, self ? "together" : "self"))}
-          className="ml-auto text-xs text-zinc-500 underline disabled:opacity-40"
+          className="ml-auto text-xs text-muted underline disabled:opacity-40"
         >
           {self ? "改成和 AI 一起写" : "改成自己写，AI 只给意见"}
         </button>
       </div>
-      {error && <p className="text-red-600">{error}</p>}
+      {error && <p className="text-danger">{error}</p>}
     </div>
   );
 }
@@ -119,7 +119,7 @@ function OutlineCard({ outline, docId, onAsk }: { outline: Outline; docId: strin
   const [change, setChange] = useState("");
   const [error, setError] = useState<string | null>(null);
   return (
-    <div className={`${box} border-sky-300 dark:border-sky-800`} data-testid="outline-card">
+    <div className={`${box} border-info/40`} data-testid="outline-card">
       <p className="font-medium">AI 列的提纲，待你确认</p>
       <ol className="list-decimal space-y-1.5 pl-5">
         {outline.sections.map((s) => (
@@ -127,7 +127,7 @@ function OutlineCard({ outline, docId, onAsk }: { outline: Outline; docId: strin
             <span lang="ja" className="font-medium">
               {s.heading}
             </span>
-            {s.points.length > 0 && <span className="text-zinc-600 dark:text-zinc-400"> — {s.points.join("；")}</span>}
+            {s.points.length > 0 && <span className="text-muted"> — {s.points.join("；")}</span>}
           </li>
         ))}
       </ol>
@@ -140,7 +140,7 @@ function OutlineCard({ outline, docId, onAsk }: { outline: Outline; docId: strin
               setError(r.ok ? null : r.error);
             })
           }
-          className="rounded-md bg-foreground px-3 py-1.5 text-background disabled:opacity-40"
+          className="btn-primary px-3 py-1.5"
         >
           同意这个提纲
         </button>
@@ -157,12 +157,12 @@ function OutlineCard({ outline, docId, onAsk }: { outline: Outline; docId: strin
             value={change}
             onChange={(e) => setChange(e.target.value)}
             placeholder="想调整？比如：先行研究和背景合成一节"
-            className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-1.5 outline-none focus:border-zinc-500 dark:border-zinc-700"
+            className="input min-w-0 flex-1 px-3 py-1.5"
           />
-          <button className="rounded-md border border-zinc-300 px-3 py-1.5 dark:border-zinc-700">让 AI 改</button>
+          <button className="btn px-3 py-1.5">让 AI 改</button>
         </form>
       </div>
-      {error && <p className="text-red-600">{error}</p>}
+      {error && <p className="text-danger">{error}</p>}
     </div>
   );
 }

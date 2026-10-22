@@ -43,7 +43,7 @@ async function documentTab(userId: string, id: string) {
   return {
     title: doc.title,
     node: (
-      <div className="px-4 py-6">
+      <div className="px-6 py-8">
         <DocumentEditor
           key={doc.id}
           doc={{

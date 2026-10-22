@@ -14,9 +14,9 @@ export default async function OnboardingPage() {
 
   return (
     <main className="mx-auto w-full max-w-xl flex-1 space-y-6 px-4 py-10">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">先认识一下你</h1>
-        <p className="text-sm text-zinc-500">5 个问题，点选就行，1 分钟做完。成绩、语言、想去的学校这些，之后和 AI 聊的时候再说。</p>
+      <div className="space-y-2">
+        <h1 className="page-title">先认识一下你</h1>
+        <p className="text-sm text-muted">5 个问题，点选就行，1 分钟做完。成绩、语言、想去的学校这些，之后和 AI 聊的时候再说。</p>
       </div>
       <OnboardingWizard questions={onboardingQuestions()} />
     </main>

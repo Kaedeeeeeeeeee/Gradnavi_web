@@ -17,30 +17,30 @@ export default async function CreditsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">Credit</h1>
-        <p className="text-sm text-zinc-500">
+      <div className="space-y-2">
+        <h1 className="page-title">Credit</h1>
+        <p className="text-sm text-muted">
           AI 对话、找教授检索、联网搜索和读取网页会按实际用量消耗 credit。内测期间注册即赠送，暂不支持充值；用完后请通过「反馈」联系我们补充。
         </p>
       </div>
 
-      <section className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
-        <p className="text-sm text-zinc-500">当前余额</p>
-        <p className={`text-3xl font-semibold tabular-nums ${balance <= 0 ? "text-red-600" : ""}`}>{balance.toLocaleString()}</p>
-        <p className="mt-2 text-xs text-zinc-500">
+      <section className="rounded-lg border border-line p-5">
+        <p className="text-sm text-muted">当前余额</p>
+        <p className={`text-3xl font-semibold tabular-nums ${balance <= 0 ? "text-danger" : ""}`}>{balance.toLocaleString()}</p>
+        <p className="mt-2 text-xs text-muted">
           参考：100 credit ≈ {yuanPer100.toFixed(2)} 元的 AI 费用。一次普通对话通常消耗个位数到几十 credit，一次找教授检索约 5–15 credit。
         </p>
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-medium">使用记录</h2>
+        <h2 className="section-title">使用记录</h2>
         {ledger.length === 0 ? (
-          <p className="text-sm text-zinc-500">还没有记录。</p>
+          <p className="text-sm text-muted">还没有记录。</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-zinc-500">
-                <tr className="border-b border-zinc-200 dark:border-zinc-800">
+              <thead className="text-left text-muted">
+                <tr className="border-b border-line">
                   <th className="py-2 pr-3 font-normal">时间</th>
                   <th className="py-2 pr-3 font-normal">项目</th>
                   <th className="py-2 pr-3 font-normal">用量</th>
@@ -50,14 +50,14 @@ export default async function CreditsPage() {
               </thead>
               <tbody>
                 {ledger.map((r) => (
-                  <tr key={r.id} className="border-b border-zinc-100 dark:border-zinc-900">
-                    <td className="py-2 pr-3 whitespace-nowrap text-zinc-500 tabular-nums">{time.format(r.createdAt)}</td>
+                  <tr key={r.id} className="border-b border-line">
+                    <td className="py-2 pr-3 whitespace-nowrap text-muted tabular-nums">{time.format(r.createdAt)}</td>
                     <td className="py-2 pr-3">
                       {r.kind === "usage" && r.feature ? FEATURE_LABELS[r.feature] : LEDGER_KIND_LABELS[r.kind]}
-                      {r.note && r.kind !== "usage" && <span className="ml-2 text-xs text-zinc-500">{r.note}</span>}
+                      {r.note && r.kind !== "usage" && <span className="ml-2 text-xs text-muted">{r.note}</span>}
                     </td>
-                    <td className="py-2 pr-3 text-xs text-zinc-500">{r.feature ? usageText(r) : ""}</td>
-                    <td className={`py-2 pr-3 text-right tabular-nums ${r.delta > 0 ? "text-emerald-600" : ""}`}>
+                    <td className="py-2 pr-3 text-xs text-muted">{r.feature ? usageText(r) : ""}</td>
+                    <td className={`py-2 pr-3 text-right tabular-nums ${r.delta > 0 ? "text-ok" : ""}`}>
                       {r.delta > 0 ? `+${r.delta}` : r.delta}
                     </td>
                     <td className="py-2 text-right tabular-nums">{r.balanceAfter}</td>

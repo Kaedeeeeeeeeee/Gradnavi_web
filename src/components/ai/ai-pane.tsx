@@ -7,7 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { undoMemory } from "@/app/(app)/actions";
 import { openTaskConversationAction } from "@/app/(app)/workbench/actions";
-import { useShell } from "@/components/shell/app-shell";
+import { LogoMark, useShell } from "@/components/shell/app-shell";
 import { TOOL_META } from "@/lib/ai/tool-meta";
 import { uuid } from "@/lib/browser";
 import { activeTab, type DocTab } from "@/lib/shell";
@@ -210,8 +210,8 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
 
   return (
     <>
-      <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-2 text-xs dark:border-zinc-800">
-        <span className="min-w-0 flex-1 truncate text-zinc-500" title={conv.task?.title ?? (docShown ? tab.title : undefined)}>
+      <div className="flex items-center gap-2 border-b border-line px-4 py-2 text-xs">
+        <span className="min-w-0 flex-1 truncate text-muted" title={conv.task?.title ?? (docShown ? tab.title : undefined)}>
           {conv.task ? (
             <>
               正在一起做：<span className="text-foreground">{conv.task.title}</span>
@@ -223,18 +223,18 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
           ) : (
             `当前：${workLabel ?? "工作台"}`
           )}
-          {demo && <span className="ml-2 text-amber-600">演示模式</span>}
+          {demo && <span className="ml-2 text-warn">演示模式</span>}
         </span>
-        <Link href="/credits" className={`shrink-0 tabular-nums ${balance <= 0 ? "text-red-600" : "text-zinc-500"}`}>
+        <Link href="/credits" className={`shrink-0 tabular-nums ${balance <= 0 ? "text-danger" : "text-muted"}`}>
           余额 {balance.toLocaleString()}
         </Link>
         {conv.task ? (
-          <button className="shrink-0 text-zinc-500 hover:text-foreground disabled:opacity-40" disabled={busy} onClick={backToGeneral} title="回到主页上的通用对话">
+          <button className="shrink-0 text-muted hover:text-foreground disabled:opacity-40" disabled={busy} onClick={backToGeneral} title="回到主页上的通用对话">
             通用对话
           </button>
         ) : (
           <button
-            className="shrink-0 text-zinc-500 hover:text-foreground disabled:opacity-40"
+            className="shrink-0 text-muted hover:text-foreground disabled:opacity-40"
             disabled={busy || messages.length === 0}
             onClick={() => setConv({ id: uuid(), messages: [], task: null })}
           >
@@ -245,13 +245,13 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 text-sm">
         {messages.length === 0 && conv.task && status === "ready" && (
-          <div className="space-y-2 text-zinc-500">
+          <div className="space-y-2 text-muted">
             <p>这是「{conv.task.title}」的专属对话，之后从任务卡上也能找回这里的讨论。</p>
             <p>点任务上的「让 AI 开始」，或者直接说说你想怎么做。</p>
           </div>
         )}
         {messages.length === 0 && !conv.task && (
-          <div className="space-y-2 text-zinc-500">
+          <div className="space-y-2 text-muted">
             <p>我能看到我对你的了解（user.md）、左边工作台的页面和中间打开的文稿，可以帮你记录信息、拆分任务、一起写文书。</p>
             <p>试试：「我下一步该做什么？」</p>
           </div>
@@ -265,19 +265,22 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
               <button
                 key={q}
                 onClick={() => void send(q)}
-                className="rounded-full border border-zinc-300 px-3 py-1 text-xs hover:border-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                className="btn rounded-full px-3 py-1 text-xs"
               >
                 {q}
               </button>
             ))}
           </div>
         )}
-        {status === "submitted" && <p className="text-zinc-400">思考中…</p>}
-        {error && <p className="text-red-600">出错了：{error.message || "请稍后再试"}</p>}
+        {status === "submitted" && <p className="text-faint">思考中…</p>}
+        {error && <p className="text-danger">出错了：{error.message || "请稍后再试"}</p>}
         <div ref={bottomRef} />
       </div>
 
-      <form onSubmit={submit} className="border-t border-zinc-200 p-3 dark:border-zinc-800">
+      <form
+        onSubmit={submit}
+        className="mx-3 mb-3 rounded-xl border border-line-strong bg-surface shadow-[0_1px_3px_rgb(15_15_15/0.06)] transition-[border-color,box-shadow] focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15"
+      >
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -286,15 +289,15 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
           }}
           rows={3}
           placeholder="输入问题，Enter 发送，Shift+Enter 换行"
-          className="w-full resize-none rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+          className="block w-full resize-none bg-transparent px-3 pt-2.5 text-sm outline-none placeholder:text-faint"
         />
-        <div className="mt-2 flex justify-end">
+        <div className="flex justify-end px-2 pb-2">
           {busy ? (
-            <button type="button" onClick={stop} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700">
+            <button type="button" onClick={stop} className="btn px-3 py-1.5 text-sm">
               停止
             </button>
           ) : (
-            <button type="submit" disabled={!input.trim()} className="rounded-md bg-foreground px-3 py-1.5 text-sm text-background disabled:opacity-40">
+            <button type="submit" disabled={!input.trim()} className="btn-primary px-3 py-1.5 text-sm">
               发送
             </button>
           )}
@@ -307,10 +310,14 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
 function Message({ message }: { message: UIMessage }) {
   if (message.role === "user") {
     const text = message.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("");
-    return <div className="ml-8 rounded-lg bg-zinc-100 px-3 py-2 whitespace-pre-wrap dark:bg-zinc-800">{text}</div>;
+    return <div className="ml-auto w-fit max-w-[85%] rounded-xl bg-subtle px-3 py-2 whitespace-pre-wrap">{text}</div>;
   }
   return (
     <div className="space-y-2">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-muted">
+        <LogoMark className="size-[18px] rounded-[4px] text-[10px]" />
+        GradNavi
+      </div>
       {message.parts.map((part, i) => {
         if (part.type === "text") return <div key={i} className="whitespace-pre-wrap leading-relaxed">{part.text}</div>;
         if (isToolUIPart(part) && getToolName(part) === "update_user_md" && part.state === "output-available")
@@ -355,11 +362,11 @@ function ToolChip({ name, state, input, output }: { name: string; state: string;
   const done = state === "output-available";
   const target = done ? chipTarget(name, input, output) : null;
   return (
-    <div className="inline-flex items-center gap-2 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-500 dark:border-zinc-700">
+    <div className="inline-flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 text-xs text-muted">
       <span>{failed ? "✗" : done ? "✓" : "…"}</span>
       <span>AI {label}</span>
       {target && (
-        <button onClick={() => openTab(target)} className="underline hover:text-foreground">
+        <button onClick={() => openTab(target)} className="text-accent hover:underline">
           查看 →
         </button>
       )}
@@ -385,7 +392,7 @@ function MemoryLine({ input, output }: { input: unknown; output: unknown }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
+    <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
       <span className={state === "undone" ? "line-through" : ""}>
         {state === "undone" ? "已撤销" : "已记住"}：{note}
       </span>

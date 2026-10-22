@@ -237,10 +237,10 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
     tabs.active === docKey && !refreshing ? (
       doc
     ) : (
-      <p className="px-6 py-10 text-sm text-zinc-500">打开中…</p>
+      <p className="px-6 py-10 text-sm text-muted">打开中…</p>
     );
   const body: Record<PaneId, React.ReactNode> = {
-    work: <div className="px-4 py-6">{children}</div>,
+    work: <div className="px-4 py-6 sm:px-6 sm:py-8">{children}</div>,
     doc: docBody,
     ai,
   };
@@ -248,23 +248,24 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
   return (
     <ShellContext value={api}>
       <div className={`flex h-dvh flex-col ${dragging ? "cursor-col-resize select-none" : ""}`}>
-        <header className="flex items-center gap-4 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
-          <Link href="/workbench" className="text-base font-semibold">
+        <header className="flex h-12 shrink-0 items-center gap-4 border-b border-line px-4">
+          <Link href="/workbench" className="flex items-center gap-2 text-[15px] font-semibold">
+            <LogoMark />
             GradNavi
           </Link>
-          <div className="hidden rounded-md border border-zinc-200 p-0.5 text-xs lg:flex dark:border-zinc-800">
+          <div className="hidden rounded-md bg-subtle p-0.5 text-xs lg:flex">
             {presetsFor(hasDoc).map((p) => (
               <button
                 key={p}
                 onClick={() => choosePreset(p)}
                 title={p === "focus" ? `放大当前栏（${PANE_LABELS[focusPane]}），其余收成竖条` : undefined}
-                className={`rounded px-2.5 py-1 ${preset === p ? "bg-zinc-200 dark:bg-zinc-700" : "text-zinc-500 hover:text-foreground"}`}
+                className={`rounded-[5px] px-2.5 py-1 ${preset === p ? "bg-surface shadow-[0_1px_2px_rgb(15_15_15/0.1)]" : "text-muted hover:text-foreground"}`}
               >
                 {presetLabel(p, hasDoc)}
               </button>
             ))}
           </div>
-          <div className="ml-auto flex min-w-0 items-center gap-4 text-sm">{topRight}</div>
+          <div className="ml-auto flex min-w-0 items-center gap-1 text-sm">{topRight}</div>
         </header>
 
         <div className="flex min-h-0 flex-1">
@@ -278,11 +279,11 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
                 onPointerDownCapture={() => setLastPane(p)}
                 style={{ flexGrow: layout.weights[p], flexBasis: 0 }}
                 className={`min-w-0 flex-col ${layout.collapsed[p] ? "lg:hidden" : "lg:flex"} ${layout.mobile === p ? "max-lg:flex" : "max-lg:hidden"} lg:min-w-[280px] ${p === "doc" ? "animate-pane-in" : ""} ${
-                  p !== "work" ? "lg:border-l border-zinc-200 dark:border-zinc-800" : ""
-                }`}
+                  p !== "work" ? "lg:border-l border-line" : ""
+                } ${p === "ai" ? "bg-panel" : ""}`}
                 aria-label={PANE_LABELS[p]}
               >
-                <div className="flex h-10 shrink-0 items-center gap-1 border-b border-zinc-200 pl-2 pr-1 dark:border-zinc-800">
+                <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line pl-2 pr-1">
                   <div className="min-w-0 flex-1">{header[p]}</div>
                   <PaneControls only={open.length === 1} onMax={() => choosePresetFor(p)} onRestore={() => choosePreset("three")} onCollapse={() => setLayout((l) => collapsePane(l, p, hasDoc))} />
                 </div>
@@ -294,21 +295,21 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
                   aria-orientation="vertical"
                   title="拖动调整宽度"
                   onPointerDown={(e) => startDrag(e, p, nextOpen(p)!)}
-                  className="relative z-10 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none lg:block hover:bg-zinc-300/50 dark:hover:bg-zinc-700/50"
+                  className="relative z-10 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none lg:block hover:bg-accent/20"
                 />
               )}
             </Fragment>
           ))}
         </div>
 
-        <nav className="flex shrink-0 border-t border-zinc-200 lg:hidden dark:border-zinc-800">
+        <nav className="flex shrink-0 border-t border-line lg:hidden">
           {shown.map((p) => {
             const badge = badgeOf(p);
             return (
               <button
                 key={p}
                 onClick={() => setLayout((l) => ({ ...l, mobile: p }))}
-                className={`relative flex-1 py-2.5 text-sm ${layout.mobile === p ? "font-medium" : "text-zinc-500"}`}
+                className={`relative flex-1 py-2.5 text-sm ${layout.mobile === p ? "font-medium" : "text-muted"}`}
               >
                 {PANE_LABELS[p]}
                 {layout.mobile !== p && badge ? <BadgeDot badge={badge} className="ml-1" /> : null}
@@ -327,7 +328,7 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
 }
 
 function PaneControls({ only, onMax, onRestore, onCollapse }: { only: boolean; onMax: () => void; onRestore: () => void; onCollapse: () => void }) {
-  const cls = "rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-foreground dark:hover:bg-zinc-800";
+  const cls = "rounded px-1.5 py-0.5 text-xs text-muted hover:bg-subtle hover:text-foreground";
   return (
     <div className="hidden shrink-0 items-center lg:flex">
       {only ? (
@@ -353,8 +354,8 @@ function Rail({ pane, badge, onOpen }: { pane: PaneId; badge: Badge; onOpen: () 
     <button
       onClick={onOpen}
       title={`展开${PANE_LABELS[pane]}`}
-      className={`hidden w-[52px] shrink-0 flex-col items-center gap-2 py-3 text-sm text-zinc-500 hover:bg-zinc-50 hover:text-foreground lg:flex dark:hover:bg-zinc-900 ${
-        pane !== "work" ? "border-l border-zinc-200 dark:border-zinc-800" : ""
+      className={`hidden w-[52px] shrink-0 flex-col items-center gap-2 py-3 text-sm text-muted hover:bg-subtle hover:text-foreground lg:flex ${
+        pane !== "work" ? "border-l border-line" : ""
       }`}
     >
       {badge ? <BadgeDot badge={badge} /> : null}
@@ -363,10 +364,19 @@ function Rail({ pane, badge, onOpen }: { pane: PaneId; badge: Badge; onOpen: () 
   );
 }
 
+/** 品牌标志：蓝底白字的 G */
+export function LogoMark({ className = "" }: { className?: string }) {
+  return (
+    <span aria-hidden className={`grid size-[22px] shrink-0 place-items-center rounded-[5px] bg-primary text-xs font-bold text-on-primary ${className}`}>
+      G
+    </span>
+  );
+}
+
 function BadgeDot({ badge, className = "" }: { badge: Badge; className?: string }) {
   if (typeof badge === "number")
-    return <span className={`inline-flex min-w-5 justify-center rounded-full bg-zinc-200 px-1.5 text-xs tabular-nums text-foreground dark:bg-zinc-700 ${className}`}>{badge}</span>;
-  return <span className={`inline-block size-2 rounded-full bg-blue-600 ${className}`} aria-label="有新内容" />;
+    return <span className={`inline-flex min-w-5 justify-center rounded-full bg-subtle-strong px-1.5 text-xs tabular-nums text-foreground ${className}`}>{badge}</span>;
+  return <span className={`inline-block size-2 rounded-full bg-accent ${className}`} aria-label="有新内容" />;
 }
 
 // 日历并进了主页，不再单独一个标签
@@ -386,7 +396,7 @@ function WorkTabs({ pathname }: { pathname: string }) {
           <Link
             key={t.href}
             href={t.href}
-            className={`shrink-0 rounded px-2 py-1 ${active ? "bg-zinc-200 font-medium dark:bg-zinc-700" : "text-zinc-500 hover:text-foreground"}`}
+            className={`shrink-0 rounded-md px-2.5 py-1 ${active ? "bg-subtle font-medium" : "text-muted hover:bg-subtle hover:text-foreground"}`}
           >
             {t.label}
           </Link>
@@ -410,19 +420,19 @@ function DocTabBar({ tabs, onActivate, onClose }: { tabs: Tabs; onActivate: (key
             key={key}
             role="tab"
             aria-selected={active}
-            className={`group flex max-w-48 shrink-0 items-center rounded ${active ? "bg-zinc-200 dark:bg-zinc-700" : "text-zinc-500 hover:text-foreground"}`}
+            className={`group flex max-w-48 shrink-0 items-center rounded-md ${active ? "bg-subtle font-medium" : "text-muted hover:bg-subtle hover:text-foreground"}`}
           >
             <button onClick={() => onActivate(key)} className="flex min-w-0 items-center gap-1.5 py-1 pl-2" title={t.kind === "web" ? t.url : t.title}>
-              <span className="text-[10px] text-zinc-400">{TAB_ICONS[t.kind]}</span>
+              <span className="text-[10px] text-faint">{TAB_ICONS[t.kind]}</span>
               <span className="truncate">{t.title || "（无标题）"}</span>
             </button>
-            <button onClick={() => onClose(key)} className="px-1.5 py-1 text-zinc-400 hover:text-foreground" aria-label={`关闭 ${t.title}`}>
+            <button onClick={() => onClose(key)} className="px-1.5 py-1 text-faint hover:text-foreground" aria-label={`关闭 ${t.title}`}>
               ×
             </button>
           </div>
         );
       })}
-      {tabs.tabs.length >= MAX_TABS && <span className="self-center px-1 text-xs text-zinc-400">最多 {MAX_TABS} 个</span>}
+      {tabs.tabs.length >= MAX_TABS && <span className="self-center px-1 text-xs text-faint">最多 {MAX_TABS} 个</span>}
     </div>
   );
 }

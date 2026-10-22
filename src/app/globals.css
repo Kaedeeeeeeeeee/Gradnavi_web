@@ -1,30 +1,188 @@
 @import "tailwindcss";
 
+/*
+ * 设计 token：所有页面只用这里的语义颜色（text-muted、border-line、bg-primary…），
+ * 不直接写 zinc-500 这类色值；深色模式只在这里换值，组件里不写 dark: 颜色。
+ */
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #37352f;
+  --surface: #ffffff;
+  --panel: #fbfbfa;
+  --subtle: #f1f1ef;
+  --subtle-strong: #e8e7e4;
+  --muted: #787774;
+  --faint: #a5a4a0;
+  --line: #ededeb;
+  --line-strong: #dfdedb;
+  --accent: #2383e2;
+  --primary: #2383e2;
+  --primary-hover: #1b72c9;
+  --on-primary: #ffffff;
+  --info: #1f6fb8;
+  --info-soft: #e7f1fb;
+  --ok: #2f7d4f;
+  --ok-soft: #e6f3eb;
+  --warn: #a8620a;
+  --warn-soft: #fbf0dc;
+  --danger: #d4403a;
+  --danger-soft: #fdeceb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #191919;
+    --foreground: #e3e2df;
+    --surface: #202020;
+    --panel: #1d1d1d;
+    --subtle: #2a2a29;
+    --subtle-strong: #353533;
+    --muted: #9b9a97;
+    --faint: #6f6e6b;
+    --line: #2c2c2b;
+    --line-strong: #3a3a38;
+    --accent: #4c9eeb;
+    --primary: #2f86dd;
+    --primary-hover: #4a96e4;
+    --on-primary: #ffffff;
+    --info: #6cb0ee;
+    --info-soft: #1d2a36;
+    --ok: #6cc18f;
+    --ok-soft: #1c2b22;
+    --warn: #e2a54c;
+    --warn-soft: #34291a;
+    --danger: #ef7a73;
+    --danger-soft: #3a2120;
+    color-scheme: dark;
+  }
 }
 
 /* 不使用 Google Fonts 等境外字体服务，全部用系统字体 */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-panel: var(--panel);
+  --color-subtle: var(--subtle);
+  --color-subtle-strong: var(--subtle-strong);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", "Noto Sans CJK SC", "Hiragino Sans", "Noto Sans JP", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/*
+ * 共用组件样式（Notion 式：边框很淡、几乎不用阴影、靠留白和字号分层）。
+ * 放在 components 层，页面上写的 px-/py-/text- 等工具类可以覆盖尺寸。
+ */
+@layer components {
+  .btn,
+  .btn-primary,
+  .btn-ghost {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 120ms, border-color 120ms, color 120ms;
+  }
+  .btn {
+    border-color: var(--line-strong);
+    background: var(--surface);
+    color: var(--foreground);
+    box-shadow: 0 1px 1px rgb(15 15 15 / 0.04);
+  }
+  .btn:hover:not(:disabled) {
+    background: var(--subtle);
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: var(--on-primary);
+    font-weight: 500;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--primary-hover);
+  }
+  .btn-ghost {
+    color: var(--muted);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--subtle);
+    color: var(--foreground);
+  }
+  :is(.btn, .btn-primary, .btn-ghost):disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+  :is(.btn, .btn-primary, .btn-ghost, .input):focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    outline-offset: 1px;
+  }
+
+  .input {
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--foreground);
+    outline: none;
+    transition: border-color 120ms, box-shadow 120ms;
+  }
+  .input::placeholder {
+    color: var(--faint);
+  }
+  .input:focus,
+  .input:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+    outline: none;
+  }
+
+  /* 页面标题：像 Notion 的页面名，大而粗 */
+  .page-title {
+    font-size: 1.75rem;
+    line-height: 1.25;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  /* 小标题：灰色小字，像 Notion 侧栏的分组名 */
+  .section-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
 }
 
 /* 文书编辑器正文（日文文书：明朝体优先，落到系统字体） */
@@ -58,16 +216,16 @@ body {
   padding-left: 1.5em;
 }
 .doc-prose blockquote {
-  border-left: 3px solid #d4d4d8;
+  border-left: 3px solid var(--line-strong);
   padding-left: 1em;
-  color: #71717a;
+  color: var(--muted);
 }
 .doc-prose code {
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
 .doc-prose hr {
-  border-color: #d4d4d8;
+  border-color: var(--line-strong);
 }
 
 /* 文稿栏按需滑入（三栏外壳） */
@@ -87,18 +245,18 @@ body {
   border-bottom: 2px solid transparent;
 }
 .doc-mark-suggestion {
-  background: rgb(16 185 129 / 0.12);
-  border-bottom-color: rgb(16 185 129 / 0.7);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--ok) 70%, transparent);
 }
 .doc-mark-comment {
-  background: rgb(245 158 11 / 0.14);
-  border-bottom-color: rgb(245 158 11 / 0.7);
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--warn) 70%, transparent);
 }
 .doc-mark-active.doc-mark-suggestion {
-  background: rgb(16 185 129 / 0.32);
+  background: color-mix(in srgb, var(--ok) 32%, transparent);
 }
 .doc-mark-active.doc-mark-comment {
-  background: rgb(245 158 11 / 0.36);
+  background: color-mix(in srgb, var(--warn) 36%, transparent);
 }
 
 /* 中文对照：编辑器排成两栏，每段日文后面的中文格子落在右栏同一行 */
@@ -124,25 +282,14 @@ body {
   font-family: var(--font-sans), sans-serif;
   font-size: 0.875rem;
   line-height: 1.85;
-  color: #52525b;
+  color: var(--muted);
   user-select: none;
 }
 .zh-cell .zh-stale {
-  color: #a1a1aa;
+  color: var(--faint);
 }
 .zh-cell .zh-action {
   font-size: 0.75rem;
-  color: #2563eb;
+  color: var(--accent);
   text-decoration: underline;
-}
-@media (prefers-color-scheme: dark) {
-  .zh-on .doc-prose > .zh-cell {
-    color: #a1a1aa;
-  }
-  .zh-cell .zh-stale {
-    color: #71717a;
-  }
-  .zh-cell .zh-action {
-    color: #60a5fa;
-  }
 }

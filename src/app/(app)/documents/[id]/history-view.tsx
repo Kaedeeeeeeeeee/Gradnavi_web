@@ -71,8 +71,8 @@ export function HistoryView({ docId, current, flush, onClose }: Props) {
     <div className="space-y-3" data-testid="history-view">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="font-medium">版本历史</span>
-        <span className="text-zinc-500">停手 30 分钟、审阅改完、导出 PDF、复制套磁信时会自动存一版</span>
-        <button onClick={onClose} className="ml-auto rounded-md border border-zinc-300 px-3 py-1 dark:border-zinc-700">
+        <span className="text-muted">停手 30 分钟、审阅改完、导出 PDF、复制套磁信时会自动存一版</span>
+        <button onClick={onClose} className="btn ml-auto px-3 py-1">
           回到编辑
         </button>
       </div>
@@ -91,16 +91,16 @@ export function HistoryView({ docId, current, flush, onClose }: Props) {
           onChange={(e) => setName(e.target.value)}
           maxLength={60}
           placeholder="给当前内容存一版，可起个名字，如「发给佐藤教授的版本」"
-          className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-1.5 outline-none focus:border-zinc-500 dark:border-zinc-700"
+          className="input min-w-0 flex-1 px-3 py-1.5"
         />
-        <button disabled={pending} className="rounded-md bg-foreground px-3 py-1.5 text-background disabled:opacity-40">
+        <button disabled={pending} className="btn-primary px-3 py-1.5">
           存一版
         </button>
       </form>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {!versions ? (
-        <p className="text-sm text-zinc-500">加载中…</p>
+        <p className="text-sm text-muted">加载中…</p>
       ) : (
         <div className="flex flex-col gap-4 @2xl:flex-row">
           <ol className="max-h-[60vh] shrink-0 space-y-1 overflow-y-auto text-sm @2xl:w-64">
@@ -117,16 +117,16 @@ export function HistoryView({ docId, current, flush, onClose }: Props) {
                 meta={`${fmt.format(new Date(v.createdAt))} · ${VERSION_TRIGGER_LABELS[v.trigger]}`}
               />
             ))}
-            {!versions.length && !dirty && <li className="text-zinc-500">还没有版本。</li>}
+            {!versions.length && !dirty && <li className="text-muted">还没有版本。</li>}
           </ol>
 
           <div className="min-w-0 flex-1 space-y-2">
-            <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
               <span>{pair?.label}</span>
-              <span className="text-emerald-700 dark:text-emerald-400">+{stats.added}</span>
-              <span className="text-red-600">−{stats.removed}</span>
+              <span className="text-ok">+{stats.added}</span>
+              <span className="text-danger">−{stats.removed}</span>
               {sel && (
-                <select value={compareTo} onChange={(e) => setCompareTo(e.target.value as "prev" | "current")} className="rounded border border-zinc-300 bg-transparent px-1 py-0.5 dark:border-zinc-700">
+                <select value={compareTo} onChange={(e) => setCompareTo(e.target.value as "prev" | "current")} className="rounded border border-line-strong bg-transparent px-1 py-0.5">
                   <option value="prev">和上一版比</option>
                   <option value="current">和当前比</option>
                 </select>
@@ -136,7 +136,7 @@ export function HistoryView({ docId, current, flush, onClose }: Props) {
                 中文对照
               </label>
             </div>
-            <DiffText parts={parts} className="max-h-[60vh] overflow-y-auto rounded-md border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800" />
+            <DiffText parts={parts} className="max-h-[60vh] overflow-y-auto rounded-md border border-line px-4 py-3 text-sm" />
             {sel && (
               <div className="flex flex-wrap gap-2 text-sm">
                 <button
@@ -145,7 +145,7 @@ export function HistoryView({ docId, current, flush, onClose }: Props) {
                     if (!confirm(`恢复到第 ${sel.number} 版？当前内容会先存成一版，不会丢。`)) return;
                     run(() => restoreVersionAction(docId, sel.number), onClose);
                   }}
-                  className="rounded-md bg-foreground px-3 py-1.5 text-background disabled:opacity-40"
+                  className="btn-primary px-3 py-1.5"
                 >
                   恢复到这一版
                 </button>
@@ -155,7 +155,7 @@ export function HistoryView({ docId, current, flush, onClose }: Props) {
                     const n = prompt("给这一版起个名字", sel.name ?? "");
                     if (n !== null) run(() => renameVersionAction(docId, sel.number, n));
                   }}
-                  className="rounded-md border border-zinc-300 px-3 py-1.5 disabled:opacity-40 dark:border-zinc-700"
+                  className="btn px-3 py-1.5"
                 >
                   {sel.name ? "改名" : "命名"}
                 </button>
@@ -173,11 +173,11 @@ function TimelineItem({ active, onClick, title, sub, meta }: { active: boolean; 
     <li>
       <button
         onClick={onClick}
-        className={`w-full rounded-md border-l-2 px-3 py-2 text-left ${active ? "border-foreground bg-zinc-100 dark:bg-zinc-800" : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"}`}
+        className={`w-full rounded-md border-l-2 px-3 py-2 text-left ${active ? "border-primary bg-subtle" : "border-line hover:bg-subtle"}`}
       >
         <div className="font-medium">{title}</div>
-        <div className="text-xs text-zinc-600 dark:text-zinc-400">{sub}</div>
-        {meta && <div className="text-xs text-zinc-400">{meta}</div>}
+        <div className="text-xs text-muted">{sub}</div>
+        {meta && <div className="text-xs text-faint">{meta}</div>}
       </button>
     </li>
   );
