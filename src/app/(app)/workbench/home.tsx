@@ -8,7 +8,7 @@ import { btn, formatDay, ProposalButtons, StartButton, StatusSelect } from "@/co
 import { CALENDAR_KIND_LABELS, CALENDAR_KINDS, itemsOn, monthGrid, shiftMonth, type CalendarItem, type CalendarKind } from "@/lib/calendar";
 import { AGENDA_DAYS, type AgendaRow, type Countdown, type TaskView } from "@/lib/tasks";
 import type { GuideChange } from "@/lib/admissions";
-import { acceptAllProposalsAction, addEventAction, addTaskAction, deleteEventAction, setTaskStatusAction } from "./actions";
+import { acceptAllProposalsAction, addEventAction, addTaskAction, deleteEventAction, setTaskStatusAction, updateEventAction } from "./actions";
 
 export type HomeTask = TaskView & {
   /** 这个任务已经有对话（按钮显示「继续和 AI 做」） */
@@ -282,7 +282,7 @@ function Agenda({ near, far, done, today }: { near: AgendaRow<HomeTask>[]; far: 
 /** 左边一列日期：任务是截止日（没有就空着），日程是当天或起止 */
 function DateCell({ date, endDate, today, overdue = false }: { date: string | null; endDate?: string | null; today: string; overdue?: boolean }) {
   return (
-    <span className={`w-14 shrink-0 pt-px text-xs tabular-nums ${overdue ? "text-danger" : date === today ? "font-medium text-accent" : "text-muted"}`}>
+    <span className={`w-24 shrink-0 whitespace-nowrap pt-px text-xs tabular-nums ${overdue ? "text-danger" : date === today ? "font-medium text-accent" : "text-muted"}`}>
       {!date ? <span className="text-faint">—</span> : date === today && !endDate ? "今天" : formatRange(date, endDate)}
     </span>
   );
@@ -488,6 +488,24 @@ function EventRow({ item: it, today }: { item: CalendarItem; today: string }) {
   const [pending, startTransition] = useTransition();
   const proposalKind = it.source === "todo" ? "task" : it.source === "event" ? "event" : it.source === "professor" ? "professor" : null;
   const isProposal = it.proposed || it.proposedChange;
+  const [editing, setEditing] = useState(false);
+  if (editing && it.sourceId) {
+    const id = it.sourceId;
+    return (
+      <li className="py-2.5">
+        <EventForm
+          initial={{ title: it.title, date: it.date, endDate: it.endDate ?? "", kind: it.kind, note: it.note ?? "" }}
+          submitLabel="保存"
+          onSubmit={async (form) => {
+            const res = await updateEventAction(id, form);
+            if (res.ok) setEditing(false);
+            return res;
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      </li>
+    );
+  }
   return (
     <li className="group flex items-start gap-3 py-2.5 text-sm">
       <DateCell date={it.date} endDate={it.endDate} today={today} />
@@ -506,13 +524,14 @@ function EventRow({ item: it, today }: { item: CalendarItem; today: string }) {
           {it.sourceUrl && <SourceLink url={it.sourceUrl} />}
         </span>
         {it.source === "event" && it.sourceId && !isProposal && (
-          <button
-            disabled={pending}
-            onClick={() => startTransition(() => deleteEventAction(it.sourceId!))}
-            className="text-xs text-faint opacity-0 group-hover:opacity-100 hover:text-danger"
-          >
-            删除
-          </button>
+          <span className="flex shrink-0 gap-2 text-xs text-faint opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+            <button onClick={() => setEditing(true)} className="hover:text-foreground">
+              编辑
+            </button>
+            <button disabled={pending} onClick={() => startTransition(() => deleteEventAction(it.sourceId!))} className="hover:text-danger">
+              删除
+            </button>
+          </span>
         )}
       </div>
       {it.note && <p className="text-xs text-muted">{it.note}</p>}
@@ -529,10 +548,36 @@ function EventRow({ item: it, today }: { item: CalendarItem; today: string }) {
 
 const input = "input w-full px-3 py-1.5 text-sm";
 
+type EventFormValues = { title: string; date: string; endDate: string; kind: CalendarKind; note: string };
+
 function AddEventForm({ defaultDate }: { defaultDate: string }) {
+  return (
+    <EventForm
+      initial={{ title: "", date: defaultDate, endDate: "", kind: "other", note: "" }}
+      submitLabel="添加"
+      resetAfterSubmit
+      onSubmit={(form) => addEventAction(form)}
+    />
+  );
+}
+
+/** 添加和编辑日程共用的表单 */
+function EventForm({
+  initial,
+  submitLabel,
+  resetAfterSubmit = false,
+  onSubmit,
+  onCancel,
+}: {
+  initial: EventFormValues;
+  submitLabel: string;
+  resetAfterSubmit?: boolean;
+  onSubmit: (form: EventFormValues) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onCancel?: () => void;
+}) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({ title: "", date: defaultDate, endDate: "", kind: "other" as CalendarKind, note: "" });
+  const [form, setForm] = useState(initial);
 
   return (
     <form
@@ -540,14 +585,14 @@ function AddEventForm({ defaultDate }: { defaultDate: string }) {
         e.preventDefault();
         setError(null);
         startTransition(async () => {
-          const res = await addEventAction(form);
-          if (res.ok) setForm((f) => ({ ...f, title: "", endDate: "", note: "" }));
-          else setError(res.error);
+          const res = await onSubmit(form);
+          if (!res.ok) setError(res.error);
+          else if (resetAfterSubmit) setForm((f) => ({ ...f, title: "", endDate: "", note: "" }));
         });
       }}
       className="mt-2 space-y-2 rounded-xl bg-subtle p-3"
     >
-      <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="标题，如 JLPT N1 考试" className={input} />
+      <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="标题，如 JLPT N1 考试" className={input} autoFocus={!!onCancel} />
       <div className="flex gap-2">
         <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={`${input} min-w-0`} required />
         <input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} className={`${input} min-w-0`} title="结束日期（可选）" />
@@ -561,9 +606,16 @@ function AddEventForm({ defaultDate }: { defaultDate: string }) {
       </select>
       <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="备注（可选）" className={input} />
       {error && <p className="text-xs text-danger">{error}</p>}
-      <button type="submit" disabled={pending} className="btn-primary px-3 py-1.5">
-        {pending ? "添加中…" : "添加"}
-      </button>
+      <div className="flex gap-2">
+        <button type="submit" disabled={pending} className="btn-primary px-3 py-1.5">
+          {pending ? `${submitLabel}中…` : submitLabel}
+        </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="btn-ghost px-3 py-1.5">
+            取消
+          </button>
+        )}
+      </div>
     </form>
   );
 }
