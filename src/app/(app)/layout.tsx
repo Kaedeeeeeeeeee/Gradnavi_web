@@ -4,6 +4,7 @@ import { AiPane } from "@/components/ai/ai-pane";
 import { AiPageContextProvider } from "@/components/ai/page-context";
 import { AppShell } from "@/components/shell/app-shell";
 import { renderDocTab } from "@/components/shell/doc-tab";
+import { UserMenu } from "@/components/shell/user-menu";
 import { isDemoMode } from "@/lib/ai/model";
 import { requireUser } from "@/lib/session";
 import { activeTab, LAYOUT_COOKIE, parseLayout, parseTabs, TABS_COOKIE } from "@/lib/shell";
@@ -35,25 +36,26 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   const messages = conversation ? await loadMessages(conversation.id) : [];
 
-  const link = "shrink-0 rounded-md px-2 py-1 text-muted hover:bg-subtle hover:text-foreground";
+  // 顶栏右边：credit 和「我的」菜单（AI 对你的了解、反馈、退出登录等）；宽屏上前两个也直接显示
   const topRight = (
     <>
-      <Link href="/profile" className={link}>
-        AI 对你的了解
+      <Link
+        href="/credits"
+        className={`shrink-0 rounded-md px-2 py-1 tabular-nums hover:bg-subtle hover:text-foreground ${balance <= 0 ? "text-danger" : "text-muted"}`}
+      >
+        {balance.toLocaleString()}
+        <span className="max-sm:hidden"> credit</span>
       </Link>
-      <Link href="/feedback" className={link}>
-        反馈
-      </Link>
-      {isAdminEmail(user.email) && (
-        <Link href="/admin" className={link}>
-          管理
-        </Link>
-      )}
-      <Link href="/credits" className={`shrink-0 rounded-md px-2 py-1 tabular-nums hover:bg-subtle hover:text-foreground ${balance <= 0 ? "text-danger" : "text-muted"}`}>
-        {balance.toLocaleString()} credit
-      </Link>
-      <span className="hidden truncate px-2 text-faint xl:inline">{user.email}</span>
-      <SignOutButton />
+      <UserMenu
+        email={user.email}
+        items={[
+          { href: "/profile", label: "AI 对你的了解", inline: true },
+          { href: "/feedback", label: "反馈", inline: true },
+          { href: "/credits", label: "credit 明细" },
+          ...(isAdminEmail(user.email) ? [{ href: "/admin", label: "管理" }] : []),
+        ]}
+        signOut={<SignOutButton />}
+      />
     </>
   );
 

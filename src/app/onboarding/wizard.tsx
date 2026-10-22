@@ -93,7 +93,8 @@ export function OnboardingWizard({ questions }: { questions: Question[] }) {
             {current.hint && <p className="mt-1 text-sm text-muted">{current.hint}</p>}
           </div>
 
-          <div className="grid gap-2">
+          {/* 选项多（如专业 11 项）时宽屏排两列，不用往下翻 */}
+          <div className={`grid gap-2 ${current.options.length > 6 ? "sm:grid-cols-2" : ""}`}>
             {current.options.map((o) => (
               <button
                 key={o.value}

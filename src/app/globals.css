@@ -195,6 +195,63 @@ body {
     padding: 0.5rem 1rem;
   }
 
+  /*
+   * 待办和日程的一行。按所在板块的宽度（容器查询，不按屏幕宽度）切换：
+   * - 窄（三栏模式的左栏、手机）：两层，上面「标题 + 状态」占满整行，下面一行小字放日期、关联对象和按钮
+   * - 宽：单行，左边一列日期，右边按钮和状态
+   * 外层板块要加 @container。
+   */
+  .agenda-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title status"
+      "meta action";
+    align-items: start;
+    column-gap: 0.75rem;
+  }
+  .agenda-row > .ar-date {
+    display: none;
+    grid-area: date;
+  }
+  .agenda-row > .ar-title {
+    grid-area: title;
+  }
+  .agenda-row > .ar-status {
+    grid-area: status;
+  }
+  .agenda-row > .ar-meta {
+    grid-area: meta;
+    align-self: center;
+  }
+  .agenda-row > .ar-action {
+    grid-area: action;
+    justify-self: end;
+  }
+  .agenda-row > :is(.ar-meta, .ar-action):not(:empty) {
+    margin-top: 0.25rem;
+  }
+  @container (min-width: 36rem) {
+    .agenda-row {
+      grid-template-columns: 6rem minmax(0, 1fr) auto auto;
+      grid-template-areas:
+        "date title action status"
+        "date meta . .";
+    }
+    .agenda-row > .ar-date {
+      display: block;
+    }
+    .agenda-row .ar-inline-date {
+      display: none;
+    }
+    .agenda-row > .ar-meta:not(:empty) {
+      margin-top: 0.125rem;
+    }
+    .agenda-row > .ar-action:not(:empty) {
+      margin-top: 0;
+    }
+  }
+
   /* 页面标题：像 Notion 的页面名，大而粗 */
   .page-title {
     font-size: 1.75rem;

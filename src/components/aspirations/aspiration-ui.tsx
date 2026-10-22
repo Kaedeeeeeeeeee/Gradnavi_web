@@ -4,7 +4,9 @@ import { useState, useTransition } from "react";
 import { updateProfessorAction } from "@/app/(app)/professors/actions";
 import { useAskAi } from "@/components/ai/page-context";
 import { OpenTabLink } from "@/components/shell/app-shell";
+import { DateInput } from "@/components/ui/date-input";
 import { btn, formatDay, ProposalButtons } from "@/components/tasks/task-ui";
+import { formatDate } from "@/lib/calendar";
 import { contactLabel, languageLabel, type AspirationView, type ProfessorView, type SchoolView } from "@/lib/aspirations";
 import { CONTACT_FLOW, PROFESSOR_STATUS_LABELS, type PaperRef, type ProfessorStatus } from "@/lib/professors";
 
@@ -114,7 +116,7 @@ export function SchoolFacts({ school }: { school: SchoolView }) {
       <Fact label="出愿截止">
         {school.deadline ? (
           <>
-            <span className="tabular-nums">{school.deadline.date}</span>
+            <span className="tabular-nums">{formatDate(school.deadline.date)}</span>
             {school.deadline.tentative && <Tentative />}
           </>
         ) : (
@@ -151,12 +153,13 @@ export function FollowUp({ professor }: { professor: Pick<ProfessorView, "id" | 
     <span className="flex flex-wrap items-center gap-2 text-xs text-muted">
       <label className="flex items-center gap-1">
         跟进日
-        <input
-          type="date"
+        <DateInput
           value={professor.followUpDate ?? ""}
           disabled={pending}
-          onChange={(e) => startTransition(() => updateProfessorAction(professor.id, { followUpDate: e.target.value || null }))}
-          className="rounded border border-line-strong bg-transparent px-1 py-0.5 text-xs text-foreground"
+          onChange={(v) => startTransition(() => updateProfessorAction(professor.id, { followUpDate: v || null }))}
+          placeholder="未定"
+          clearable
+          className="rounded border border-line-strong px-1 py-0.5 text-xs text-foreground"
         />
       </label>
       {proposal && (

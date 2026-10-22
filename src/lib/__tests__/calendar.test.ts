@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addDays, isIsoDate, itemsOn, monthGrid, overlaps, parseMonth, shiftMonth, shiftYears, todayJst, type CalendarItem } from "../calendar";
+import { addDays, formatDate, isIsoDate, itemsOn, monthGrid, overlaps, parseMonth, shiftMonth, shiftYears, todayJst, type CalendarItem } from "../calendar";
 
 test("isIsoDate 拒绝不存在的日期", () => {
   assert.equal(isIsoDate("2026-02-28"), true);
@@ -38,4 +38,9 @@ test("跨天日程在区间内每天都显示", () => {
   assert.equal(itemsOn(items, "2026-11-07").length, 0);
   assert.equal(overlaps("2026-10-30", "2026-11-02", "2026-11-01", "2026-11-30"), true);
   assert.equal(overlaps("2026-10-30", null, "2026-11-01", "2026-11-30"), false);
+});
+
+test("formatDate：全站统一的「10/24 周六」，不是今年的带年份", () => {
+  assert.equal(formatDate("2026-10-24", "2026-10-22"), "10/24 周六");
+  assert.equal(formatDate("2027-01-15", "2026-10-22"), "2027/1/15 周五");
 });

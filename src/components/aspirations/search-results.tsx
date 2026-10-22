@@ -5,6 +5,7 @@ import { addCandidateAction, rejectCandidateAction, undoRejectAction } from "@/a
 import { useAiPageContent, useAskAi } from "@/components/ai/page-context";
 import { useShell } from "@/components/shell/app-shell";
 import { btn, primaryBtn } from "@/components/tasks/task-ui";
+import { formatDate } from "@/lib/calendar";
 import { PROFESSOR_STATUS_LABELS, professorAffiliation, type ProfessorCandidate, type ProfessorStatus } from "@/lib/professors";
 import { PaperList, SourceLinks, Tentative } from "./aspiration-ui";
 
@@ -110,7 +111,7 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
           {c.school.deadline && (
             <>
               {" "}
-              · 出愿截止 {c.school.deadline.date}
+              · 出愿截止 {formatDate(c.school.deadline.date)}
               {c.school.deadline.tentative && <Tentative />}
             </>
           )}

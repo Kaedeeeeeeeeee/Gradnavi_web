@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { deleteTaskAction, setTaskStatusAction, setTaskStepsAction, updateTaskAction } from "@/app/(app)/workbench/actions";
 import { useAiPageContent } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
+import { DateInput } from "@/components/ui/date-input";
 import { uuid } from "@/lib/browser";
 import { TASK_STATUS_LABELS, TASK_STATUSES, type TaskStep, type TaskView } from "@/lib/tasks";
 import { btn, formatDay, ProposalButtons, StartButton } from "./task-ui";
@@ -65,10 +66,11 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-muted">截止</span>
-        <input
-          type="date"
+        <DateInput
           value={task.dueDate ?? ""}
-          onChange={(e) => run(() => updateTaskAction(task.id, { dueDate: e.target.value || null }))}
+          onChange={(v) => run(() => updateTaskAction(task.id, { dueDate: v || null }))}
+          placeholder="未定"
+          clearable
           className={field}
         />
         {task.proposedChange && (

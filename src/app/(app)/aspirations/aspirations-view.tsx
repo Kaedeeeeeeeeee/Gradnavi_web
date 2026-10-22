@@ -5,6 +5,7 @@ import { ContactStepper, Tentative } from "@/components/aspirations/aspiration-u
 import { useAiPageContent, useAskAi } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { btn } from "@/components/tasks/task-ui";
+import { formatDate } from "@/lib/calendar";
 import { aspirationTitle, contactLabel, describeAspiration, languageLabel, type AspirationView } from "@/lib/aspirations";
 import { PROFESSOR_STATUS_LABELS, professorAffiliation } from "@/lib/professors";
 
@@ -100,7 +101,8 @@ function AspirationTile({ a }: { a: AspirationView }) {
   const open = () => (p ? openTab({ kind: "professor", id: p.id, title: p.name }) : openTab({ kind: "school", id: s!.id, title: `${s!.university} ${s!.name}` }));
   return (
     <li className={`card flex flex-col ${p?.status === "dropped" ? "opacity-60" : ""}`}>
-      <button onClick={open} className="flex-1 space-y-2 p-4 text-left hover:bg-subtle">
+      {/* button 默认把内容垂直居中，内容少的卡片名字会往下掉；改成从顶部排 */}
+      <button onClick={open} className="flex flex-1 flex-col justify-start gap-2 p-4 text-left hover:bg-subtle">
         <div>
           <div className="font-medium">{p ? p.name : `${s!.university} ${s!.name}`}</div>
           <div className="text-xs text-muted">{p ? (s ? `${s.university} ${s.name}` : professorAffiliation(p)) : "只有研究科，还没定教授"}</div>
@@ -109,7 +111,7 @@ function AspirationTile({ a }: { a: AspirationView }) {
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
           {s?.deadline ? (
             <span>
-              出愿截止 <span className="tabular-nums text-foreground">{s.deadline.date}</span>
+              出愿截止 <span className="tabular-nums text-foreground">{formatDate(s.deadline.date)}</span>
               {s.deadline.tentative && <Tentative />}
             </span>
           ) : (
@@ -143,7 +145,7 @@ function CompareTable({ list }: { list: AspirationView[] }) {
       (a) =>
         a.school?.deadline ? (
           <>
-            {a.school.deadline.date}
+            {formatDate(a.school.deadline.date)}
             {a.school.deadline.tentative && <Tentative />}
           </>
         ) : (
