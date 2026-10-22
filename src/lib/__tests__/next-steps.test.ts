@@ -54,8 +54,9 @@ test("收藏教授后按状态推进：计划书 → 套磁信 → 跟进 → �
   assert.deepEqual(openKeys(s), ["find_professors", key("school"), key("plan")]);
   assert.equal(planNextSteps(s).open[1].title, "查清山田太郎教授所在研究科怎么考");
   assert.equal(planNextSteps(s).open[2].title, "结合山田太郎教授的研究方向写计划书草稿");
-  // 关联了研究科：这一步达成
-  assert.ok(planNextSteps(state({ professors: [{ ...prof, schoolId: "s1" }] })).done.includes(key("school")));
+  // 只关联了研究科还不算；记下入试要点才达成
+  assert.ok(!planNextSteps(state({ professors: [{ ...prof, schoolId: "s1" }] })).done.includes(key("school")));
+  assert.ok(planNextSteps(state({ professors: [{ ...prof, schoolId: "s1", schoolKnown: true }] })).done.includes(key("school")));
 
   s = state({ schoolCount: 1, professors: [prof], documents: [{ id: "d1", kind: "plan", professorId: "p1" }, { id: "l1", kind: "letter", professorId: "p1" }] });
   let plan = planNextSteps(s);
@@ -68,13 +69,13 @@ test("收藏教授后按状态推进：计划书 → 套磁信 → 跟进 → �
   assert.ok(plan.done.includes(key("plan")) && plan.done.includes(key("letter")));
   assert.equal(plan.open.find((t) => t.key === key("followup"))?.note, "跟进日：2026-11-05");
 
-  plan = planNextSteps(state({ professors: [{ ...prof, status: "replied", schoolId: "s1" }] }));
+  plan = planNextSteps(state({ professors: [{ ...prof, status: "replied", schoolId: "s1", schoolKnown: true }] }));
   assert.ok(plan.done.includes(key("followup")));
   assert.deepEqual(plan.open.map((t) => t.key), ["find_professors", key("reply"), "application"]);
 
   assert.ok(openKeys(state({ professors: [{ ...prof, status: "interview" }] })).includes(key("interview")));
   // 同意接收：面谈这一步也算做完，进入出愿准备
-  plan = planNextSteps(state({ professors: [{ ...prof, status: "accepted", schoolId: "s1" }] }));
+  plan = planNextSteps(state({ professors: [{ ...prof, status: "accepted", schoolId: "s1", schoolKnown: true }] }));
   assert.ok(plan.done.includes(key("interview")));
   assert.ok(plan.open.some((t) => t.key === "application"));
 });

@@ -59,3 +59,31 @@ export function toolChipText(name: string, state: "running" | "done" | "failed",
   if (state === "running") return `正在${label.replace(/了|（待你确认）/g, "")}`;
   return label;
 }
+
+/** 一串只读工具调用（检索、读网页、查看志愿……）折叠成一行时的摘要，如「检索 9 次，读了 1 个网页，查看志愿」 */
+export function toolGroupSummary(names: string[]): string {
+  const counts = new Map<string, number>();
+  for (const n of names) counts.set(n, (counts.get(n) ?? 0) + 1);
+  return [...counts]
+    .map(([n, c]) => {
+      if (n === "web_search") return `检索 ${c} 次`;
+      if (n === "fetch_page") return `读了 ${c} 个网页`;
+      const label = TOOL_META[n]?.label ?? n;
+      return c > 1 ? `${label} ${c} 次` : label;
+    })
+    .join("，");
+}
+
+type PartLike = { type: string; text?: string };
+
+const isTool = (p: PartLike) => p.type.startsWith("tool-") || p.type === "dynamic-tool";
+
+/**
+ * AI 这轮没写出结论就结束了：最后一步还在调用工具（步数用完、被停止或出错时循环被打断），或者整轮一个字都没写。
+ * 这时提示用户并给「继续」，不让对话停在一串工具标签上没有下文。
+ */
+export function endedWithoutAnswer(parts: PartLike[]): boolean {
+  if (!parts.some((p) => p.type === "text" && p.text?.trim())) return true;
+  const lastStep = parts.slice(parts.findLastIndex((p) => p.type === "step-start") + 1);
+  return lastStep.some(isTool);
+}

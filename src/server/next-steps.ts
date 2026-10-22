@@ -11,9 +11,9 @@ import { planNextSteps } from "@/lib/next-steps";
  * 只动带 stepKey 的任务；用户和 AI 自己加的 Todo 不碰。
  */
 export async function syncNextSteps(userId: string) {
-  const [[profile], schoolCount, professors, documents, existing] = await Promise.all([
+  const [[profile], watches, professors, documents, existing] = await Promise.all([
     db.select({ answers: userProfile.onboarding, markdown: userProfile.markdown }).from(userProfile).where(eq(userProfile.userId, userId)),
-    db.$count(schoolWatch, eq(schoolWatch.userId, userId)),
+    db.select({ schoolId: schoolWatch.schoolId, requirements: schoolWatch.requirements }).from(schoolWatch).where(eq(schoolWatch.userId, userId)),
     db
       .select({ id: savedProfessor.id, name: savedProfessor.name, status: savedProfessor.status, followUpDate: savedProfessor.followUpDate, schoolId: savedProfessor.schoolId })
       .from(savedProfessor)
@@ -28,11 +28,13 @@ export async function syncNextSteps(userId: string) {
   if (!profile?.answers) return;
 
   const byKey = new Map(existing.map((t) => [t.stepKey!, t]));
+  // 入试要点已经记下的研究科（监控解析或 AI 用 update_school_requirements 写入）
+  const known = new Set(watches.filter((w) => w.requirements).map((w) => w.schoolId));
   const plan = planNextSteps({
     answers: profile.answers,
     scores: profileScores(profile.markdown, profile.answers),
-    schoolCount,
-    professors,
+    schoolCount: watches.length,
+    professors: professors.map((p) => ({ ...p, schoolKnown: !!p.schoolId && known.has(p.schoolId) })),
     documents: documents.map((d) => ({ id: d.id, kind: d.kind, professorId: d.target?.professorId })),
     doneKeys: new Set(existing.filter((t) => t.status === "done").map((t) => t.stepKey!)),
   });

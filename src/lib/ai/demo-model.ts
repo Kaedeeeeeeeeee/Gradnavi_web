@@ -7,6 +7,7 @@ import type { LanguageModelV4, LanguageModelV4Prompt, LanguageModelV4StreamPart 
 //   “提纲” → 在文书编辑器页面时，给当前文书提出一份示例提纲
 //   “找教授：xxx” → 调用 search_professors（返回示例教授）
 //   “日程：2026-12-01 xxx” → 调用 add_calendar_event
+//   “查资料：xxx” → 每步都查看志愿，直到这轮步数用完（测试折叠的查询记录和最后一步的总结）
 //   其他 → 固定回复
 
 // 报一个假用量，方便在演示模式下测试 credit 扣费（每步约 1 credit）
@@ -17,7 +18,13 @@ const usage = {
 
 type Reply = { text: string } | { toolName: string; input: unknown };
 
-export function demoReply(prompt: LanguageModelV4Prompt): Reply {
+export function demoReply(prompt: LanguageModelV4Prompt, toolsOff = false): Reply {
+  const lastUser = prompt.findLast((m) => m.role === "user");
+  const research = lastUser?.role === "user" && lastUser.content.some((p) => p.type === "text" && /^查资料[:：]/.test(p.text.trim()));
+  if (research) {
+    const steps = prompt.slice(prompt.indexOf(lastUser!)).filter((m) => m.role === "tool").length;
+    return toolsOff ? { text: `（演示模式）这轮工具次数用完了。已经查了 ${steps} 次志愿，结论是……还没查清的部分可以说「继续」。` } : { toolName: "list_aspirations", input: {} };
+  }
   const last = prompt.at(-1);
   if (last?.role === "tool") {
     const result = last.content.find((p) => p.type === "tool-result");
@@ -109,8 +116,8 @@ export const demoModel: LanguageModelV4 = {
   provider: "gradnavi-demo",
   modelId: "demo",
   supportedUrls: {},
-  async doGenerate({ prompt }) {
-    const reply = demoReply(prompt);
+  async doGenerate({ prompt, toolChoice }) {
+    const reply = demoReply(prompt, toolChoice?.type === "none");
     return {
       content:
         "text" in reply
@@ -121,7 +128,7 @@ export const demoModel: LanguageModelV4 = {
       warnings: [],
     };
   },
-  async doStream({ prompt }) {
-    return { stream: toStream(demoReply(prompt)) };
+  async doStream({ prompt, toolChoice }) {
+    return { stream: toStream(demoReply(prompt, toolChoice?.type === "none")) };
   },
 };
