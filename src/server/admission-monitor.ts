@@ -1,10 +1,10 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { generateText } from "ai";
-import { and, desc, eq, exists, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { admissionGuide, graduateSchool, schoolWatch, user } from "@/db/schema";
-import { getChatModel, isDemoMode } from "@/lib/ai/model";
+import { getChatModel, getVisionModel, isDemoMode } from "@/lib/ai/model";
 import {
   assertPublicUrl,
   eventsChanged,
@@ -26,16 +26,20 @@ import { shiftYears, todayJst } from "@/lib/calendar";
 import { UsageMeter } from "@/lib/credits";
 import { env } from "@/lib/env";
 import { sendMail } from "@/lib/mail";
-import { recordUsageSafe } from "./credits";
-import { pdfToText } from "./pdf-text";
+import { getBalance, recordUsageSafe } from "./credits";
+import { pdfPageImages, pdfToText } from "./pdf-text";
 import { fetchPage } from "./search";
 import { addTodos } from "./todos";
 
-// 募集要项监控（由 worker 进程调用，系统任务，不扣用户 credit）。
-// 每个研究科：直接抓页面（免费）→ 只对入试相关的行和链接算指纹 → 没变就结束；
-// 变了才调用一次 AI 抽取日程（必要时再抓一次要项 PDF），日程有变化时邮件 + Todo 通知关注的用户。
+// 募集要项监控（由 worker 进程调用）。按用户各自跑：每条关注（用户 × 研究科）单独检查，
+// AI 费用扣这个用户的 credit，解析结果（要项日程、入试要点）只属于这个用户，不和别人共用。
+// 每条关注：直接抓页面（免费）→ 只对入试相关的行和链接算指纹 → 没变就结束；
+// 变了才调用一次 AI 抽取日程（必要时再读一次要项全文，扫描版 PDF 转成图片给 flash 看），日程有变化时邮件 + Todo 通知用户。
+// 用户 credit 用完时暂停这个用户的监控（主页提醒、发一封邮件），补充后下次检查自动恢复。
 
 type School = typeof graduateSchool.$inferSelect;
+type Watch = typeof schoolWatch.$inferSelect;
+export type WatchTarget = { watch: Watch; school: School; email: string };
 
 export type CheckResult = { status: "unchanged" | "updated" | "new_year" | "baseline" | "no_dates" | "skipped" | "error"; message?: string };
 
@@ -46,6 +50,12 @@ const MAX_PDF_BYTES = 20_000_000;
 const PROMPT_TEXT_LIMIT = 12_000;
 /** 募集要项全文（PDF 常有几十页，考试科目、事先联系的要求在中间）：读得多一些，只在页面有变化时读一次 */
 const GUIDE_TEXT_LIMIT = 45_000;
+/** 扫描版 PDF 最多看前几页（日程、科目、出愿资格一般在前面）；每页最多算 1024 个 token */
+const SCAN_MAX_PAGES = 30;
+export const PAUSED_MESSAGE = "credit 用完了，募集要项监控已暂停；补充 credit 后会自动恢复";
+
+/** 要项内容：取得到文字就给文字；扫描版 PDF 给页面图片 */
+type GuideSource = { text: string } | { images: Uint8Array[] };
 
 type LoadedPage = { kind: "html"; text: string; links: PageLink[]; fingerprint: string } | { kind: "pdf"; data: Buffer; fingerprint: string };
 
@@ -111,26 +121,39 @@ ${source.slice(0, limit)}
 ${linkList ? `\n链接：\n${linkList}` : ""}`;
 }
 
-async function askGuide(school: School, source: string, links: PageLink[], meter: UsageMeter, limit = PROMPT_TEXT_LIMIT): Promise<ParsedGuide | null> {
-  const { text, totalUsage } = await generateText({ model: getChatModel(), prompt: extractionPrompt(school, source, links, limit) });
+async function askGuide(school: School, source: GuideSource, links: PageLink[], meter: UsageMeter, limit = PROMPT_TEXT_LIMIT): Promise<ParsedGuide | null> {
+  if ("images" in source) {
+    const prompt = extractionPrompt(school, `（募集要项是扫描版 PDF，内容见附带的 ${source.images.length} 张页面图片，按页码顺序）`, [], limit);
+    const { text, totalUsage } = await generateText({
+      model: getVisionModel(),
+      messages: [{ role: "user", content: [{ type: "text", text: prompt }, ...source.images.map((data) => ({ type: "file" as const, data, mediaType: "image/jpeg" }))] }],
+    });
+    meter.addTokens(totalUsage);
+    return parseGuideReply(text);
+  }
+  const { text, totalUsage } = await generateText({ model: getChatModel(), prompt: extractionPrompt(school, source.text, links, limit) });
   meter.addTokens(totalUsage);
   return parseGuideReply(text);
 }
 
 /**
- * 读募集要项全文：先直接下载（PDF 在本地取文字，网页去掉标签），读不到（扫描版 PDF、网站拒绝直接访问）
- * 再用 DeepSeek 抓取服务。都失败时返回 null，由调用方沿用页面上抽到的结果。
+ * 读募集要项全文：先直接下载（PDF 在本地取文字，网页去掉标签）；扫描版 PDF 没有文字，把页面转成图片；
+ * 直接下载不了（网站拒绝直接访问）再用 DeepSeek 抓取服务。都失败时返回 null，由调用方沿用页面上抽到的结果。
  */
-async function readGuideDocument(url: string, meter: UsageMeter, loaded?: LoadedPage): Promise<string | null> {
+async function readGuideDocument(url: string, meter: UsageMeter, loaded?: LoadedPage): Promise<GuideSource | null> {
   try {
     const page = loaded ?? (await loadPage(url));
     const text = page.kind === "pdf" ? await pdfToText(page.data) : page.text;
-    if (text.trim().length > 200) return text;
+    if (text.trim().length > 200) return { text };
+    if (page.kind === "pdf") {
+      const images = await pdfPageImages(page.data, { maxPages: SCAN_MAX_PAGES });
+      if (images.length) return { images };
+    }
   } catch (error) {
     console.warn(`[monitor] 直接读取失败 ${url}`, error);
   }
   try {
-    return (await fetchPage(url, meter, GUIDE_TEXT_LIMIT)).content;
+    return { text: (await fetchPage(url, meter, GUIDE_TEXT_LIMIT)).content };
   } catch (error) {
     console.warn(`[monitor] 抓取服务读取失败 ${url}`, error);
     return null;
@@ -144,10 +167,10 @@ async function readGuideDocument(url: string, meter: UsageMeter, loaded?: Loaded
 async function extractGuide(school: School, page: LoadedPage, meter: UsageMeter): Promise<ParsedGuide | null> {
   if (page.kind === "pdf") {
     const content = await readGuideDocument(school.url, meter, page);
-    if (!content) throw new Error("募集要项 PDF 读不出文字");
+    if (!content) throw new Error("募集要项 PDF 读不出内容");
     return askGuide(school, content, [], meter, GUIDE_TEXT_LIMIT);
   }
-  const first = await askGuide(school, page.text, page.links, meter);
+  const first = await askGuide(school, { text: page.text }, page.links, meter);
   if (first?.events.length && !requirementsIncomplete(first.requirements)) return first;
   const docUrl = guideDocumentUrl(first?.pdfUrl ?? null, page.links);
   if (!docUrl || docUrl === school.url) return first;
@@ -169,55 +192,43 @@ async function extractGuide(school: School, page: LoadedPage, meter: UsageMeter)
   };
 }
 
-async function notifyWatchers(school: School, kind: "new_year" | "updated", admissionYear: number, events: GuideEvent[]) {
-  const watchers = await db
-    .select({ id: user.id, email: user.email })
-    .from(schoolWatch)
-    .innerJoin(user, eq(schoolWatch.userId, user.id))
-    .where(eq(schoolWatch.schoolId, school.id));
-  const label = `${school.university} ${school.name}`;
+async function notifyUser(t: WatchTarget, kind: "new_year" | "updated", admissionYear: number, events: GuideEvent[]) {
+  const label = `${t.school.university} ${t.school.name}`;
   const headline = kind === "new_year" ? `${admissionYear} 年度募集要项已发布` : `${admissionYear} 年度募集要项日程有更新`;
   const body = [
     `你关注的「${label}」${headline}。日历里的日程已经自动更新为：`,
     "",
     formatGuideEvents(events),
     "",
-    `来源：${school.url}`,
+    `来源：${t.watch.url}`,
     `查看主页：${env.APP_URL}/workbench（AI 可以帮你对照新日程，提议调整你的安排）`,
     "",
     "日程由 AI 从官网页面整理，出愿前请务必以募集要项原文为准。",
     "—— GradNavi（修考工作台）",
   ].join("\n");
-  for (const w of watchers) {
-    await addTodos(w.id, [{ title: `查看「${label}」${headline}`, note: `核对出愿日程和材料要求：${school.url}`, schoolId: school.id }], "system");
-    try {
-      await sendMail(w.email, `【GradNavi】${label} ${headline}`, body);
-    } catch (error) {
-      console.error(`[monitor] 邮件发送失败 ${w.email}`, error);
-    }
+  await addTodos(t.watch.userId, [{ title: `查看「${label}」${headline}`, note: `核对出愿日程和材料要求：${t.watch.url}`, schoolId: t.school.id }], "system");
+  try {
+    await sendMail(t.email, `【GradNavi】${label} ${headline}`, body);
+  } catch (error) {
+    console.error(`[monitor] 邮件发送失败 ${t.email}`, error);
   }
-  return watchers.length;
 }
 
-async function saveGuide(school: School, parsed: ParsedGuide & { admissionYear: number }): Promise<CheckResult["status"]> {
-  const [latest] = await db
-    .select()
-    .from(admissionGuide)
-    .where(eq(admissionGuide.schoolId, school.id))
-    .orderBy(desc(admissionGuide.admissionYear))
-    .limit(1);
+async function saveGuide(t: WatchTarget, parsed: ParsedGuide & { admissionYear: number }): Promise<CheckResult["status"]> {
+  const mine = and(eq(admissionGuide.userId, t.watch.userId), eq(admissionGuide.schoolId, t.school.id));
+  const [latest] = await db.select().from(admissionGuide).where(mine).orderBy(desc(admissionGuide.admissionYear)).limit(1);
   const [same] = await db
     .select()
     .from(admissionGuide)
-    .where(and(eq(admissionGuide.schoolId, school.id), eq(admissionGuide.admissionYear, parsed.admissionYear)));
+    .where(and(mine, eq(admissionGuide.admissionYear, parsed.admissionYear)));
   const now = new Date();
-  const values = { title: parsed.title, events: parsed.events, sourceUrl: parsed.pdfUrl ?? school.url, updatedAt: now };
+  const values = { title: parsed.title, events: parsed.events, sourceUrl: parsed.pdfUrl ?? t.watch.url, updatedAt: now };
 
   if (same) {
     if (!eventsChanged(same.events, parsed.events)) return "unchanged";
     const announce = same.id === latest?.id ? { announcedAt: now, previousEvents: same.events } : {};
     await db.update(admissionGuide).set({ ...values, ...announce }).where(eq(admissionGuide.id, same.id));
-    if (same.id === latest?.id) await notifyWatchers(school, "updated", parsed.admissionYear, parsed.events);
+    if (same.id === latest?.id) await notifyUser(t, "updated", parsed.admissionYear, parsed.events);
     return "updated";
   }
   const isNewYear = !!latest && parsed.admissionYear > latest.admissionYear;
@@ -231,24 +242,30 @@ async function saveGuide(school: School, parsed: ParsedGuide & { admissionYear: 
         }),
       }
     : {};
-  await db.insert(admissionGuide).values({ id: crypto.randomUUID(), schoolId: school.id, admissionYear: parsed.admissionYear, ...values, ...announce });
+  await db
+    .insert(admissionGuide)
+    .values({ id: crypto.randomUUID(), userId: t.watch.userId, schoolId: t.school.id, admissionYear: parsed.admissionYear, ...values, ...announce });
   if (!latest) return "baseline"; // 第一次检查：作为基准（多半是往年要项），日历显示仮日程，不发通知
   if (isNewYear) {
-    await notifyWatchers(school, "new_year", parsed.admissionYear, parsed.events);
+    await notifyUser(t, "new_year", parsed.admissionYear, parsed.events);
     return "new_year";
   }
   return "unchanged";
 }
 
-export async function checkSchool(school: School): Promise<CheckResult> {
-  const done = (patch: Partial<School>) =>
+/** 检查一条关注。AI 费用记在这个用户名下、扣他的 credit */
+export async function checkWatch(t: WatchTarget): Promise<CheckResult> {
+  const { watch } = t;
+  const target = and(eq(schoolWatch.userId, watch.userId), eq(schoolWatch.schoolId, watch.schoolId));
+  const done = (patch: Partial<Watch>) =>
     db
-      .update(graduateSchool)
+      .update(schoolWatch)
       .set({ checkedAt: new Date(), checkRequestedAt: null, ...patch })
-      .where(eq(graduateSchool.id, school.id));
+      .where(target);
+  const school = { ...t.school, url: watch.url };
   try {
-    const page = await loadPage(school.url);
-    if (page.fingerprint === school.contentHash) {
+    const page = await loadPage(watch.url);
+    if (page.fingerprint === watch.contentHash) {
       await done({ lastError: null });
       return { status: "unchanged" };
     }
@@ -257,22 +274,20 @@ export async function checkSchool(school: School): Promise<CheckResult> {
       await done({ lastError: "页面有变化，但服务器未配置 DEEPSEEK_API_KEY，暂时无法解析日程" });
       return { status: "skipped" };
     }
-    // 系统任务：只记成本（ai_usage，userId 为空），不扣任何用户的 credit
     const meter = new UsageMeter();
     const parsed = await extractGuide(school, page, meter).finally(() =>
-      recordUsageSafe({ userId: null, feature: "admission_monitor", meter, refId: school.id }),
+      recordUsageSafe({ userId: watch.userId, feature: "admission_monitor", meter, refId: school.id, note: `募集要项监控：${school.university} ${school.name}` }),
     );
     // 入试要点（要不要先联系教授、考试科目、语言要求）：解析到就更新，覆盖 AI 在对话里查的
-    if (parsed?.requirements) {
-      const requirements: AdmissionRequirements = { ...parsed.requirements, sourceUrl: parsed.pdfUrl ?? school.url, source: "monitor", updatedAt: new Date().toISOString() };
-      await db.update(graduateSchool).set({ requirements }).where(eq(graduateSchool.id, school.id));
-    }
+    const requirements: AdmissionRequirements | undefined = parsed?.requirements
+      ? { ...parsed.requirements, sourceUrl: parsed.pdfUrl ?? watch.url, source: "monitor", updatedAt: new Date().toISOString() }
+      : undefined;
     if (!parsed?.admissionYear || !parsed.events.length) {
-      await done({ contentHash: page.fingerprint, changedAt: new Date(), lastError: "页面上没有找到明确的入试日程（要项可能还没公开，或链接不是募集要项页面）" });
+      await done({ requirements, contentHash: page.fingerprint, changedAt: new Date(), lastError: "页面上没有找到明确的入试日程（要项可能还没公开，或链接不是募集要项页面）" });
       return { status: "no_dates" };
     }
-    const status = await saveGuide(school, { ...parsed, admissionYear: parsed.admissionYear });
-    await done({ contentHash: page.fingerprint, changedAt: new Date(), lastError: null });
+    const status = await saveGuide({ ...t, school }, { ...parsed, admissionYear: parsed.admissionYear });
+    await done({ requirements, contentHash: page.fingerprint, changedAt: new Date(), lastError: null });
     return { status };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -281,24 +296,75 @@ export async function checkSchool(school: School): Promise<CheckResult> {
   }
 }
 
+/** credit 用完：暂停这个用户的监控，发一封邮件（每次暂停只发一次） */
+async function pauseUser(userId: string, email: string, targets: WatchTarget[]) {
+  const now = new Date();
+  await db
+    .update(schoolWatch)
+    .set({ pausedAt: now, checkRequestedAt: null, lastError: PAUSED_MESSAGE })
+    .where(eq(schoolWatch.userId, userId));
+  const names = targets.map((t) => `「${t.school.university} ${t.school.name}」`).join("、");
+  try {
+    await sendMail(
+      email,
+      "【GradNavi】credit 用完了，募集要项监控已暂停",
+      [
+        `你的 credit 已经用完，${names}的募集要项监控暂停了：新要项公布时日历不会自动更新，也不会通知你。`,
+        "",
+        `补充 credit 后监控会自动恢复：${env.APP_URL}/credits`,
+        "—— GradNavi（修考工作台）",
+      ].join("\n"),
+    );
+  } catch (error) {
+    console.error(`[monitor] 邮件发送失败 ${email}`, error);
+  }
+}
+
 /**
- * 检查一批研究科。mode：
- * - "daily"：所有至少有一人关注的研究科（每天一次）
- * - "requested"：刚被关注或用户点了“立即检查”的研究科（每几分钟一次）
+ * 检查一批关注（用户 × 研究科）。mode：
+ * - "daily"：所有关注（每天一次）
+ * - "requested"：刚关注或用户点了“立即检查”的（每几分钟一次）
+ * 每条检查前看这个用户的余额：用完了就暂停他的监控，补充后自动恢复。
  */
 export async function runAdmissionChecks(mode: "daily" | "requested") {
-  const watched = exists(db.select().from(schoolWatch).where(eq(schoolWatch.schoolId, graduateSchool.id)));
-  const schools = await db
-    .select()
-    .from(graduateSchool)
-    .where(mode === "daily" ? watched : and(watched, isNotNull(graduateSchool.checkRequestedAt)));
+  const rows = await db
+    .select({ watch: schoolWatch, school: graduateSchool, email: user.email })
+    .from(schoolWatch)
+    .innerJoin(graduateSchool, eq(schoolWatch.schoolId, graduateSchool.id))
+    .innerJoin(user, eq(schoolWatch.userId, user.id))
+    .where(mode === "daily" ? undefined : isNotNull(schoolWatch.checkRequestedAt))
+    .orderBy(schoolWatch.userId);
   const results: Record<string, number> = {};
-  for (const school of schools) {
-    const r = await checkSchool(school);
-    results[r.status] = (results[r.status] ?? 0) + 1;
-    if (r.status === "error") console.warn(`[monitor] ${school.university} ${school.name}: ${r.message}`);
+  const count = (status: string) => (results[status] = (results[status] ?? 0) + 1);
+  const paused = new Set<string>();
+  for (const t of rows) {
+    const { userId } = t.watch;
+    if (paused.has(userId)) {
+      count("paused");
+      continue;
+    }
+    if ((await getBalance(userId)) <= 0) {
+      paused.add(userId);
+      count("paused");
+      const mine = rows.filter((r) => r.watch.userId === userId);
+      // 已经暂停过（邮件发过了）：只把新关注的也标成暂停
+      if (mine.some((r) => r.watch.pausedAt))
+        await db
+          .update(schoolWatch)
+          .set({ pausedAt: new Date(), checkRequestedAt: null, lastError: PAUSED_MESSAGE })
+          .where(and(eq(schoolWatch.userId, userId), isNull(schoolWatch.pausedAt)));
+      else await pauseUser(userId, t.email, mine);
+      continue;
+    }
+    if (t.watch.pausedAt) {
+      // 补充了 credit：恢复这个用户的监控
+      await db.update(schoolWatch).set({ pausedAt: null, lastError: null }).where(eq(schoolWatch.userId, userId));
+    }
+    const r = await checkWatch(t);
+    count(r.status);
+    if (r.status === "error") console.warn(`[monitor] ${t.school.university} ${t.school.name}（${t.email}）: ${r.message}`);
     // 同一批里错开请求，对大学网站友好一点
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
-  return { checked: schools.length, results };
+  return { checked: rows.length, results };
 }

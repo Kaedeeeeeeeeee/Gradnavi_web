@@ -40,6 +40,8 @@ type Props = {
   briefing: string[];
   countdown: Countdown[];
   alerts: GuideAlert[];
+  /** credit 用完、募集要项监控暂停了的研究科 */
+  pausedMonitors: string[];
   /** 待你确认的任务（和 AI 的提议一起放在「等你处理」） */
   review: HomeTask[];
   proposals: { tasks: HomeTask[]; changes: HomeTask[]; events: ProposedEvent[]; followUps: ProposedFollowUp[] };
@@ -68,6 +70,7 @@ export function Home(p: Props) {
       {p.alerts.map((a) => (
         <GuideAlertCard key={`${a.schoolId}:${a.admissionYear}`} alert={a} />
       ))}
+      {p.pausedMonitors.length > 0 && <MonitorPaused schools={p.pausedMonitors} />}
       {proposalCount + p.review.length > 0 && <Awaiting review={p.review} {...p.proposals} proposalCount={proposalCount} today={p.today} />}
 
       <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
@@ -116,6 +119,21 @@ function SourceLink({ url }: { url: string }) {
     <OpenTabLink tab={{ kind: "web", url, title: "募集要项" }} href={url} className="ml-1.5 text-xs whitespace-nowrap text-accent hover:underline">
       要项原文
     </OpenTabLink>
+  );
+}
+
+/** credit 用完，募集要项监控暂停了：补充后自动恢复 */
+function MonitorPaused({ schools }: { schools: string[] }) {
+  return (
+    <section className="space-y-1.5 rounded-xl bg-warn-soft px-4 py-3">
+      <h2 className="font-medium">credit 用完了，募集要项监控已暂停</h2>
+      <p className="text-sm">
+        {schools.join("、")}：新要项公布时日历不会自动更新，也不会通知你。补充 credit 后，下次检查（每天一次）会自动恢复。
+      </p>
+      <Link href="/credits" className="btn-primary inline-block px-2.5 py-1 text-xs">
+        查看 credit
+      </Link>
+    </section>
   );
 }
 

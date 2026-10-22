@@ -10,8 +10,8 @@ await build({
   target: "node22",
   format: "esm",
   sourcemap: true,
-  // pg 的可选原生绑定，用不到
-  external: ["pg-native"],
+  // pg 的可选原生绑定，用不到；@napi-rs/canvas（扫描版 PDF 转图片）是原生模块，不打包，镜像里单独带上
+  external: ["pg-native", "@napi-rs/canvas"],
   alias: { "server-only": "./scripts/empty.mjs" },
   // 打包进来的 CommonJS 依赖需要 require
   banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },

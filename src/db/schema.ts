@@ -370,34 +370,28 @@ export const calendarEvent = pgTable(
   (t) => [index("calendar_event_user_date_idx").on(t.userId, t.date)],
 );
 
-/** 研究科（跨用户共享）。募集要项按研究科每天检查一次，多个用户关注同一研究科只查一次 */
+/** 研究科的标识（大学 + 研究科名，跨用户同一条）。监控和解析结果按用户各自保存，见 school_watch / admission_guide */
 export const graduateSchool = pgTable(
   "graduate_school",
   {
     id: text("id").primaryKey(),
     university: text("university").notNull(),
     name: text("name").notNull(),
-    /** 募集要项 / 入试信息页面 */
+    /** 第一次被关注时的入试页面链接（只作参考；每个用户监控自己填的链接，见 school_watch.url） */
     url: text("url").notNull(),
-    /** 页面里和入试相关部分的指纹，变了才调用 AI 解析 */
-    contentHash: text("content_hash"),
-    checkedAt: timestamp("checked_at", { withTimezone: true }),
-    changedAt: timestamp("changed_at", { withTimezone: true }),
-    /** 用户点“立即检查”或刚关注时设置，worker 几分钟内处理 */
-    checkRequestedAt: timestamp("check_requested_at", { withTimezone: true }),
-    lastError: text("last_error"),
-    /** 入试要点：要不要先联系教授、考试科目、语言要求（监控解析或 AI 检索） */
-    requirements: jsonb("requirements").$type<AdmissionRequirements>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("graduate_school_univ_name_idx").on(t.university, t.name)],
 );
 
-/** AI 从募集要项页面解析出的日程，每个研究科每个入学年度一条 */
+/** AI 从募集要项页面解析出的日程，每个用户、每个研究科、每个入学年度一条（监控按用户各自跑，结果不共用） */
 export const admissionGuide = pgTable(
   "admission_guide",
   {
     id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
     schoolId: text("school_id")
       .notNull()
       .references(() => graduateSchool.id, { onDelete: "cascade" }),
@@ -406,17 +400,19 @@ export const admissionGuide = pgTable(
     title: text("title"),
     events: jsonb("events").$type<GuideEvent[]>().notNull().default([]),
     sourceUrl: text("source_url").notNull(),
-    /** 新要项公布 / 日程更新、通知了关注的用户的时间（主页提醒用）；第一次检查得到的基准要项为空 */
+    /** 新要项公布 / 日程更新、通知了用户的时间（主页提醒用）；第一次检查得到的基准要项为空 */
     announcedAt: timestamp("announced_at", { withTimezone: true }),
     /** 公布前日历上的日程（往年要项顺延的仮日程，或更新前的日程），主页提醒里对照显示 */
     previousEvents: jsonb("previous_events").$type<GuideEvent[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("admission_guide_school_year_idx").on(t.schoolId, t.admissionYear)],
+  (t) => [uniqueIndex("admission_guide_user_school_year_idx").on(t.userId, t.schoolId, t.admissionYear)],
 );
 
-/** 用户关注的研究科 */
+/**
+ * 用户关注的研究科 + 这个用户自己的募集要项监控（每人各自检查、AI 解析费用扣自己的 credit，结果不共用）
+ */
 export const schoolWatch = pgTable(
   "school_watch",
   {
@@ -426,6 +422,19 @@ export const schoolWatch = pgTable(
     schoolId: text("school_id")
       .notNull()
       .references(() => graduateSchool.id, { onDelete: "cascade" }),
+    /** 募集要项 / 入试信息页面 */
+    url: text("url").notNull(),
+    /** 页面里和入试相关部分的指纹，变了才调用 AI 解析 */
+    contentHash: text("content_hash"),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    changedAt: timestamp("changed_at", { withTimezone: true }),
+    /** 用户点“立即检查”或刚关注时设置，worker 几分钟内处理 */
+    checkRequestedAt: timestamp("check_requested_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    /** credit 用完时暂停监控的时间；补充后下次检查自动恢复 */
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    /** 入试要点：要不要先联系教授、考试科目、语言要求（监控解析或 AI 检索） */
+    requirements: jsonb("requirements").$type<AdmissionRequirements>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.schoolId] }), index("school_watch_school_idx").on(t.schoolId)],

@@ -1,9 +1,6 @@
-import { inArray } from "drizzle-orm";
 import { DocumentEditor } from "@/app/(app)/documents/[id]/editor";
 import { AspirationDetail, SchoolAspirationDetail } from "@/components/aspirations/aspiration-detail";
 import { SearchResults, type CandidateView } from "@/components/aspirations/search-results";
-import { db } from "@/db";
-import { graduateSchool } from "@/db/schema";
 import { projectGuide } from "@/lib/admissions";
 import { contactLabel, describeAspiration, languageLabel, matchSchool, nextDeadline, sortAspirations } from "@/lib/aspirations";
 import { todayJst } from "@/lib/calendar";
@@ -16,7 +13,7 @@ import { getDocumentBundle, listDocuments } from "@/server/documents";
 import { getProfile } from "@/server/profile";
 import { getProfessorSearch } from "@/server/professor-search";
 import { listSavedProfessors, savedKeys } from "@/server/professors";
-import { latestGuides } from "@/server/schools";
+import { listWatchedSchools } from "@/server/schools";
 import { TaskDetail } from "@/components/tasks/task-detail";
 import { describeTask } from "@/lib/tasks";
 import { summarizeToolCalls } from "@/lib/task-report";
@@ -102,18 +99,12 @@ async function schoolTab(userId: string, id: string) {
 async function searchTab(userId: string, id: string) {
   const search = await getProfessorSearch(userId, id);
   if (!search) return { title: null, node: null };
-  const [saved, schools] = await Promise.all([
-    savedKeys(userId, search.candidates),
-    search.candidates.length
-      ? db
-          .select()
-          .from(graduateSchool)
-          .where(inArray(graduateSchool.university, [...new Set(search.candidates.map((c) => c.university.trim()))]))
-      : [],
-  ]);
-  const savedBy = new Map(saved.map((p) => [candidateKey(p), p]));
-  const guides = await latestGuides(schools.map((s) => s.id));
   const today = todayJst();
+  // 候选教授所在的研究科用户已经关注了：卡片上带出入试要点和截止日（监控结果只属于这个用户）
+  const [saved, watched] = await Promise.all([savedKeys(userId, search.candidates), listWatchedSchools(userId, today)]);
+  const savedBy = new Map(saved.map((p) => [candidateKey(p), p]));
+  const schools = watched.map((w) => w.school);
+  const guides = new Map(watched.flatMap((w) => (w.guide ? [[w.school.id, w.guide] as const] : [])));
   const candidates: CandidateView[] = search.candidates.map((c) => {
     const key = candidateKey(c);
     const p = savedBy.get(key);

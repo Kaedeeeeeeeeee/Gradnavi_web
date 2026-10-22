@@ -20,6 +20,7 @@
     "@ai-sdk/provider": "^4.0.31",
     "@ai-sdk/react": "^4.0.152",
     "@fontsource/noto-serif-jp": "^5.3.1",
+    "@napi-rs/canvas": "^1.0.13",
     "@tiptap/markdown": "^3.32.0",
     "@tiptap/pm": "^3.32.0",
     "@tiptap/react": "^3.32.0",

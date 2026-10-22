@@ -63,7 +63,7 @@ export async function adjustCredits(userId: string, delta: number, kind: LedgerK
 }
 
 export type RecordUsageInput = {
-  /** null = 系统任务（如募集要项监控），只记成本不扣 credit */
+  /** null = 系统任务，只记成本不扣 credit（目前没有；募集要项监控按用户扣） */
   userId: string | null;
   feature: Feature;
   meter: UsageMeter;

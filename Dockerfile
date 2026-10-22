@@ -27,6 +27,8 @@ COPY --from=build --chown=app:app /app/public ./public
 COPY --from=build --chown=app:app /app/drizzle ./drizzle
 # 定时任务 worker（同一镜像，compose 里用 node worker.mjs 启动）
 COPY --from=build --chown=app:app /app/dist/worker.mjs /app/dist/worker.mjs.map ./
+# worker 把扫描版募集要项 PDF 转成图片用的原生画布模块（Next 的 standalone 包里没有）
+COPY --from=build --chown=app:app /app/node_modules/@napi-rs ./node_modules/@napi-rs
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

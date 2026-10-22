@@ -92,7 +92,7 @@ export const listWatchedSchoolsTool = defineTool({
 export const watchSchoolTool = defineTool({
   name: "watch_school",
   description:
-    "关注一个研究科（加进志愿的研究科这边）：系统每天检查它的募集要项页面，解析日程和入试要点，新要项公开前按往年日程在日历里排仮日程，公开后自动更新并邮件通知。" +
+    "关注一个研究科（加进志愿的研究科这边）：系统每天检查它的募集要项页面，解析日程和入试要点，新要项公开前按往年日程在日历里排仮日程，公开后自动更新并邮件通知。页面有变化时 AI 解析的费用从用户的 credit 扣（一般不到 1 美分），没变化不花钱。" +
     "是志愿里某位教授所在的研究科时，填 professorId 把两者关联成一条志愿。url 必须是该研究科入试/募集要项页面的官网地址：不确定时先用 web_search 查到官网页面再关注，不要编造网址。",
   inputSchema: z.object({
     university: z.string().min(1).max(100).describe("大学名，如 東京大学"),
