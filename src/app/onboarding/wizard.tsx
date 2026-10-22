@@ -74,7 +74,7 @@ export function OnboardingWizard({ questions }: { questions: Question[] }) {
           <button
             onClick={() => goBack(i)}
             title="修改这个回答"
-            className="ml-auto block rounded-lg bg-subtle px-3 py-2 text-left text-sm hover:bg-subtle-strong"
+            className="ml-auto block rounded-xl bg-subtle px-3 py-2 text-left text-sm hover:bg-subtle-strong"
           >
             {display(q, answers)}
           </button>
@@ -82,7 +82,7 @@ export function OnboardingWizard({ questions }: { questions: Question[] }) {
       ))}
 
       {current && (
-        <div className="space-y-3 rounded-lg border border-line p-4">
+        <div className="space-y-3 rounded-xl border border-line p-4">
           <div>
             <p className="font-medium">
               {current.title}
@@ -144,7 +144,7 @@ export function OnboardingWizard({ questions }: { questions: Question[] }) {
       )}
 
       {done && (
-        <div className="space-y-3 rounded-lg border border-line p-4">
+        <div className="space-y-3 rounded-xl border border-line p-4">
           <p className="font-medium">好了。进去后 AI 已经在右边等你，主页上也有第一批任务。</p>
           <p className="text-sm text-muted">想改哪个回答，点一下上面对应的气泡就行。</p>
           <button onClick={submit} disabled={pending} className="btn-primary px-4 py-2 text-sm">

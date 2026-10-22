@@ -86,7 +86,7 @@ function CandidateCard({ searchId, c }: { searchId: string; c: CandidateView }) 
   }
 
   return (
-    <li className={`space-y-2.5 rounded-lg border p-4 ${c.saved ? "border-ok/40" : "border-line"} ${dim ? "opacity-60" : ""}`}>
+    <li className={`space-y-2.5 rounded-xl border p-4 ${c.saved ? "border-ok/40" : "border-line"} ${dim ? "opacity-60" : ""}`}>
       <div className="flex flex-wrap items-baseline gap-x-2">
         <span className="font-medium">{p.name}</span>
         <span className="text-sm text-muted">{professorAffiliation(p)}</span>

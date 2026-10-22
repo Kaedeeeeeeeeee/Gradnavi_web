@@ -70,6 +70,7 @@ npm run dev            # http://localhost:3000
 
 Notion 式：白底、暖灰字、边框很淡、几乎不用阴影，靠留白和字号分层。颜色和共用组件都在 `src/app/globals.css`：
 - 颜色只用语义 token（`text-muted`、`text-faint`、`border-line`、`border-line-strong`、`bg-subtle`、`bg-panel`、`bg-primary` + `text-on-primary`、`text-accent`、`info` / `ok` / `warn` / `danger` 及 `-soft` 底色），不直接写 `zinc-500` 这类色值，也不写 `dark:` 颜色类；深色模式只在 token 里换值。
+- 圆角一套：小标签 `rounded`（4px），按钮和输入框 8px，卡片、列表框、三栏面板 `rounded-xl`（12px）；三栏是浮在浅灰底板（`bg-canvas`）上的圆角面板。
 - 按钮 `btn` / `btn-primary` / `btn-ghost`，输入框 `input`，页面标题 `page-title`，分组小标题 `section-title`；尺寸用 `px-` / `py-` / `text-` 覆盖。
 
 ## 目录

@@ -29,7 +29,7 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-6 py-8">
       {task.proposed && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-line-strong px-3 py-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-line-strong px-3 py-2 text-sm">
           <span className="flex-1">这是 AI 提议的任务，同意后才会加进你的待办。</span>
           <ProposalButtons kind="task" id={task.id} date={task.dueDate} editable={false} />
         </div>

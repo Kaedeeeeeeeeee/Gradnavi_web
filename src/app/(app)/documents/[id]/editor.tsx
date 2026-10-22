@@ -114,7 +114,7 @@ export function DocumentEditor(props: Props) {
     editorProps: {
       attributes: {
         lang: "ja",
-        class: "doc-prose min-h-[60vh] rounded-md border border-line px-6 py-5 outline-none focus:border-line-strong",
+        class: "doc-prose min-h-[60vh] rounded-xl border border-line px-6 py-5 outline-none focus:border-line-strong",
       },
     },
     onCreate: ({ editor }) => {
@@ -345,7 +345,7 @@ export function DocumentEditor(props: Props) {
       {guided && <WritingGuide doc={doc} track={props.track} onAsk={askAi} />}
       {doc.kind === "plan" && !props.parent && <TailoredCopies docId={doc.id} copies={props.copies} professors={props.professors} />}
       {doc.kind === "plan" && (
-        <div className="rounded-md border border-line p-4 text-sm">
+        <div className="rounded-xl border border-line p-4 text-sm">
           <ProfessorForm docId={doc.id} professor={doc.targetProfessor} professors={props.professors} defaultOpen={false} />
         </div>
       )}
@@ -362,7 +362,7 @@ export function DocumentEditor(props: Props) {
       )}
 
       {conflict && (
-        <div className="flex flex-wrap items-center gap-3 rounded-md border border-warn/40 bg-warn-soft px-3 py-2 text-sm">
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-warn/40 bg-warn-soft px-3 py-2 text-sm">
           <span>文书在别处被修改了，你这里还有未保存的内容。</span>
           <button className="underline" onClick={() => loadVersion(conflict.markdown, conflict.version)}>
             载入最新版（放弃我的修改）

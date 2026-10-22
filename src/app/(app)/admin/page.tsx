@@ -169,7 +169,7 @@ export default async function AdminPage() {
         ) : (
           <ul className="space-y-3 text-sm">
             {feedback.map((f) => (
-              <li key={f.id} className="rounded-md border border-line p-3">
+              <li key={f.id} className="rounded-xl border border-line p-3">
                 <p className="text-xs text-muted">
                   {time.format(f.createdAt)} · {f.email}
                   {f.page && ` · ${f.page}`}
@@ -189,7 +189,7 @@ function CostCard({ title, rows }: { title: string; rows: CostRow[] }) {
   const total = rows.reduce((s, r) => s + r.costUsd, 0);
   const credits = rows.reduce((s, r) => s + r.credits, 0);
   return (
-    <div className="rounded-lg border border-line p-4">
+    <div className="rounded-xl border border-line p-4">
       <p className="text-sm text-muted">{title}</p>
       <p className="text-2xl font-semibold tabular-nums">{formatUsd(total)}</p>
       <p className="text-xs text-muted">向用户扣 {credits.toLocaleString()} credit</p>

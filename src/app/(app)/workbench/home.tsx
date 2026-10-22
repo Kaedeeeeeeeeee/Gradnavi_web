@@ -69,9 +69,9 @@ export function Home(p: Props) {
           <section className="space-y-2">
             <h2 className="section-title">本周</h2>
             {p.week.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-line-strong px-4 py-3 text-sm text-muted">这周没有待办了。可以在右边问 AI 接下来做什么。</p>
+              <p className="rounded-xl border border-dashed border-line-strong px-4 py-3 text-sm text-muted">这周没有待办了。可以在右边问 AI 接下来做什么。</p>
             ) : (
-              <ul className="divide-y divide-line border-y border-line">
+              <ul className="divide-y divide-line rounded-xl border border-line px-3">
                 {p.week.map((t) => (
                   <TaskCard key={t.id} task={t} today={p.today} />
                 ))}
@@ -148,7 +148,7 @@ function GuideAlertCard({ alert: a }: { alert: GuideAlert }) {
   const startTask = useStartTask();
   const [pending, startTransition] = useTransition();
   return (
-    <section className="space-y-2 rounded-lg bg-info-soft px-4 py-3">
+    <section className="space-y-2 rounded-xl bg-info-soft px-4 py-3">
       <div className="flex flex-wrap items-baseline gap-x-2">
         <h2 className="font-medium">
           {a.school} {a.admissionYear} 年度募集要项已公布
@@ -188,7 +188,7 @@ function GuideAlertCard({ alert: a }: { alert: GuideAlert }) {
 function Proposals({ tasks, changes, events, followUps, count }: Props["proposals"] & { count: number }) {
   const [pending, startTransition] = useTransition();
   return (
-    <section className="space-y-1 rounded-lg border border-dashed border-line-strong px-4 py-3">
+    <section className="space-y-1 rounded-xl border border-dashed border-line-strong px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="section-title text-foreground">AI 的提议</h2>
         <span className="text-xs text-muted">{count} 项，同意后才会正式加进任务和日历</span>
@@ -551,7 +551,7 @@ function AddEventForm({ defaultDate }: { defaultDate: string }) {
           else setError(res.error);
         });
       }}
-      className="mt-2 space-y-2 rounded-lg bg-subtle p-3"
+      className="mt-2 space-y-2 rounded-xl bg-subtle p-3"
     >
       <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="标题，如 JLPT N1 考试" className={input} />
       <div className="flex gap-2">

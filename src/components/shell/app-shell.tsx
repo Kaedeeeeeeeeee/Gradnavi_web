@@ -247,8 +247,8 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
 
   return (
     <ShellContext value={api}>
-      <div className={`flex h-dvh flex-col ${dragging ? "cursor-col-resize select-none" : ""}`}>
-        <header className="flex h-12 shrink-0 items-center gap-4 border-b border-line px-4">
+      <div className={`flex h-dvh flex-col bg-canvas ${dragging ? "cursor-col-resize select-none" : ""}`}>
+        <header className="flex h-12 shrink-0 items-center gap-4 px-4 max-lg:border-b max-lg:border-line max-lg:bg-surface">
           <Link href="/workbench" className="flex items-center gap-2 text-[15px] font-semibold">
             <LogoMark />
             GradNavi
@@ -268,7 +268,7 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
           <div className="ml-auto flex min-w-0 items-center gap-1 text-sm">{topRight}</div>
         </header>
 
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 lg:px-2 lg:pb-2">
           {shown.map((p) => (
             <Fragment key={p}>
               {layout.collapsed[p] && <Rail pane={p} badge={badgeOf(p)} onOpen={() => api.expand(p)} />}
@@ -278,9 +278,7 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
                 }}
                 onPointerDownCapture={() => setLastPane(p)}
                 style={{ flexGrow: layout.weights[p], flexBasis: 0 }}
-                className={`min-w-0 flex-col ${layout.collapsed[p] ? "lg:hidden" : "lg:flex"} ${layout.mobile === p ? "max-lg:flex" : "max-lg:hidden"} lg:min-w-[280px] ${p === "doc" ? "animate-pane-in" : ""} ${
-                  p !== "work" ? "lg:border-l border-line" : ""
-                } ${p === "ai" ? "bg-panel" : ""}`}
+                className={`min-w-0 flex-col ${layout.collapsed[p] ? "lg:hidden" : "lg:flex"} ${layout.mobile === p ? "max-lg:flex" : "max-lg:hidden"} lg:min-w-[280px] ${p === "doc" ? "animate-pane-in" : ""} overflow-hidden lg:rounded-xl lg:border lg:border-line lg:shadow-[0_1px_2px_rgb(15_15_15/0.04)] ${p === "ai" ? "bg-panel" : "bg-surface"}`}
                 aria-label={PANE_LABELS[p]}
               >
                 <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line pl-2 pr-1">
@@ -295,14 +293,14 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
                   aria-orientation="vertical"
                   title="拖动调整宽度"
                   onPointerDown={(e) => startDrag(e, p, nextOpen(p)!)}
-                  className="relative z-10 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none lg:block hover:bg-accent/20"
+                  className="relative z-10 hidden w-2 shrink-0 cursor-col-resize touch-none rounded-full lg:block hover:bg-accent/20"
                 />
               )}
             </Fragment>
           ))}
         </div>
 
-        <nav className="flex shrink-0 border-t border-line lg:hidden">
+        <nav className="flex shrink-0 border-t border-line bg-surface lg:hidden">
           {shown.map((p) => {
             const badge = badgeOf(p);
             return (
@@ -354,9 +352,7 @@ function Rail({ pane, badge, onOpen }: { pane: PaneId; badge: Badge; onOpen: () 
     <button
       onClick={onOpen}
       title={`展开${PANE_LABELS[pane]}`}
-      className={`hidden w-[52px] shrink-0 flex-col items-center gap-2 py-3 text-sm text-muted hover:bg-subtle hover:text-foreground lg:flex ${
-        pane !== "work" ? "border-l border-line" : ""
-      }`}
+      className="mx-1 hidden w-[48px] shrink-0 flex-col items-center gap-2 rounded-xl border border-line bg-surface py-3 text-sm text-muted first:ml-0 last:mr-0 hover:bg-subtle hover:text-foreground lg:flex"
     >
       {badge ? <BadgeDot badge={badge} /> : null}
       <span className="[writing-mode:vertical-rl] tracking-widest">{PANE_LABELS[pane]}</span>

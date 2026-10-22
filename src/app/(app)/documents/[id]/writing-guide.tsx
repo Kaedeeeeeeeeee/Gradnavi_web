@@ -13,7 +13,7 @@ type Props = {
   onAsk: (text: string) => void;
 };
 
-const box = "space-y-3 rounded-md border border-line p-4 text-sm";
+const box = "space-y-3 rounded-xl border border-line p-4 text-sm";
 
 export function WritingGuide({ doc, track, onAsk }: Props) {
   const [pending, startTransition] = useTransition();

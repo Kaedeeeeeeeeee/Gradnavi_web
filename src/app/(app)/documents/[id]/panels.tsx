@@ -13,7 +13,7 @@ export type ProfessorOption = { id: string; label: string };
 export type DocLink = { id: string; title: string };
 export type PlanOption = DocLink & { professorId: string | null; isCopy: boolean };
 
-const box = "space-y-3 rounded-md border border-line p-4 text-sm";
+const box = "space-y-3 rounded-xl border border-line p-4 text-sm";
 const btn = "btn px-3 py-1.5";
 
 /** 计划书：通用版下面列出给每位教授的定制版，可以再为一位教授复制一份 */
