@@ -29,3 +29,33 @@ export const TOOL_META: Record<string, { label: string; mutates: boolean }> = {
   watch_school: { label: "关注研究科", mutates: true },
   unwatch_school: { label: "取消关注研究科", mutates: true },
 };
+
+const str = (v: unknown, key: string) => {
+  const x = v && typeof v === "object" ? (v as Record<string, unknown>)[key] : undefined;
+  return typeof x === "string" ? x.trim() : "";
+};
+
+/**
+ * AI 回复里工具调用的进度标签文字。进行中说清在做什么（如「正在找教授（東京大学 · シリアスゲーム）」），
+ * 完成后说结果（如「找到 5 位教授」）。返回 null = 不显示（如重复调用被跳过）。
+ */
+export function toolChipText(name: string, state: "running" | "done" | "failed", input: unknown, output?: unknown): string | null {
+  const label = TOOL_META[name]?.label ?? name;
+  if (state === "failed") return `${label}没成功`;
+  if (name === "search_professors") {
+    const schools = input && typeof input === "object" && Array.isArray((input as { schools?: unknown }).schools) ? ((input as { schools: unknown[] }).schools.filter((s) => typeof s === "string") as string[]) : [];
+    const scope = [schools.join("、"), str(input, "keywords")].filter(Boolean).join(" · ");
+    if (state === "running") return `正在找教授${scope ? `（${scope}）` : ""}`;
+    if (output && typeof output === "object" && (output as { skipped?: unknown }).skipped) return null;
+    const list = output && typeof output === "object" ? (output as { candidates?: unknown }).candidates : undefined;
+    const n = Array.isArray(list) ? list.length : 0;
+    return n ? `找到 ${n} 位教授` : "这一轮没找到合适的教授";
+  }
+  if (name === "web_search") {
+    const q = str(input, "query");
+    return state === "running" ? `正在联网检索${q ? `「${q.slice(0, 30)}」` : ""}` : `联网检索${q ? `「${q.slice(0, 30)}」` : ""}`;
+  }
+  if (name === "fetch_page") return state === "running" ? "正在读取网页" : "读了网页";
+  if (state === "running") return `正在${label.replace(/了|（待你确认）/g, "")}`;
+  return label;
+}

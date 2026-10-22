@@ -18,10 +18,14 @@ const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式 YYYY-MM
 
 const paperRef = z.object({ title: z.string().max(300), year: z.number().int().min(1950).max(2100).optional(), url: z.string().url().max(500).optional() });
 
+/** 本轮对话（同一个 meter）里已经找过教授 */
+const searchedThisTurn = new WeakSet<object>();
+
 export const searchProfessorsTool = defineTool({
   name: "search_professors",
   description:
     "按研究方向和目标校检索日本大学的教授候选（researchmap、大学官网、KAKEN 等）。结果会以候选卡片显示在用户的文稿栏（为什么适合、近期论文和链接、是否收留学生），用户可以在卡片上点「加入志愿」或「不合适」。" +
+    "一次回复只调用一次：几所学校、几个方向放进同一次调用（schools 可以填多所，keywords 可以写几个关键词），不要拆成几次。" +
     "检索完在对话里推荐，并问用户要不要把其中哪几位加入志愿；用户同意后用 save_professor（带 searchId）加入。" +
     "用户说「更偏应用一点」「只要关东的」时，调整 keywords / schools / preference 再检索一轮。返回的是摘要，不要在对话里逐个重复卡片内容，只说整体情况和你的推荐。",
   inputSchema: z.object({
@@ -38,6 +42,9 @@ export const searchProfessorsTool = defineTool({
       .describe(`要几位候选：用户说了数量就照着填（「两三位」填 3，「一位」填 1）；没说就不填（默认 ${DEFAULT_CANDIDATES} 位）`),
   }),
   execute: async ({ keywords, schools, preference, field, count }, { userId, meter }) => {
+    // 一次回复只找一轮：模型有时同时发出两个检索（比如按学校拆开），文稿栏只能显示一轮，第二个直接跳过
+    if (searchedThisTurn.has(meter)) return { skipped: true, note: "这次回复已经找过一轮了（一次回复只找一轮）。等用户看完结果，再按反馈调整关键词或学校重新找。" };
+    searchedThisTurn.add(meter);
     const profile = await getProfile(userId);
     const f = field ?? answerField(profile?.onboarding);
     const res = await runProfessorSearch(userId, { keywords, schools, preference, field: f, count, profile: profile?.markdown.slice(0, 2500) }, meter);
