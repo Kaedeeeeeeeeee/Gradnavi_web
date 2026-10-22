@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { deleteTaskAction, setTaskStatusAction, setTaskStepsAction, updateTaskAction } from "@/app/(app)/workbench/actions";
-import { useAiPageContent } from "@/components/ai/page-context";
+import { useAiPageContent, useStartTask } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { DateInput } from "@/components/ui/date-input";
 import { uuid } from "@/lib/browser";
+import type { ReportItem, ReportLink } from "@/lib/task-report";
 import { TASK_STATUS_LABELS, TASK_STATUSES, type TaskStep, type TaskView } from "@/lib/tasks";
 import { btn, formatDay, ProposalButtons, StartButton } from "./task-ui";
 
@@ -19,7 +21,7 @@ type Links = {
 
 const field = "input px-2 py-1 text-sm";
 
-export function TaskDetail({ task, links, started, aiText }: { task: TaskView; links: Links; started: boolean; aiText: string }) {
+export function TaskDetail({ task, links, started, aiText, report }: { task: TaskView; links: Links; started: boolean; aiText: string; report: ReportItem[] | null }) {
   useAiPageContent(aiText, "doc");
   const { closeTab } = useShell();
   const [pending, startTransition] = useTransition();
@@ -61,8 +63,9 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
             <StartButton task={task} started={started} primary />
           </span>
         </div>
-        {task.status === "review" && <p className="text-xs text-warn">AI 觉得这件事做完了，看一下结果，没问题就点「完成」。</p>}
       </div>
+
+      {report && <ReviewReport task={task} report={report} document={links.document} />}
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-muted">截止</span>
@@ -140,6 +143,70 @@ export function TaskDetail({ task, links, started, aiText }: { task: TaskView; l
         </button>
       </div>
     </div>
+  );
+}
+
+/** 待你确认：AI 这次做了什么（每条能直接打开）、还没做的子步骤，以及「标完成 / 继续和 AI 改」 */
+function ReviewReport({ task, report, document }: { task: TaskView; report: ReportItem[]; document: Links["document"] }) {
+  const { expand } = useShell();
+  const startTask = useStartTask();
+  const [pending, startTransition] = useTransition();
+  // 工具记录里没有这份关联文书（比如用户自己建的），也给一条能打开的
+  const items: ReportItem[] =
+    document && !report.some((r) => r.link?.kind === "doc" && r.link.id === document.id)
+      ? [...report, { text: `结果在「${document.title}」`, link: { kind: "doc", id: document.id, title: document.title } }]
+      : report;
+  const todo = task.steps.filter((s) => !s.done);
+  const firstDoc = items.find((r) => r.link?.kind === "doc");
+  return (
+    <section className="overflow-hidden rounded-xl border border-warn/50">
+      <h2 className="bg-warn-soft px-4 py-2 text-sm font-medium text-warn">AI 做完了，等你看一下</h2>
+      <ul className="space-y-1.5 px-4 py-3 text-sm">
+        {items.length === 0 && todo.length === 0 && <li className="text-muted">这次对话里 AI 没有改动什么，结果在右边的对话里。</li>}
+        {items.map((r, i) => (
+          <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-ok">✓</span>
+            <span className="min-w-0 flex-1">{r.text}</span>
+            {r.link && <ReportOpen link={r.link} primary={r === firstDoc} />}
+          </li>
+        ))}
+        {todo.map((s) => (
+          <li key={s.id} className="flex gap-2 text-muted">
+            <span>○</span>
+            <span className="flex-1">{s.title}（还没做）</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap gap-2 border-t border-line px-4 py-2.5">
+        <button disabled={pending} onClick={() => startTransition(() => setTaskStatusAction(task.id, "done"))} className="btn-primary px-3 py-1 text-sm">
+          没问题，标完成
+        </button>
+        <button
+          onClick={() => {
+            startTask(task.id, false);
+            expand("ai");
+          }}
+          className="btn-ghost px-3 py-1 text-sm"
+        >
+          还要改，继续和 AI 聊
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function ReportOpen({ link, primary }: { link: ReportLink; primary: boolean }) {
+  const cls = primary ? "btn-primary px-2 py-0.5 text-xs" : btn;
+  if (link.kind === "page")
+    return (
+      <Link href={link.href} className={cls}>
+        打开
+      </Link>
+    );
+  return (
+    <OpenTabLink tab={link} href={link.kind === "doc" ? `/documents/${link.id}` : "/aspirations"} className={cls}>
+      {link.kind === "doc" ? "打开" : "看看"}
+    </OpenTabLink>
   );
 }
 

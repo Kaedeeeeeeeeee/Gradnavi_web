@@ -3,7 +3,7 @@ import { addDays, monthGrid, parseMonth, todayJst } from "@/lib/calendar";
 import { profileScores } from "@/lib/aspirations";
 import { decideTrack, PATH_LABELS, suggestPath, TRACK_LABELS } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
-import { agenda, briefing, groupTasks, keyDates } from "@/lib/tasks";
+import { agenda, awaitingReview, briefing, groupTasks, keyDates } from "@/lib/tasks";
 import { listCalendar, listProposedEvents } from "@/server/calendar";
 import { listTaskConversationIds } from "@/server/conversations";
 import { listDocuments } from "@/server/documents";
@@ -20,7 +20,7 @@ export const metadata = { title: "主页 · GradNavi" };
 /** 新募集要项公布后在主页提醒多少天 */
 const ALERT_DAYS = 30;
 
-// 主页：今日简报（含关键日期倒计时）| 待办和日程（近 7 天，可展开更远）+ 月历。AI 的提议在最上面，同意后才生效。
+// 主页：今日简报（含关键日期倒计时）→ 等你处理（待你确认的任务 + AI 的提议，提议同意后才生效）→ 待办和日程（有日期的近 7 天在前，没日期的收在下面）+ 月历。
 export default async function WorkbenchPage({ searchParams }: PageProps<"/workbench">) {
   const user = await requireUser();
   const profile = await getProfile(user.id);
@@ -72,7 +72,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
     return [{ ...al, changes: diffGuideEvents(al.previous, al.events), task: t ? { id: t.id, title: t.title, started: started.has(t.id) } : null }];
   });
   const path = answers.path === "unsure" ? `${PATH_LABELS[suggestPath(answers, profileScores(profile.markdown, answers).jlpt)]}（建议，待确认）` : PATH_LABELS[answers.path];
-  const { near, far } = agenda(tasks.map(toHome), calendar, today);
+  const { near, undated, far } = agenda(tasks.map(toHome), calendar, today);
 
   return (
     <Home
@@ -82,6 +82,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
       briefing={briefing(tasks, proposedEvents.length + followUps.length, today)}
       alerts={alerts}
       countdown={keyDates(calendar, today)}
+      review={awaitingReview(tasks).map(toHome)}
       proposals={{
         tasks: groups.proposals.map(toHome),
         changes: tasks.filter((t) => !t.proposed && t.proposedChange).map(toHome),
@@ -89,6 +90,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
         followUps: followUps.map((p) => ({ id: p.id, name: p.name, date: p.followUpDate, proposed: p.proposedFollowUp!.date })),
       }}
       near={near}
+      undated={undated}
       far={far.filter((r) => !r.date || r.date <= horizon)}
       done={groups.done.map(toHome)}
       tasks={tasks.map(toHome)}

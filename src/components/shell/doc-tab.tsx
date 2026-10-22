@@ -18,7 +18,8 @@ import { listSavedProfessors, savedKeys } from "@/server/professors";
 import { latestGuides } from "@/server/schools";
 import { TaskDetail } from "@/components/tasks/task-detail";
 import { describeTask } from "@/lib/tasks";
-import { getTaskConversation } from "@/server/conversations";
+import { summarizeToolCalls } from "@/lib/task-report";
+import { getTaskConversation, listToolCalls } from "@/server/conversations";
 import { getTodo, taskLinks, toTaskView } from "@/server/todos";
 import { WebTab } from "./web-tab";
 
@@ -158,7 +159,9 @@ async function taskTab(userId: string, id: string) {
   if (!row) return { title: null, node: null };
   const [links, conversation] = await Promise.all([taskLinks(userId, row), getTaskConversation(userId, id)]);
   const task = toTaskView(row);
+  // 待你确认：列出 AI 在这个任务的对话里做了什么，每条能直接打开
+  const report = task.status === "review" ? summarizeToolCalls(conversation ? await listToolCalls(conversation.id) : []) : null;
   const aiText = `任务详情（用户正在看）：\n${describeTask(task, { professor: links.professor?.label, document: links.document?.title, school: links.school?.name })}`;
-  return { title: row.title, node: <TaskDetail key={row.id} task={task} links={links} started={!!conversation} aiText={aiText} /> };
+  return { title: row.title, node: <TaskDetail key={row.id} task={task} links={links} started={!!conversation} aiText={aiText} report={report} /> };
 }
 
