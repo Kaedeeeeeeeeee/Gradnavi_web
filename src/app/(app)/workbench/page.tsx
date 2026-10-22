@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { addDays, monthGrid, parseMonth, todayJst } from "@/lib/calendar";
+import { addDays, monthGrid, parseMonth, parseWeek, todayJst, weeksFrom } from "@/lib/calendar";
 import { profileScores } from "@/lib/aspirations";
 import { decideTrack, PATH_LABELS, suggestPath, TRACK_LABELS } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
@@ -28,9 +28,11 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
   if (!profile?.onboardedAt || !answers) redirect("/onboarding");
 
   const today = todayJst();
-  const m = (await searchParams).m;
-  const month = parseMonth(typeof m === "string" ? m : undefined, today);
-  const weeks = monthGrid(month);
+  // 日历默认从这周开始看 3 周（?w= 换起始周）；?m= 看整月
+  const { m, w } = await searchParams;
+  const view =
+    typeof m === "string" ? { kind: "month" as const, month: parseMonth(m, today) } : { kind: "weeks" as const, start: parseWeek(typeof w === "string" ? w : undefined, today) };
+  const weeks = view.kind === "month" ? monthGrid(view.month) : weeksFrom(view.start);
   const gridFrom = weeks[0][0].date;
   const gridTo = weeks.at(-1)![6].date;
   // 待办和日程展开后、倒计时都看一年
@@ -77,7 +79,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
   return (
     <Home
       today={today}
-      month={month}
+      view={view}
       profileLine={`路径：${path} · 目标入学：${answers.targetEntry} · 路线：${TRACK_LABELS[decideTrack(answers)]}`}
       briefing={briefing(tasks, proposedEvents.length + followUps.length, today)}
       alerts={alerts}

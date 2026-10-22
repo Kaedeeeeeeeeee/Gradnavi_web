@@ -6,7 +6,7 @@ import { useStartTask } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { btn, formatDay, primaryBtn, ProposalButtons, StartButton, StatusSelect } from "@/components/tasks/task-ui";
 import { DateInput } from "@/components/ui/date-input";
-import { CALENDAR_KIND_LABELS, CALENDAR_KINDS, itemsOn, monthGrid, shiftMonth, type CalendarItem, type CalendarKind } from "@/lib/calendar";
+import { addDays, CALENDAR_KIND_LABELS, CALENDAR_KINDS, CALENDAR_WEEKS, cellLabel, itemsOn, monthGrid, shiftMonth, weeksFrom, weekStart, type CalendarItem, type CalendarKind } from "@/lib/calendar";
 import { AGENDA_DAYS, type AgendaRow, type Countdown, type TaskView } from "@/lib/tasks";
 import type { GuideChange } from "@/lib/admissions";
 import { acceptAllProposalsAction, addEventAction, addTaskAction, deleteEventAction, setTaskStatusAction, updateEventAction } from "./actions";
@@ -34,7 +34,8 @@ type GuideAlert = {
 
 type Props = {
   today: string;
-  month: string;
+  /** 日历：默认从某周开始的 3 周；?m= 时是整月 */
+  view: { kind: "weeks"; start: string } | { kind: "month"; month: string };
   profileLine: string;
   briefing: string[];
   countdown: Countdown[];
@@ -72,7 +73,7 @@ export function Home(p: Props) {
       <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
         <Agenda near={p.near} undated={p.undated} far={p.far} done={p.done} today={p.today} />
 
-        <MonthCalendar today={p.today} month={p.month} items={p.calendar} tasks={p.tasks} />
+        <MonthCalendar today={p.today} view={p.view} items={p.calendar} tasks={p.tasks} />
       </div>
     </div>
   );
@@ -465,11 +466,30 @@ function Dot({ item }: { item: Pick<CalendarItem, "kind" | "tentative" | "propos
   return <span className={`${base} ${DOT[item.kind]} ${item.done ? "opacity-40" : ""}`} />;
 }
 
-function MonthCalendar({ today, month, items, tasks }: { today: string; month: string; items: CalendarItem[]; tasks: HomeTask[] }) {
+/** 格子里短标题的样式：截止红字、仮虚线框、AI 提议虚线、待办蓝字、做完的划掉 */
+function labelClass(it: CalendarItem) {
+  const base = "truncate rounded-[3px] px-1 text-left text-[11px] leading-4";
+  if (it.done) return `${base} text-faint line-through`;
+  if (it.proposed) return `${base} border border-dashed border-line-strong text-muted`;
+  const color = it.source === "todo" ? "text-accent" : it.kind === "deadline" ? "text-danger" : it.kind === "exam" ? "text-warn" : "text-foreground";
+  return `${base} ${color} ${it.tentative ? "border border-dashed border-warn" : "bg-subtle"}`;
+}
+
+/** 宽的时候格子里最多写几条，其余显示「+N」 */
+const CELL_LABELS = 2;
+
+function MonthCalendar({ today, view, items, tasks }: { today: string; view: Props["view"]; items: CalendarItem[]; tasks: HomeTask[] }) {
   const [selected, setSelected] = useState<string | null>(null);
   const taskById = new Map(tasks.map((t) => [t.id, t]));
-  const weeks = monthGrid(month);
-  const [y, mm] = month.split("-");
+  const weeks = view.kind === "month" ? monthGrid(view.month) : weeksFrom(view.start);
+  const first = weeks[0][0].date;
+  const last = weeks.at(-1)![6].date;
+  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
+  const nav =
+    view.kind === "month"
+      ? { prev: `/workbench?m=${shiftMonth(view.month, -1)}`, next: `/workbench?m=${shiftMonth(view.month, 1)}`, label: `${view.month.slice(0, 4)} 年 ${Number(view.month.slice(5))} 月`, isNow: view.month === today.slice(0, 7) }
+      : { prev: `/workbench?w=${addDays(view.start, -7 * CALENDAR_WEEKS)}`, next: `/workbench?w=${addDays(view.start, 7 * CALENDAR_WEEKS)}`, label: `${md(first)} – ${md(last)}`, isNow: view.start === weekStart(today) };
+  const defaultDate = selected ?? (today >= first && today <= last ? today : first);
   // AI 的改期提议：在提议的那天显示一个虚线圈
   const ghosts: CalendarItem[] = items.flatMap((it) =>
     it.proposedChange ? [{ ...it, key: `${it.key}:change`, date: it.proposedChange.date, endDate: it.proposedChange.endDate, proposed: true }] : [],
@@ -482,20 +502,25 @@ function MonthCalendar({ today, month, items, tasks }: { today: string; month: s
         <div className="card-head text-sm">
           <h2 className="card-title">日历</h2>
           <div className="ml-auto flex items-center gap-1">
-            <Link href={`/workbench?m=${shiftMonth(month, -1)}`} className="rounded px-1.5 text-muted hover:text-foreground" aria-label="上个月">
+            <Link href={nav.prev} className="rounded px-1.5 text-muted hover:text-foreground" aria-label="往前">
               ‹
             </Link>
-            <span className="tabular-nums">
-              {y} 年 {Number(mm)} 月
-            </span>
-            <Link href={`/workbench?m=${shiftMonth(month, 1)}`} className="rounded px-1.5 text-muted hover:text-foreground" aria-label="下个月">
+            <span className="tabular-nums">{nav.label}</span>
+            <Link href={nav.next} className="rounded px-1.5 text-muted hover:text-foreground" aria-label="往后">
               ›
             </Link>
-            {month !== today.slice(0, 7) && (
-              <Link href="/workbench" className="text-xs text-muted hover:text-foreground">
+            {!nav.isNow && (
+              <Link href={view.kind === "month" ? `/workbench?m=${today.slice(0, 7)}` : "/workbench"} className="text-xs text-muted hover:text-foreground">
                 今天
               </Link>
             )}
+            <Link
+              href={view.kind === "month" ? "/workbench" : `/workbench?m=${today.slice(0, 7)}`}
+              className="ml-1 rounded-md bg-subtle px-1.5 py-0.5 text-xs text-muted hover:text-foreground"
+              title={view.kind === "month" ? "看从这周开始的 3 周" : "看整月"}
+            >
+              {view.kind === "month" ? "3 周" : "月"}
+            </Link>
           </div>
         </div>
 
@@ -505,23 +530,38 @@ function MonthCalendar({ today, month, items, tasks }: { today: string; month: s
               {d}
             </div>
           ))}
-          {weeks.flat().map(({ date, inMonth }) => {
+          {weeks.flat().map(({ date, inMonth }, i) => {
             const day = itemsOn(all, date);
+            const labeled = day.flatMap((it) => {
+              const text = cellLabel(it, date);
+              return text ? [{ it, text }] : [];
+            });
             const isSel = selected === date;
+            // 3 周视图跨月时，第一格和每月 1 号写上月份
+            const dayNum = view.kind === "weeks" && (i === 0 || date.endsWith("-01")) ? md(date) : String(Number(date.slice(8)));
             return (
               <button
                 key={date}
                 onClick={() => setSelected(isSel ? null : date)}
-                className={`flex h-10 flex-col items-center gap-0.5 rounded pt-1 ${inMonth ? "" : "text-faint"} ${
+                className={`flex h-10 min-w-0 flex-col items-center gap-0.5 rounded pt-1 @md:h-auto @md:min-h-16 @md:items-stretch @md:px-0.5 @md:pb-1 ${inMonth ? "" : "text-faint"} ${
                   isSel ? "bg-subtle-strong" : "hover:bg-subtle"
                 }`}
                 aria-label={`${date}${day.length ? `，${day.length} 项` : ""}`}
               >
-                <span className={`tabular-nums ${date === today ? "rounded-full bg-primary px-1.5 text-on-primary" : ""}`}>{Number(date.slice(8))}</span>
-                <span className="flex gap-0.5">
+                <span className={`self-center tabular-nums ${date === today ? "rounded-full bg-primary px-1.5 text-on-primary" : ""}`}>{dayNum}</span>
+                {/* 窄：圆点；宽：直接写短标题，超过两条显示 +N */}
+                <span className="flex gap-0.5 @md:hidden">
                   {day.slice(0, 3).map((it) => (
                     <Dot key={it.key} item={it} />
                   ))}
+                </span>
+                <span className="hidden min-w-0 flex-col gap-0.5 @md:flex">
+                  {labeled.slice(0, CELL_LABELS).map(({ it, text }) => (
+                    <span key={it.key} className={labelClass(it)} title={it.title}>
+                      {text}
+                    </span>
+                  ))}
+                  {labeled.length > CELL_LABELS && <span className="px-1 text-left text-[11px] leading-4 text-muted">+{labeled.length - CELL_LABELS}</span>}
                 </span>
               </button>
             );
@@ -567,7 +607,7 @@ function MonthCalendar({ today, month, items, tasks }: { today: string; month: s
 
         <details className="card-foot text-sm">
           <summary className="cursor-pointer py-1 text-muted hover:text-foreground">＋ 添加</summary>
-          <AddForm key={selected ?? month} defaultDate={selected ?? (month === today.slice(0, 7) ? today : `${month}-01`)} />
+          <AddForm key={defaultDate} defaultDate={defaultDate} />
         </details>
     </section>
   );
