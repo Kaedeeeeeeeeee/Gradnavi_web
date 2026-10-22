@@ -2,19 +2,30 @@ import { Extension } from "@tiptap/core";
 import type { Node as PmNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey, type EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { diffText } from "@/lib/doc-history";
 import { alignZh, type ZhCell, type ZhEntry } from "@/lib/doc-zh";
 
 // 编辑器上的叠加显示（不改正文）：
 //   - 标出 AI 修改建议要改的原文、教授批注针对的原文（点卡片能定位，点高亮能找到卡片）
-//   - 中文对照：每个段落后面插一个中文格子，编辑器用两栏网格排版，中文正好落在日文右边
+//   - 一段之内的 AI 修改建议直接显示在正文里：删掉的划红线、新增的标绿，后面跟「接受 / 拒绝」
+//   - 中文对照：每个段落后面插一个中文格子，宽的时候编辑器用两栏网格排版，中文正好落在日文右边；窄的时候落在日文下面
 
-export type OverlayMark = { id: string; text: string; nth?: number; kind: "suggestion" | "comment"; active: boolean };
+/** replace：在正文里直接显示这条修改（一段之内的纯文字改动才这样显示，其余的在旁边的卡片里） */
+export type OverlayMark = { id: string; text: string; nth?: number; kind: "suggestion" | "comment"; active: boolean; replace?: string };
 
 export type OverlayState = {
   marks: OverlayMark[];
   zh: { stored: ZhEntry[]; keyOf: (node: PmNode) => string; onTranslate: (key: string) => void; busy: boolean } | null;
   onMarkClick: (id: string) => void;
+  /** 正文里的修改建议：接受 / 拒绝；busy = 正在处理的建议 id */
+  suggest?: { onAccept: (id: string) => void; onReject: (id: string) => void; busy: string | null };
 };
+
+/** 这条修改能不能直接显示在正文里：原文和新文字都在一段之内，且没有 Markdown 符号 */
+export function isInlineReplace(find: string, replace: string) {
+  const plain = (t: string) => !t.includes("\n") && searchableText(t) === t.trim();
+  return find.trim().length > 0 && plain(find) && (replace === "" || plain(replace));
+}
 
 export const overlayKey = new PluginKey("docOverlay");
 
@@ -102,11 +113,60 @@ function zhWidget(cell: ZhCell, key: string | null, state: NonNullable<OverlaySt
   };
 }
 
+function insWidget(text: string, id: string) {
+  return () => {
+    const el = document.createElement("ins");
+    el.className = "doc-ins";
+    el.textContent = text;
+    el.setAttribute("contenteditable", "false");
+    el.dataset.markId = id;
+    return el;
+  };
+}
+
+function suggestButtons(id: string, s: NonNullable<OverlayState["suggest"]>) {
+  return () => {
+    const el = document.createElement("span");
+    el.className = "doc-suggest-actions";
+    el.setAttribute("contenteditable", "false");
+    for (const [label, cls, fn] of [
+      ["接受", "doc-suggest-accept", s.onAccept],
+      ["拒绝", "doc-suggest-reject", s.onReject],
+    ] as const) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = cls;
+      b.textContent = s.busy === id ? "…" : label;
+      b.disabled = !!s.busy;
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.addEventListener("click", () => fn(id));
+      el.append(b);
+    }
+    return el;
+  };
+}
+
 function build(state: EditorState, overlay: OverlayState): DecorationSet {
   const decos: Decoration[] = [];
   for (const m of overlay.marks) {
     const range = findTextRange(state.doc, m.text, m.nth);
     if (!range || range.from >= range.to) continue;
+    if (m.replace !== undefined && overlay.suggest) {
+      // 正文里直接显示：按字比较原文和新文字，删掉的部分划线，新增的部分在对应位置插绿字
+      let c = range.from;
+      let i = 0;
+      for (const [op, text] of diffText(searchableText(m.text), m.replace)) {
+        if (op === 0) c += text.length;
+        else if (op === -1) {
+          decos.push(Decoration.inline(c, c + text.length, { class: `doc-del${m.active ? " doc-mark-active" : ""}`, "data-mark-id": m.id }));
+          c += text.length;
+        } else decos.push(Decoration.widget(c, insWidget(text, m.id), { side: 1, key: `ins:${m.id}:${i++}:${text}`, ignoreSelection: true }));
+      }
+      decos.push(
+        Decoration.widget(range.to, suggestButtons(m.id, overlay.suggest), { side: 2, key: `sg:${m.id}:${overlay.suggest.busy ?? ""}`, ignoreSelection: true }),
+      );
+      continue;
+    }
     decos.push(
       Decoration.inline(range.from, range.to, {
         class: `doc-mark doc-mark-${m.kind}${m.active ? " doc-mark-active" : ""}`,

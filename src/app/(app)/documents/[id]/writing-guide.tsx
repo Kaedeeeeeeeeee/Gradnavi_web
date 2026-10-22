@@ -73,43 +73,39 @@ export function WritingGuide({ doc, track, onAsk }: Props) {
     onAsk(`请起草「${h}」这一节${pts.length ? `（提纲要点：${pts.join("；")}）` : ""}。${fit}用 update_document_section 写，附中文对照；信息不够就先问我。`);
   };
 
+  const written = sections.filter((s) => s.written).length;
+  // 一行：各节进度（点没写的节让 AI 起草）+ 下一步按钮 + 写法切换
   return (
-    <div className={box} data-testid="section-progress">
-      <div className="flex flex-wrap items-center gap-2">
-        {sections.map((s) => (
-          <button
-            key={s.heading}
-            title={self || s.written ? s.heading : `让 AI 起草「${s.heading}」`}
-            disabled={self}
-            onClick={() => draft(s.heading)}
-            className={`rounded-full px-2.5 py-0.5 text-xs ${
-              s.written ? "bg-ok-soft text-ok" : s === next ? "bg-primary text-on-primary" : "bg-subtle text-muted"
-            }`}
-          >
-            {s.heading}
-            {s.written && " ✓"}
-          </button>
-        ))}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {self ? (
-          <span className="text-muted">你自己写，AI 只给意见。写完一节可以点上面的「让 AI 当教授审一遍」。</span>
-        ) : next ? (
-          <button onClick={() => draft(next.heading)} className="btn-primary px-3 py-1.5">
-            AI 起草：{next.heading}
-          </button>
-        ) : (
-          <span className="text-muted">各节都有内容了。可以让 AI 当教授审一遍，看看还有哪里要改。</span>
-        )}
+    <div className="flex flex-wrap items-center gap-1.5 text-sm" data-testid="section-progress">
+      <span className="mr-1 text-muted tabular-nums">
+        {next ? `写到：${next.heading}` : "各节都有内容了"}（{written}/{sections.length} 节）
+      </span>
+      {sections.map((s) => (
         <button
-          disabled={pending}
-          onClick={() => run(() => setWriteModeAction(doc.id, self ? "together" : "self"))}
-          className="ml-auto text-xs text-muted underline disabled:opacity-40"
+          key={s.heading}
+          title={self || s.written ? s.heading : `让 AI 起草「${s.heading}」`}
+          disabled={self}
+          onClick={() => draft(s.heading)}
+          className={`rounded-full px-2 py-px text-xs ${s.written ? "bg-ok-soft text-ok" : s === next ? "bg-info-soft text-info" : "bg-subtle text-muted"}`}
         >
-          {self ? "改成和 AI 一起写" : "改成自己写，AI 只给意见"}
+          {s.heading}
+          {s.written && " ✓"}
         </button>
-      </div>
-      {error && <p className="text-danger">{error}</p>}
+      ))}
+      {!self && next && (
+        <button onClick={() => draft(next.heading)} className="btn-primary ml-1 px-2.5 py-0.5 text-xs">
+          AI 起草：{next.heading}
+        </button>
+      )}
+      <button
+        disabled={pending}
+        onClick={() => run(() => setWriteModeAction(doc.id, self ? "together" : "self"))}
+        className="ml-auto text-xs text-muted underline disabled:opacity-40"
+        title={self ? "你自己写，AI 只给意见" : undefined}
+      >
+        {self ? "改成和 AI 一起写" : "改成自己写，AI 只给意见"}
+      </button>
+      {error && <p className="basis-full text-danger">{error}</p>}
     </div>
   );
 }

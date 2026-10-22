@@ -15,6 +15,8 @@ export type PlanOption = DocLink & { professorId: string | null; isCopy: boolean
 
 const box = "space-y-3 rounded-xl border border-line p-4 text-sm";
 const btn = "btn px-3 py-1.5";
+/** 编辑器标题下面的一行小字：收着时只是一行，点开后占满整行 */
+const inlinePanel = "text-sm open:basis-full open:space-y-3 open:rounded-xl open:border open:border-line open:p-3";
 
 /** 计划书：通用版下面列出给每位教授的定制版，可以再为一位教授复制一份 */
 export function TailoredCopies({
@@ -31,8 +33,8 @@ export function TailoredCopies({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   return (
-    <details className={box} data-testid="tailored-copies" open={copies.length > 0}>
-      <summary className="cursor-pointer text-muted">给教授的定制版（{copies.length}）</summary>
+    <details className={inlinePanel} data-testid="tailored-copies">
+      <summary className="cursor-pointer text-muted hover:text-foreground">定制版 {copies.length} 份</summary>
       <p className="text-muted">这份是通用版。为志愿里的每位教授复制一份定制版，再按那位教授的论文调整；通用版之后的修改不会影响已复制的定制版。</p>
       {copies.length > 0 && (
         <ul className="space-y-1">
@@ -204,7 +206,7 @@ function ProfessorPicker({ docId, professor, professors }: { docId: string; prof
 // 目标教授变了（例如从清单里选了另一位）时重新挂载表单，让输入框显示新的信息
 const professorKey = (p: TargetProfessor | null) => (p ? `${p.professorId ?? ""}:${p.name}` : "none");
 
-export function ProfessorForm(props: { docId: string; professor: TargetProfessor | null; professors: ProfessorOption[]; defaultOpen: boolean; label?: string }) {
+export function ProfessorForm(props: { docId: string; professor: TargetProfessor | null; professors: ProfessorOption[]; defaultOpen: boolean; label?: string; inline?: boolean }) {
   return <ProfessorFormInner key={professorKey(props.professor)} {...props} />;
 }
 
@@ -214,12 +216,14 @@ function ProfessorFormInner({
   professors,
   defaultOpen,
   label = "目标教授",
+  inline = false,
 }: {
   docId: string;
   professor: TargetProfessor | null;
   professors: ProfessorOption[];
   defaultOpen: boolean;
   label?: string;
+  inline?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState({
@@ -233,15 +237,15 @@ function ProfessorFormInner({
     className: "input w-full px-3 py-1.5",
   });
   return (
-    <details open={defaultOpen}>
-      <summary className="cursor-pointer text-muted">
+    <details open={defaultOpen} className={inline ? inlinePanel : undefined}>
+      <summary className="cursor-pointer text-muted hover:text-foreground">
         {label}：{professor ? `${professor.name}${professor.affiliation ? `（${professor.affiliation}）` : ""}` : "未设定"}
       </summary>
-      <div className="mt-3">
+      <div className={inline ? "" : "mt-3"}>
         <ProfessorPicker docId={docId} professor={professor} professors={professors} />
       </div>
       <form
-        className="mt-3 space-y-2"
+        className={inline ? "space-y-2" : "mt-3 space-y-2"}
         onSubmit={(e) => {
           e.preventDefault();
           startTransition(() => setTargetProfessorAction(docId, form));
