@@ -43,6 +43,8 @@ type Props = {
   near: AgendaRow<HomeTask>[];
   far: AgendaRow<HomeTask>[];
   done: HomeTask[];
+  /** 全部任务，日历里点某天时，待办也显示状态和「让 AI 开始」 */
+  tasks: HomeTask[];
   calendar: CalendarItem[];
 };
 
@@ -66,7 +68,7 @@ export function Home(p: Props) {
       <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
         <Agenda near={p.near} far={p.far} done={p.done} today={p.today} />
 
-        <MonthCalendar today={p.today} month={p.month} items={p.calendar} />
+        <MonthCalendar today={p.today} month={p.month} items={p.calendar} tasks={p.tasks} />
       </div>
     </div>
   );
@@ -330,6 +332,7 @@ function TaskRow({ task, today }: { task: HomeTask; today: string }) {
 
 function AddTaskForm() {
   const [title, setTitle] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [pending, startTransition] = useTransition();
   return (
     <form
@@ -338,7 +341,10 @@ function AddTaskForm() {
         const value = title.trim();
         if (!value) return;
         setTitle("");
-        startTransition(() => addTaskAction(value));
+        setDueDate("");
+        startTransition(async () => {
+          await addTaskAction({ title: value, dueDate });
+        });
       }}
       className="flex gap-2"
     >
@@ -347,6 +353,14 @@ function AddTaskForm() {
         onChange={(e) => setTitle(e.target.value)}
         placeholder="＋ 添加一个任务"
         className="input min-w-0 flex-1 border-transparent bg-transparent px-2 py-1.5 text-sm hover:bg-subtle focus:bg-surface"
+      />
+      <input
+        type="date"
+        value={dueDate}
+        onChange={(e) => setDueDate(e.target.value)}
+        title="截止日（可选）"
+        aria-label="截止日（可选）"
+        className={`input w-36 shrink-0 border-transparent bg-transparent px-2 py-1.5 text-sm hover:bg-subtle focus:bg-surface ${dueDate ? "" : "text-faint"}`}
       />
       <button type="submit" disabled={pending || !title.trim()} className="btn px-3 py-1.5 text-sm">
         添加
@@ -374,15 +388,20 @@ const KIND_STYLES: Record<CalendarKind, string> = {
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
 
 /** 圆点：实心 = 正式日程；空心 = 仮（按往年要项推算）；虚线圈 = AI 提议，还没同意 */
-function Dot({ item }: { item: Pick<CalendarItem, "kind" | "tentative" | "proposed" | "done"> }) {
+function Dot({ item }: { item: Pick<CalendarItem, "kind" | "tentative" | "proposed" | "done"> & { source?: CalendarItem["source"] } }) {
+  if (item.source === "todo") {
+    const box = "inline-block size-1.5 rounded-[1px] border border-accent";
+    return <span className={`${box} ${item.proposed ? "border-dashed bg-transparent" : item.done ? "bg-transparent opacity-40" : "bg-accent"}`} />;
+  }
   const base = "inline-block size-1.5 rounded-full border";
   if (item.proposed) return <span className={`${base} border-dashed bg-transparent ${DOT[item.kind].split(" ")[1]}`} />;
   if (item.tentative) return <span className={`${base} bg-transparent ${DOT[item.kind].split(" ")[1]}`} />;
   return <span className={`${base} ${DOT[item.kind]} ${item.done ? "opacity-40" : ""}`} />;
 }
 
-function MonthCalendar({ today, month, items }: { today: string; month: string; items: CalendarItem[] }) {
+function MonthCalendar({ today, month, items, tasks }: { today: string; month: string; items: CalendarItem[]; tasks: HomeTask[] }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const taskById = new Map(tasks.map((t) => [t.id, t]));
   const weeks = monthGrid(month);
   const [y, mm] = month.split("-");
   // AI 的改期提议：在提议的那天显示一个虚线圈
@@ -444,6 +463,9 @@ function MonthCalendar({ today, month, items }: { today: string; month: string; 
         </div>
         <p className="flex flex-wrap gap-x-3 px-4 pt-1 pb-3 text-xs text-faint">
           <span>
+            <Dot item={{ kind: "deadline", source: "todo" }} /> 待办
+          </span>
+          <span>
             <Dot item={{ kind: "deadline" }} /> 截止
           </span>
           <span>
@@ -462,22 +484,24 @@ function MonthCalendar({ today, month, items }: { today: string; month: string; 
 
         {selected && (
           <div className="border-t border-line px-4 py-2">
-            <p className="section-title py-1 text-xs">{formatDay(selected)} 的日程</p>
+            <p className="section-title py-1 text-xs">{formatDay(selected)}</p>
             {list.length === 0 ? (
-              <p className="py-1 text-sm text-muted">这天没有日程。</p>
+              <p className="py-1 text-sm text-muted">这天没有安排。</p>
             ) : (
               <ul className="divide-y divide-line">
-                {list.map((it) => (
-                  <EventRow key={it.key} item={it} today={today} />
-                ))}
+                {list.map((it) => {
+                  // 待办和待办列表里一样：有状态和「让 AI 开始」；AI 提议的待办还走提议按钮
+                  const task = it.source === "todo" && !it.proposed && !it.proposedChange ? taskById.get(it.sourceId ?? "") : undefined;
+                  return task ? <TaskRow key={it.key} task={task} today={today} /> : <EventRow key={it.key} item={it} today={today} />;
+                })}
               </ul>
             )}
           </div>
         )}
 
         <details className="card-foot text-sm">
-          <summary className="cursor-pointer py-1 text-muted hover:text-foreground">＋ 添加日程</summary>
-          <AddEventForm key={selected ?? month} defaultDate={selected ?? (month === today.slice(0, 7) ? today : `${month}-01`)} />
+          <summary className="cursor-pointer py-1 text-muted hover:text-foreground">＋ 添加</summary>
+          <AddForm key={selected ?? month} defaultDate={selected ?? (month === today.slice(0, 7) ? today : `${month}-01`)} />
         </details>
     </section>
   );
@@ -550,14 +574,64 @@ const input = "input w-full px-3 py-1.5 text-sm";
 
 type EventFormValues = { title: string; date: string; endDate: string; kind: CalendarKind; note: string };
 
-function AddEventForm({ defaultDate }: { defaultDate: string }) {
+/** 日历里的添加框，和 Google 日历一样顶部切换：待办（有状态，可以让 AI 开始）或日程（截止、考试这类时间点） */
+function AddForm({ defaultDate }: { defaultDate: string }) {
+  const [mode, setMode] = useState<"task" | "event">("task");
+  const tab = (m: typeof mode, label: string) => (
+    <button
+      type="button"
+      onClick={() => setMode(m)}
+      className={`rounded-md px-2.5 py-1 text-xs ${mode === m ? "bg-surface font-medium text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
+    >
+      {label}
+    </button>
+  );
   return (
-    <EventForm
-      initial={{ title: "", date: defaultDate, endDate: "", kind: "other", note: "" }}
-      submitLabel="添加"
-      resetAfterSubmit
-      onSubmit={(form) => addEventAction(form)}
-    />
+    <div className="mt-2 space-y-2 rounded-xl bg-subtle p-3">
+      <div className="inline-flex rounded-lg bg-subtle-strong p-0.5">
+        {tab("task", "待办")}
+        {tab("event", "日程")}
+      </div>
+      {mode === "task" ? (
+        <TaskForm defaultDate={defaultDate} />
+      ) : (
+        <EventForm
+          initial={{ title: "", date: defaultDate, endDate: "", kind: "other", note: "" }}
+          submitLabel="添加"
+          resetAfterSubmit
+          bare
+          onSubmit={(form) => addEventAction(form)}
+        />
+      )}
+    </div>
+  );
+}
+
+function TaskForm({ defaultDate }: { defaultDate: string }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({ title: "", dueDate: defaultDate, note: "" });
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        setError(null);
+        startTransition(async () => {
+          const res = await addTaskAction(form);
+          if (res.ok) setForm((f) => ({ ...f, title: "", note: "" }));
+          else setError(res.error);
+        });
+      }}
+      className="space-y-2"
+    >
+      <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="要做的事，如 给佐藤教授发邮件" className={input} />
+      <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} className={input} title="截止日（可选）" />
+      <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="备注（可选）" className={input} />
+      {error && <p className="text-xs text-danger">{error}</p>}
+      <button type="submit" disabled={pending} className="btn-primary px-3 py-1.5">
+        {pending ? "添加中…" : "添加待办"}
+      </button>
+    </form>
   );
 }
 
@@ -566,12 +640,15 @@ function EventForm({
   initial,
   submitLabel,
   resetAfterSubmit = false,
+  bare = false,
   onSubmit,
   onCancel,
 }: {
   initial: EventFormValues;
   submitLabel: string;
   resetAfterSubmit?: boolean;
+  /** 放在别的容器里时不要自己的底色和边距 */
+  bare?: boolean;
   onSubmit: (form: EventFormValues) => Promise<{ ok: true } | { ok: false; error: string }>;
   onCancel?: () => void;
 }) {
@@ -590,7 +667,7 @@ function EventForm({
           else if (resetAfterSubmit) setForm((f) => ({ ...f, title: "", endDate: "", note: "" }));
         });
       }}
-      className="mt-2 space-y-2 rounded-xl bg-subtle p-3"
+      className={bare ? "space-y-2" : "mt-2 space-y-2 rounded-xl bg-subtle p-3"}
     >
       <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="标题，如 JLPT N1 考试" className={input} autoFocus={!!onCancel} />
       <div className="flex gap-2">

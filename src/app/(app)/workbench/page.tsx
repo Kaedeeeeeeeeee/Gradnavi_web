@@ -91,6 +91,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
       near={near}
       far={far.filter((r) => !r.date || r.date <= horizon)}
       done={groups.done.map(toHome)}
+      tasks={tasks.map(toHome)}
       calendar={calendar.filter((it) => it.date <= gridTo && (it.endDate ?? it.date) >= gridFrom)}
     />
   );
