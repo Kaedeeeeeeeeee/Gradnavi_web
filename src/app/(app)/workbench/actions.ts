@@ -66,7 +66,7 @@ export async function updateTaskAction(id: string, patch: z.input<typeof taskPat
   return { ok: true };
 }
 
-const stepsSchema = z.array(z.object({ id: z.string().max(64), title: z.string().trim().max(100), done: z.boolean() })).max(20);
+const stepsSchema = z.array(z.object({ id: z.string().max(64), title: z.string().trim().max(200), done: z.boolean() })).max(20);
 
 export async function setTaskStepsAction(id: string, steps: z.input<typeof stepsSchema>) {
   const user = await requireUser();

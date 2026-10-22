@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useLayoutEffect, useRef, useState, useTransition } from "react";
 import { deleteTaskAction, setTaskStatusAction, setTaskStepsAction, updateTaskAction } from "@/app/(app)/workbench/actions";
 import { useAiPageContent, useStartTask } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { DateInput } from "@/components/ui/date-input";
 import { uuid } from "@/lib/browser";
 import type { ReportItem, ReportLink } from "@/lib/task-report";
+import { splitLinks } from "@/lib/links";
 import { TASK_AREA_LABELS, TASK_AREAS, TASK_STATUS_LABELS, TASK_STATUSES, taskGroup, type TaskArea, type TaskStep, type TaskView } from "@/lib/tasks";
 import { btn, formatDay, ProposalButtons, StartButton } from "./task-ui";
 
@@ -26,6 +27,19 @@ export function TaskDetail({ task, links, started, aiText, report }: { task: Tas
   const { closeTab } = useShell();
   const [pending, startTransition] = useTransition();
   const [title, setTitle] = useState(task.title);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  // 标题框跟着内容长高（长标题换行，不被截断）
+  useLayoutEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [title]);
   const [note, setNote] = useState(task.note ?? "");
   const run = (fn: () => Promise<unknown>) => startTransition(async () => void (await fn()));
   // 没手动设分类时，主页按什么归的组
@@ -42,11 +56,15 @@ export function TaskDetail({ task, links, started, aiText, report }: { task: Tas
       )}
 
       <div className="space-y-3">
-        <input
+        {/* 长标题换行显示；回车不换行，直接保存 */}
+        <textarea
+          ref={titleRef}
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          rows={1}
+          onChange={(e) => setTitle(e.target.value.replace(/\n/g, ""))}
+          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), e.currentTarget.blur())}
           onBlur={() => title.trim() && title !== task.title && run(() => updateTaskAction(task.id, { title }))}
-          className="page-title w-full bg-transparent outline-none placeholder:text-faint"
+          className="page-title w-full resize-none overflow-hidden bg-transparent outline-none placeholder:text-faint"
           aria-label="任务标题"
         />
         <div className="flex flex-wrap items-center gap-1" role="radiogroup" aria-label="状态">
@@ -232,6 +250,19 @@ function ReportOpen({ link, primary }: { link: ReportLink; primary: boolean }) {
   );
 }
 
+/** 文字里的网址做成链接，在文稿栏打开 */
+function LinkedText({ text }: { text: string }) {
+  return splitLinks(text).map((p, i) =>
+    p.url ? (
+      <OpenTabLink key={i} tab={{ kind: "web", url: p.url, title: "网页" }} href={p.url} className="break-all text-accent hover:underline">
+        {p.url}
+      </OpenTabLink>
+    ) : (
+      <span key={i}>{p.text}</span>
+    ),
+  );
+}
+
 function Steps({ taskId, steps }: { taskId: string; steps: TaskStep[] }) {
   const [pending, startTransition] = useTransition();
   const [draft, setDraft] = useState("");
@@ -252,7 +283,9 @@ function Steps({ taskId, steps }: { taskId: string; steps: TaskStep[] }) {
               onChange={(e) => save(steps.map((x) => (x.id === s.id ? { ...x, done: e.target.checked } : x)))}
               className="mt-1"
             />
-            <span className={`flex-1 ${s.done ? "text-faint line-through" : ""}`}>{s.title}</span>
+            <span className={`min-w-0 flex-1 break-words ${s.done ? "text-faint line-through" : ""}`}>
+              <LinkedText text={s.title} />
+            </span>
             <button onClick={() => save(steps.filter((x) => x.id !== s.id))} className="text-xs text-faint opacity-0 group-hover:opacity-100 hover:text-danger">
               删除
             </button>

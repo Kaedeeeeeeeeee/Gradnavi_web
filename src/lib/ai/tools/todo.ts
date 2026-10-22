@@ -18,9 +18,11 @@ const areaSchema = z
   );
 
 const stepsSchema = z
-  .array(z.object({ title: z.string().min(1).max(100), done: z.boolean().optional() }))
+  .array(z.object({ title: z.string().min(1).max(200), done: z.boolean().optional() }))
   .max(20)
-  .describe("子步骤（任务内的小清单），整份写入；同名的子步骤保留原来的勾选状态");
+  .describe(
+    "子步骤（任务内的小清单），整份写入；同名的子步骤保留原来的勾选状态。用户要做的每个具体动作写成一条，链接写在对应那条里（如「用表单事前登记：https://…」「准备 1 分钟自我介绍」「准备要问的问题：…」）",
+  );
 
 const dateSchema = z
   .string()
@@ -62,7 +64,7 @@ export const addTodosTool = defineTool({
       .array(
         z.object({
           title: z.string().min(1).max(100),
-          note: z.string().max(500).optional(),
+          note: z.string().max(500).optional().describe("说明：只写背景和为什么做（一两句）；要做的动作写进 steps，不要堆在这里"),
           dueDate: dateSchema.optional(),
           steps: stepsSchema.optional(),
           area: areaSchema.optional(),

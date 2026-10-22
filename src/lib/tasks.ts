@@ -251,12 +251,12 @@ export function briefing(tasks: TaskView[], proposedEvents: number, today: strin
   return lines;
 }
 
-/** 新的子步骤（标题去重、去空，最多 20 条）；同名的保留原来的勾选状态 */
+/** 新的子步骤（标题去重、去空，每条最多 200 字，最多 20 条）；同名的保留原来的勾选状态 */
 export function buildSteps(input: { title: string; done?: boolean }[], previous: TaskStep[] = [], newId: () => string = () => crypto.randomUUID()): TaskStep[] {
   const seen = new Set<string>();
   const out: TaskStep[] = [];
   for (const s of input) {
-    const title = s.title.trim().slice(0, 100);
+    const title = s.title.trim().slice(0, 200);
     if (!title || seen.has(title)) continue;
     seen.add(title);
     const old = previous.find((p) => p.title === title);
