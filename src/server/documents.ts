@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, max, min, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { document, documentComment, documentSuggestion, documentVersion } from "@/db/schema";
 import { applyOp, canApply, opNewText, opSection, type DocOp, type SuggestionSource } from "@/lib/doc-ops";
@@ -33,15 +33,15 @@ export async function listDocuments(userId: string) {
       updatedAt: document.updatedAt,
     })
     .from(document)
-    .where(eq(document.userId, userId))
-    .orderBy(desc(document.updatedAt));
+    .where(and(eq(document.userId, userId), isNull(document.deletedAt)))
+    .orderBy(asc(document.position), desc(document.updatedAt));
 }
 
 export async function getDocument(userId: string, id: string): Promise<DocumentRow | null> {
   const [row] = await db
     .select()
     .from(document)
-    .where(and(eq(document.id, id), eq(document.userId, userId)));
+    .where(and(eq(document.id, id), eq(document.userId, userId), isNull(document.deletedAt)));
   return row ?? null;
 }
 
@@ -67,11 +67,14 @@ export async function createDocument(
   },
 ) {
   checkLength(input.markdown);
+  // 新建的排在列表最前
+  const [{ first }] = await db.select({ first: min(document.position) }).from(document).where(eq(document.userId, userId));
   const [row] = await db
     .insert(document)
     .values({
       id: crypto.randomUUID(),
       userId,
+      position: (first ?? 0) - 1,
       ...input,
       title: input.title.trim() || "未命名文书",
       targetProfessor: input.targetProfessor ?? null,
@@ -137,12 +140,39 @@ async function editDocument(userId: string, id: string, edit: (doc: DocumentRow)
   throw new Error("文书正在被同时修改，请稍后再试");
 }
 
+/** 删除：先标记为已删除（列表里可以撤销），30 天前删掉的这时一并清除 */
 export async function deleteDocument(userId: string, id: string) {
   const rows = await db
-    .delete(document)
-    .where(and(eq(document.id, id), eq(document.userId, userId)))
+    .update(document)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(document.id, id), eq(document.userId, userId), isNull(document.deletedAt)))
+    .returning({ id: document.id });
+  await db.delete(document).where(and(eq(document.userId, userId), lt(document.deletedAt, new Date(Date.now() - PURGE_AFTER_MS))));
+  return rows.length > 0;
+}
+
+const PURGE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** 撤销删除 */
+export async function restoreDocument(userId: string, id: string) {
+  const rows = await db
+    .update(document)
+    .set({ deletedAt: null })
+    .where(and(eq(document.id, id), eq(document.userId, userId), isNotNull(document.deletedAt)))
     .returning({ id: document.id });
   return rows.length > 0;
+}
+
+/** 按给定顺序重排文书列表（ids 是用户看到的完整顺序） */
+export async function reorderDocuments(userId: string, ids: string[]) {
+  await db.transaction(async (tx) => {
+    for (const [i, id] of ids.entries()) {
+      await tx
+        .update(document)
+        .set({ position: i })
+        .where(and(eq(document.id, id), eq(document.userId, userId)));
+    }
+  });
 }
 
 // ---------- 版本历史 ----------
@@ -409,7 +439,7 @@ export async function listTailoredCopies(userId: string, parentId: string) {
   return db
     .select({ id: document.id, title: document.title, targetProfessor: document.targetProfessor, parentVersion: document.parentVersion })
     .from(document)
-    .where(and(eq(document.userId, userId), eq(document.parentId, parentId)))
+    .where(and(eq(document.userId, userId), eq(document.parentId, parentId), isNull(document.deletedAt)))
     .orderBy(asc(document.createdAt));
 }
 

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, inArray, isNotNull, max } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, max } from "drizzle-orm";
 import { db } from "@/db";
 import { document, savedProfessor, schoolWatch, todo, userProfile } from "@/db/schema";
 import { profileScores } from "@/lib/aspirations";
@@ -19,7 +19,7 @@ export async function syncNextSteps(userId: string) {
       .from(savedProfessor)
       .where(eq(savedProfessor.userId, userId))
       .orderBy(asc(savedProfessor.createdAt)),
-    db.select({ id: document.id, kind: document.kind, target: document.targetProfessor }).from(document).where(eq(document.userId, userId)),
+    db.select({ id: document.id, kind: document.kind, target: document.targetProfessor }).from(document).where(and(eq(document.userId, userId), isNull(document.deletedAt))),
     db
       .select({ id: todo.id, stepKey: todo.stepKey, status: todo.status, dismissedAt: todo.dismissedAt, note: todo.note, documentId: todo.documentId })
       .from(todo)
