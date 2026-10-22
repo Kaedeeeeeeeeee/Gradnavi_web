@@ -39,7 +39,7 @@ export function parseQuotes(data: unknown): Quote[] {
 export function quotesForModel(quotes: Quote[]): string {
   if (!quotes.length) return "";
   const lines = quotes.map((q, i) => `[${i + 1}] 出自${q.source}：\n${q.text.replace(/^/gm, "> ")}${q.comment ? `\n用户对这段的评论：${q.comment}` : ""}`);
-  return `用户选中了下面 ${quotes.length} 段内容，加进了这条消息（编号 [1]、[2]… 对应用户说的「1」「2」或「这段」）：\n\n${lines.join("\n\n")}\n\n用户的话：`;
+  return `用户选中了下面 ${quotes.length} 段内容，加进了这条消息（编号 [1]、[2]… 对应用户说的「1」「2」或「这段」）：\n\n${lines.join("\n\n")}\n\n（以上是引用。下面是用户这条消息的正文；没有正文时，就根据引用和用户的评论回应。）`;
 }
 
 /** 输入框标签上的简短文字 */
