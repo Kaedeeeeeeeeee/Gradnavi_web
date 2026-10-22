@@ -31,6 +31,9 @@ export function demoReply(prompt: LanguageModelV4Prompt): Reply {
           .trim()
       : "";
 
+  // 原样回显，测试回答的 Markdown 显示
+  const echo = /^回显[:：]\s*([\s\S]+)$/.exec(text);
+  if (echo) return { text: echo[1] };
   const remember = /^记住[:：]\s*([\s\S]+)$/.exec(text);
   if (remember) {
     return { toolName: "update_user_md", input: { section: "偏好与备注", content: `- ${remember[1]}`, mode: "append", note: remember[1].slice(0, 60) } };
@@ -73,7 +76,7 @@ export function demoReply(prompt: LanguageModelV4Prompt): Reply {
     text:
       "（演示模式：服务器还没有配置 DEEPSEEK_API_KEY，这是固定回复。）\n\n" +
       `收到：「${text.slice(0, 100)}」。\n\n` +
-      "可以发送「记住：……」测试写入 user.md，「待办：……」测试添加 Todo，「找教授：……」测试教授检索，「日程：2026-12-01 ……」测试添加日程，在文书页面发送「写入：……」测试修改建议、发送「提纲」测试提纲。",
+      "可以发送「记住：……」测试写入 user.md，「待办：……」测试添加 Todo，「找教授：……」测试教授检索，「日程：2026-12-01 ……」测试添加日程，在文书页面发送「写入：……」测试修改建议、发送「提纲」测试提纲，「回显：……」原样回复（测试 Markdown 显示）。",
   };
 }
 
