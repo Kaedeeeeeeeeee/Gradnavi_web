@@ -6,6 +6,8 @@ import { useStartTask } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { btn, formatDay, primaryBtn, ProposalButtons, StartButton, StatusCircle } from "@/components/tasks/task-ui";
 import { DateInput } from "@/components/ui/date-input";
+import { CALENDAR_KIND_ICONS, CATEGORY_TILES, Icon, PersonTile, SchoolTile, Tile } from "@/components/ui/icons";
+import { CalendarDays, CalendarClock, Inbox, ListChecks, Sun } from "lucide-react";
 import { CALENDAR_KIND_LABELS, CALENDAR_KINDS, cellLabel, itemsOn, monthGrid, shiftMonth, type CalendarItem, type CalendarKind } from "@/lib/calendar";
 import { AGENDA_DAYS, groupTasksByProject, shortTitle, TASK_AREA_LABELS, type AgendaRow, type Countdown, type TaskGroupKey, type TaskView } from "@/lib/tasks";
 import type { GuideChange } from "@/lib/admissions";
@@ -93,7 +95,10 @@ function Briefing({ today, lines, countdown, profileLine }: { today: string; lin
   return (
     <section className="space-y-3 rounded-xl bg-subtle/70 px-5 py-5">
       <div className="flex flex-wrap items-baseline gap-x-3">
-        <h1 className="page-title">今日简报</h1>
+        <h1 className="page-title flex items-center gap-2">
+          <Icon icon={Sun} className="size-5" />
+          今日简报
+        </h1>
         <span className="text-sm text-muted">{formatToday(today)}</span>
       </div>
       {lines.map((l) => (
@@ -102,10 +107,11 @@ function Briefing({ today, lines, countdown, profileLine }: { today: string; lin
         </p>
       ))}
       <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
+        <Icon icon={CalendarClock} />
         {countdown.length === 0 ? (
-          <>
+          <span className="min-w-0 flex-1">
             还没有关键日期：<Link href="/aspirations" className="underline">志愿</Link>里有了研究科后，这里会显示出愿截止和考试倒计时。
-          </>
+          </span>
         ) : (
           countdown.map((c) => (
             <span key={c.label} className="rounded-md bg-surface px-2.5 py-1">
@@ -197,7 +203,10 @@ function Awaiting({ review, tasks, changes, events, followUps, proposalCount, to
   return (
     <section className="space-y-1 rounded-xl border border-dashed border-line-strong px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="section-title text-foreground">等你处理</h2>
+        <h2 className="section-title flex items-center gap-1.5 text-foreground">
+          <Icon icon={Inbox} />
+          等你处理
+        </h2>
         <span className="text-xs text-muted">{review.length + proposalCount} 项 · 点一下就好；AI 的提议同意后才会加进任务和日历</span>
         {proposalCount > 1 && (
           <button disabled={pending} onClick={() => startTransition(() => acceptAllProposalsAction())} className={`${btn} ml-auto`}>
@@ -315,9 +324,10 @@ function ExpandButton({ open, onClick, children }: { open: boolean; onClick: () 
 }
 
 /** 分组小标题：组名 + 灰色补充（学校、项数） */
-function GroupHead({ children, sub, strong = false }: { children: React.ReactNode; sub?: React.ReactNode; strong?: boolean }) {
+function GroupHead({ children, sub, strong = false, mark }: { children: React.ReactNode; sub?: React.ReactNode; strong?: boolean; mark?: React.ReactNode }) {
   return (
-    <h3 className={`flex min-w-0 items-baseline gap-2 px-2 pt-3 pb-0.5 text-xs font-semibold ${strong ? "text-foreground" : "text-muted"}`}>
+    <h3 className={`flex min-w-0 ${mark ? "items-center" : "items-baseline"} gap-2 px-2 pt-3 pb-0.5 text-xs font-semibold ${strong ? "text-foreground" : "text-muted"}`}>
+      {mark}
       <span className="shrink-0">{children}</span>
       {sub && <span className="truncate font-normal text-faint">{sub}</span>}
     </h3>
@@ -339,6 +349,7 @@ function Agenda({ near, rest, far, done, names, today }: { near: AgendaRow<HomeT
   return (
     <section className="@container card self-start">
       <div className="card-head">
+        <Icon icon={ListChecks} />
         <h2 className="card-title">待办和日程</h2>
         <button onClick={() => setAdding(true)} aria-label="添加任务" title="添加任务" className="ml-auto grid size-6 place-items-center rounded-md text-lg leading-none text-faint hover:bg-subtle hover:text-foreground">
           ＋
@@ -358,7 +369,7 @@ function Agenda({ near, rest, far, done, names, today }: { near: AgendaRow<HomeT
           const head = groupHead(g.key, names, onlyOther);
           return (
             <div key={head.id}>
-              <GroupHead strong sub={head.sub}>
+              <GroupHead strong sub={head.sub} mark={head.mark}>
                 {head.tab ? (
                   <OpenTabLink tab={head.tab} href={head.href ?? "/aspirations"} className="hover:underline">
                     {head.name}
@@ -395,20 +406,21 @@ function Agenda({ near, rest, far, done, names, today }: { near: AgendaRow<HomeT
   );
 }
 
-/** 分组的组名：教授名（点开看教授）+ 学校；研究科名（点开看入试页面）；分类名 */
+/** 分组的组名：教授名（点开看教授）+ 学校；研究科名（点开看入试页面）；分类名。mark = 组名前的彩色小方块 */
 function groupHead(key: TaskGroupKey, names: GroupNames, onlyOther: boolean) {
   if (key.kind === "professor") {
     const p = names.professors[key.id];
     const name = p ? `${p.name} 教授` : "教授";
-    return { id: `p:${key.id}`, name, sub: p?.school, tab: { kind: "professor" as const, id: key.id, title: p?.name ?? "教授" }, href: "/aspirations" };
+    return { id: `p:${key.id}`, name, mark: <PersonTile name={p?.name ?? "教"} />, sub: p?.school, tab: { kind: "professor" as const, id: key.id, title: p?.name ?? "教授" }, href: "/aspirations" };
   }
   if (key.kind === "school") {
     const sc = names.schools[key.id];
     const name = sc?.name ?? "研究科";
-    return { id: `s:${key.id}`, name, sub: undefined, tab: sc?.url ? { kind: "web" as const, url: sc.url, title: name } : undefined, href: sc?.url ?? undefined };
+    return { id: `s:${key.id}`, name, mark: <SchoolTile />, sub: undefined, tab: sc?.url ? { kind: "web" as const, url: sc.url, title: name } : undefined, href: sc?.url ?? undefined };
   }
   // 只有一组「其他」时叫「随时可以做」，不显得奇怪
-  return { id: `a:${key.area}`, name: onlyOther ? "随时可以做" : TASK_AREA_LABELS[key.area], sub: undefined, tab: undefined, href: undefined };
+  const area = CATEGORY_TILES[key.area];
+  return { id: `a:${key.area}`, name: onlyOther ? "随时可以做" : TASK_AREA_LABELS[key.area], mark: <Tile color={area.color} icon={area.icon} />, sub: undefined, tab: undefined, href: undefined };
 }
 
 /** 日期：任务是截止日（没有就不显示），日程是当天或起止 */
@@ -510,12 +522,6 @@ const DOT: Record<CalendarKind, string> = {
   other: "bg-faint border-line-strong",
 };
 
-const KIND_STYLES: Record<CalendarKind, string> = {
-  deadline: "bg-danger-soft text-danger",
-  exam: "bg-warn-soft text-warn",
-  followup: "bg-info-soft text-info",
-  other: "bg-subtle text-muted",
-};
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
 
@@ -564,6 +570,7 @@ function MonthCalendar({ today, month, items, tasks }: { today: string; month: s
   return (
     <section className="@container card self-start">
         <div className="card-head text-sm">
+          <Icon icon={CalendarDays} />
           <h2 className="card-title">日历</h2>
           <div className="ml-auto flex items-center gap-1">
             <Link href={nav.prev} className="rounded px-1.5 text-muted hover:text-foreground" aria-label="往前">
@@ -694,11 +701,10 @@ function EventRow({ item: it, today }: { item: CalendarItem; today: string }) {
   }
   return (
     <li className="group todo-row text-sm">
-      <span aria-hidden className="grid h-5 w-5 shrink-0 place-items-center">
-        <span className={`h-3.5 w-[3px] rounded-full ${BAR[it.kind]} ${it.tentative ? "opacity-50" : ""}`} />
+      <span className="grid h-5 w-5 shrink-0 place-items-center" title={CALENDAR_KIND_LABELS[it.kind]}>
+        <Icon icon={CALENDAR_KIND_ICONS[it.kind].icon} label={CALENDAR_KIND_LABELS[it.kind]} className={`size-3.5 ${CALENDAR_KIND_ICONS[it.kind].tone} ${it.tentative ? "opacity-60" : ""}`} />
       </span>
       <div className="min-w-0 flex-1 leading-5">
-        <span className={`mr-1.5 rounded px-1 text-xs ${KIND_STYLES[it.kind]}`}>{CALENDAR_KIND_LABELS[it.kind]}</span>
         {it.tentative && <span className="mr-1 rounded border border-dashed border-warn px-1 text-xs text-warn">仮</span>}
         {it.source === "todo" && it.sourceId ? (
           <button onClick={() => openTab({ kind: "task", id: it.sourceId!, title: it.title })} className="text-left hover:underline">
@@ -738,12 +744,6 @@ function EventRow({ item: it, today }: { item: CalendarItem; today: string }) {
 }
 
 /** 日程行左边的竖条颜色（和日历圆点一致） */
-const BAR: Record<CalendarKind, string> = {
-  deadline: "bg-danger",
-  exam: "bg-warn",
-  followup: "bg-info",
-  other: "bg-faint",
-};
 
 const input = "input w-full px-3 py-1.5 text-sm";
 

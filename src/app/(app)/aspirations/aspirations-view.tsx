@@ -4,6 +4,8 @@ import { ContactStatusSelect, Tentative } from "@/components/aspirations/aspirat
 import { useAiPageContent, useAskAi } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { btn } from "@/components/tasks/task-ui";
+import { AI_ICON, Icon, PersonTile, SchoolTile } from "@/components/ui/icons";
+import { ArrowRight, Flag, GraduationCap, TriangleAlert } from "lucide-react";
 import { formatDate } from "@/lib/calendar";
 import { aspirationNextStep, describeAspiration, sortAspirations, type AspirationView } from "@/lib/aspirations";
 import { professorAffiliation } from "@/lib/professors";
@@ -31,7 +33,10 @@ export function AspirationsView({ list: unsorted, lastSearch }: Props) {
     <div className="@container mx-auto max-w-4xl space-y-5">
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-0 flex-1 space-y-1">
-          <h1 className="page-title">志愿</h1>
+          <h1 className="page-title flex items-center gap-2">
+            <Icon icon={GraduationCap} className="size-5" />
+            志愿
+          </h1>
           <p className="text-sm text-muted">
             {active.length} 条志愿
             {lastSearch && (
@@ -51,6 +56,7 @@ export function AspirationsView({ list: unsorted, lastSearch }: Props) {
           </button>
         )}
         <button onClick={() => ask(MORE_PROMPT)} className="btn px-3 py-1.5 text-sm">
+          <Icon icon={AI_ICON} className="size-3.5" />
           和 AI 继续找
         </button>
       </div>
@@ -69,13 +75,15 @@ function Empty({ lastSearch }: { lastSearch: Props["lastSearch"] }) {
   const ask = useAskAi();
   return (
     <div className="mx-auto flex max-w-md flex-col items-center gap-4 py-20 text-center">
+      <Icon icon={GraduationCap} className="size-9 text-faint" />
       <h1 className="page-title">志愿</h1>
       <p className="text-sm leading-relaxed text-muted">
         这里收藏你的每一条志愿：一位教授，加上教授所在的研究科。
         <br />
         和 AI 聊聊你想研究什么，它会帮你找合适的教授，问过你再加进来。
       </p>
-      <button onClick={() => ask(START_PROMPT)} className="btn-primary px-4 py-2 text-sm">
+      <button onClick={() => ask(START_PROMPT)} className="btn-primary gap-1.5 px-4 py-2 text-sm">
+        <Icon icon={AI_ICON} className="text-on-primary" />
         和 AI 开始找志愿
       </button>
       {lastSearch && (
@@ -98,6 +106,7 @@ function AspirationTile({ a }: { a: AspirationView }) {
   return (
     <li className={`card flex flex-col ${p?.status === "dropped" ? "opacity-60" : ""}`}>
       <div className="flex items-start gap-2 px-4 pt-3.5">
+        {p ? <PersonTile name={p.name} className="mt-0.5" /> : <SchoolTile className="mt-0.5" />}
         <button onClick={open} className="min-w-0 flex-1 text-left font-medium hover:underline">
           {p ? p.name : `${s!.university} ${s!.name}`}
         </button>
@@ -110,6 +119,7 @@ function AspirationTile({ a }: { a: AspirationView }) {
           {" · "}
           {s?.deadline ? (
             <>
+              <Icon icon={Flag} className="mr-0.5 inline size-3 align-[-1px]" />
               出愿截止 <span className="tabular-nums text-foreground">{formatDate(s.deadline.date)}</span>
               {s.deadline.tentative && <Tentative />}
             </>
@@ -121,15 +131,17 @@ function AspirationTile({ a }: { a: AspirationView }) {
         </span>
         {p && (p.fit || p.research) && <span className="line-clamp-2 text-sm text-muted">{p.fit || p.research}</span>}
         {a.gaps.length > 0 && (
-          <span className="text-xs text-warn">
-            ⚠ {a.gaps[0]}
+          <span className="flex items-center gap-1 text-xs text-warn">
+            <Icon icon={TriangleAlert} className="size-3.5 text-warn" />
+            {a.gaps[0]}
             {a.gaps.length > 1 ? ` 等 ${a.gaps.length} 项` : ""}
           </span>
         )}
       </button>
       {next && (
         <div className="card-foot flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-          <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 flex-1 items-center gap-1">
+            <Icon icon={ArrowRight} className="size-3.5" />
             <span className="text-muted">下一步：</span>
             {next.text}
           </span>

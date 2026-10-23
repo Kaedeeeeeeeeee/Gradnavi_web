@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
+import { DocKindTile, Icon } from "@/components/ui/icons";
+import { FileText } from "lucide-react";
 import { DOC_KIND_LABELS, type DocKind } from "@/lib/documents";
 import { deleteDocumentAction, renameDocumentAction, reorderDocumentsAction, restoreDocumentAction } from "./actions";
 
@@ -76,7 +78,10 @@ export function DocumentList({ docs }: { docs: DocItem[] }) {
   return (
     <div className="space-y-2">
       {order.length === 0 ? (
-        <p className="text-sm text-muted">还没有文书。新建一份研究计划书，AI 会分步带你写。</p>
+        <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted">
+          <Icon icon={FileText} className="size-9 text-faint" />
+          还没有文书。新建一份研究计划书，AI 会分步带你写。
+        </div>
       ) : (
         <ul className="divide-y divide-line rounded-xl border border-line" data-testid="doc-list">
           {order.map((d, i) => (
@@ -131,9 +136,11 @@ export function DocumentList({ docs }: { docs: DocItem[] }) {
                   href={`/documents/${d.id}`}
                   className="flex min-w-0 flex-1 items-center justify-between gap-4 py-3 pr-2 hover:opacity-80"
                 >
-                  <span className="min-w-0 truncate" onDoubleClick={(e) => (e.preventDefault(), setRenaming(d.id))}>
-                    <span className="mr-2 text-xs text-muted">{DOC_KIND_LABELS[d.kind]}</span>
-                    {d.title}
+                  <span className="flex min-w-0 items-center gap-2.5" onDoubleClick={(e) => (e.preventDefault(), setRenaming(d.id))}>
+                    <span title={DOC_KIND_LABELS[d.kind]} className="inline-flex">
+                      <DocKindTile kind={d.kind} />
+                    </span>
+                    <span className="min-w-0 truncate">{d.title}</span>
                   </span>
                   <span className="shrink-0 text-xs text-muted">{fmt.format(new Date(d.updatedAt))}</span>
                 </OpenTabLink>

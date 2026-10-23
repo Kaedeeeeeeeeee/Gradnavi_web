@@ -5,6 +5,8 @@ import { updateProfessorAction } from "@/app/(app)/professors/actions";
 import { useAskAi } from "@/components/ai/page-context";
 import { OpenTabLink } from "@/components/shell/app-shell";
 import { DateInput } from "@/components/ui/date-input";
+import { CONTACT_ICONS, Icon } from "@/components/ui/icons";
+import { TriangleAlert } from "lucide-react";
 import { btn, formatDay, ProposalButtons } from "@/components/tasks/task-ui";
 import { formatDate } from "@/lib/calendar";
 import { contactLabel, languageLabel, type AspirationView, type ProfessorView, type SchoolView } from "@/lib/aspirations";
@@ -36,7 +38,7 @@ export function ContactStatusSelect({ id, status }: { id: string; status: Profes
           if (next === "dropped" && !confirm("不再考虑这位教授？之后可以重新考虑。")) return;
           startTransition(() => updateProfessorAction(id, { status: next }));
         }}
-        className={`cursor-pointer appearance-none rounded py-0.5 pr-5 pl-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 ${CONTACT_STYLES[status]}`}
+        className={`cursor-pointer appearance-none rounded py-0.5 pr-5 pl-5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 ${CONTACT_STYLES[status]}`}
       >
         {[...CONTACT_FLOW, "dropped" as const].map((s) => (
           <option key={s} value={s}>
@@ -44,6 +46,7 @@ export function ContactStatusSelect({ id, status }: { id: string; status: Profes
           </option>
         ))}
       </select>
+      <Icon icon={CONTACT_ICONS[status]} className={`pointer-events-none absolute top-1/2 left-1.5 size-3 -translate-y-1/2 ${CONTACT_STYLES[status].split(" ")[1]}`} />
       <span aria-hidden className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-[9px] opacity-60">
         ▼
       </span>
@@ -72,7 +75,7 @@ export function ContactStepper({ id, status, compact = false }: { id: string; st
           disabled={pending}
           onClick={() => s !== status && set(s)}
           title={`改成「${PROFESSOR_STATUS_LABELS[s]}」`}
-          className={`rounded px-1.5 py-0.5 ${
+          className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${
             i === current
               ? "bg-primary text-on-primary"
               : i < current
@@ -80,6 +83,7 @@ export function ContactStepper({ id, status, compact = false }: { id: string; st
                 : "text-faint hover:text-foreground"
           } ${compact && i !== current ? "max-sm:hidden" : ""}`}
         >
+          {i === current && <Icon icon={CONTACT_ICONS[s]} className="size-3 text-on-primary" />}
           {PROFESSOR_STATUS_LABELS[s]}
         </button>
       ))}
@@ -121,7 +125,10 @@ export function Gaps({ gaps }: { gaps: string[] }) {
   return (
     <ul className="space-y-0.5 text-xs text-warn">
       {gaps.map((g) => (
-        <li key={g}>⚠ {g}</li>
+        <li key={g} className="flex items-start gap-1">
+          <Icon icon={TriangleAlert} className="mt-px size-3.5 text-warn" />
+          {g}
+        </li>
       ))}
     </ul>
   );
