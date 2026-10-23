@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { usePageStore } from "@/components/ai/page-context";
+import { AI_ICON, Icon, NAV_ICONS } from "@/components/ui/icons";
+import { Columns2, FileText, Globe, House, Landmark, ListChecks, UserRound, UserSearch, type LucideIcon } from "lucide-react";
 import { workFocus } from "@/lib/ai-context";
 import {
   activeTab,
@@ -253,7 +255,12 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
         </div>
       </div>
     ),
-    ai: <span className="px-1 text-sm font-medium">AI 对话</span>,
+    ai: (
+      <span className="flex items-center gap-1.5 px-1 text-sm font-medium">
+        <Icon icon={AI_ICON} />
+        AI 对话
+      </span>
+    ),
   };
 
   const docBody =
@@ -337,14 +344,16 @@ export function AppShell({ initialLayout, initialTabs, docKey, docTitle, doc, ai
                 key={t.href}
                 href={t.href}
                 onClick={() => showMobile("work")}
-                className={`relative flex-1 py-2.5 text-center text-sm ${active ? "font-medium" : "text-muted"}`}
+                className={`relative flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-xs ${active ? "font-medium" : "text-muted"}`}
               >
+                <Icon icon={NAV_ICONS[t.href]} className={`size-5 ${active ? "text-foreground" : ""}`} />
                 {t.label}
                 {!active && badge ? <BadgeDot badge={badge} className="ml-1" /> : null}
               </Link>
             );
           })}
-          <button onClick={() => showMobile("ai")} className={`relative flex-1 py-2.5 text-sm ${layout.mobile === "ai" ? "font-medium" : "text-muted"}`}>
+          <button onClick={() => showMobile("ai")} className={`relative flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-xs ${layout.mobile === "ai" ? "font-medium" : "text-muted"}`}>
+            <Icon icon={AI_ICON} className={`size-5 ${layout.mobile === "ai" ? "text-foreground" : ""}`} />
             {PANE_LABELS.ai}
             {layout.mobile !== "ai" && badgeOf("ai") ? <BadgeDot badge={badgeOf("ai")} className="ml-1" /> : null}
           </button>
@@ -381,6 +390,8 @@ function PaneControls({ only, onMax, onRestore, onCollapse }: { only: boolean; o
   );
 }
 
+const PANE_ICONS: Record<PaneId, LucideIcon> = { work: House, doc: FileText, ai: AI_ICON };
+
 function Rail({ pane, badge, onOpen }: { pane: PaneId; badge: Badge; onOpen: () => void }) {
   return (
     <button
@@ -388,6 +399,7 @@ function Rail({ pane, badge, onOpen }: { pane: PaneId; badge: Badge; onOpen: () 
       title={`展开${PANE_LABELS[pane]}`}
       className="mx-1 hidden w-[48px] shrink-0 flex-col items-center gap-2 rounded-xl border border-line bg-surface py-3 text-sm text-muted first:ml-0 last:mr-0 hover:bg-subtle hover:text-foreground lg:flex"
     >
+      <Icon icon={PANE_ICONS[pane]} className="text-current" />
       {badge ? <BadgeDot badge={badge} /> : null}
       <span className="[writing-mode:vertical-rl] tracking-widest">{PANE_LABELS[pane]}</span>
     </button>
@@ -428,8 +440,9 @@ function WorkTabs({ pathname }: { pathname: string }) {
           <Link
             key={t.href}
             href={t.href}
-            className={`shrink-0 rounded-md px-2.5 py-1 ${active ? "bg-subtle font-medium" : "text-muted hover:bg-subtle hover:text-foreground"}`}
+            className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 ${active ? "bg-subtle font-medium" : "text-muted hover:bg-subtle hover:text-foreground"}`}
           >
+            <Icon icon={NAV_ICONS[t.href]} className={active ? "text-foreground" : "text-current"} />
             {t.label}
           </Link>
         );
@@ -438,7 +451,7 @@ function WorkTabs({ pathname }: { pathname: string }) {
   );
 }
 
-const TAB_ICONS: Record<DocTab["kind"], string> = { doc: "文", professor: "志", school: "志", task: "任", search: "找", compare: "比", web: "网" };
+const TAB_ICONS: Record<DocTab["kind"], LucideIcon> = { doc: FileText, professor: UserRound, school: Landmark, task: ListChecks, search: UserSearch, compare: Columns2, web: Globe };
 
 function DocTabBar({ tabs, onActivate, onClose }: { tabs: Tabs; onActivate: (key: string) => void; onClose: (key: string) => void }) {
   if (!tabs.tabs.length) return <span className="px-1 text-sm font-medium">文稿 / 浏览</span>;
@@ -455,7 +468,7 @@ function DocTabBar({ tabs, onActivate, onClose }: { tabs: Tabs; onActivate: (key
             className={`group flex max-w-48 shrink-0 items-center rounded-md ${active ? "bg-subtle font-medium" : "text-muted hover:bg-subtle hover:text-foreground"}`}
           >
             <button onClick={() => onActivate(key)} className="flex min-w-0 items-center gap-1.5 py-1 pl-2" title={t.kind === "web" ? t.url : t.title}>
-              <span className="text-[10px] text-faint">{TAB_ICONS[t.kind]}</span>
+              <Icon icon={TAB_ICONS[t.kind]} className="size-3.5" />
               <span className="truncate">{t.title || "（无标题）"}</span>
             </button>
             <button onClick={() => onClose(key)} className="px-1.5 py-1 text-faint hover:text-foreground" aria-label={`关闭 ${t.title}`}>

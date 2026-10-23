@@ -8,6 +8,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { undoMemory } from "@/app/(app)/actions";
 import { openTaskConversationAction } from "@/app/(app)/workbench/actions";
 import { LogoMark, useShell } from "@/components/shell/app-shell";
+import { Icon, TOOL_ICONS } from "@/components/ui/icons";
+import { Brain, CircleX, Search, Sparkles } from "lucide-react";
 import { endedWithoutAnswer, TOOL_META, toolChipText, toolGroupSummary } from "@/lib/ai/tool-meta";
 import { uuid } from "@/lib/browser";
 import { chatMarkdownToHtml } from "@/lib/chat-markdown";
@@ -456,7 +458,7 @@ function ToolGroup({ parts }: { parts: ToolPart[] }) {
           aria-expanded={open}
           className="flex max-w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs text-muted hover:bg-subtle"
         >
-          <span className="text-ok">✓</span>
+          <Icon icon={Search} className="size-3.5" />
           <span className="min-w-0">
             查了资料：{toolGroupSummary(finished.map((p) => getToolName(p)))}
             {finished.some((p) => p.state === "output-error") && <span className="text-danger">（有 {finished.filter((p) => p.state === "output-error").length} 次没成功）</span>}
@@ -560,7 +562,7 @@ function ToolChip({ name, state, input, output }: { name: string; state: string;
   if (!text) return null;
   return (
     <div className="inline-flex max-w-full items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 text-xs text-muted">
-      {running ? <Dots /> : <span className={`shrink-0 ${failed ? "text-danger" : "text-ok"}`}>{failed ? "✗" : "✓"}</span>}
+      {running ? <Dots /> : failed ? <Icon icon={CircleX} label="没成功" className="size-3.5 text-danger" /> : <Icon icon={TOOL_ICONS[name] ?? Sparkles} className="size-3.5" />}
       <span className="min-w-0 truncate">{text}</span>
       {running && sec > 0 && <span className="shrink-0 whitespace-nowrap tabular-nums text-faint">{sec} 秒</span>}
       {target && (
@@ -602,6 +604,7 @@ function MemoryLine({ input, output }: { input: unknown; output: unknown }) {
 
   return (
     <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
+      <Icon icon={Brain} className="size-3.5" />
       <span className={state === "undone" ? "line-through" : ""}>
         {state === "undone" ? "已撤销" : "已记住"}：{note}
       </span>
