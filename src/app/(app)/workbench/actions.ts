@@ -58,6 +58,7 @@ const taskPatch = z.object({
   dueDate: date.nullable().optional(),
   area: z.enum(TASK_AREAS).nullable().optional(),
   prepDays: z.number().int().min(1, "至少 1 天").max(180, "最多 180 天").nullable().optional(),
+  schoolId: z.string().max(64).nullable().optional(),
 });
 
 export async function updateTaskAction(id: string, patch: z.input<typeof taskPatch>): Promise<{ ok: true } | { ok: false; error: string }> {

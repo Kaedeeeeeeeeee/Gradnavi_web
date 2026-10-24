@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CalendarItem } from "../calendar";
 import { professorStepKey } from "../next-steps";
-import { agenda, buildSteps, countAwaiting, groupTasks, groupTasksByProject, keyDates, kickoffPrompt, overdueCount, shortTitle, taskGroup, weekEnd, type TaskView } from "../tasks";
+import { agenda, buildSteps, countAwaiting, groupTasks, groupTasksByProject, inferSchoolId, keyDates, kickoffPrompt, overdueCount, shortTitle, taskGroup, weekEnd, type TaskView } from "../tasks";
 
 const TODAY = "2026-10-21"; // 周三
 
@@ -165,4 +165,16 @@ test("按项目分组：进行中的组排前面，其他总在最后", () => {
     groups.map((g) => g.tasks.map((t) => t.title)),
     [["b1"], ["a1", "a2"], ["报名 JLPT"], ["办签证"]],
   );
+});
+
+test("没挂学校的任务按标题和说明认出关注的研究科", () => {
+  const schools = [
+    { id: "s1", university: "東京学芸大学", name: "教育学研究科" },
+    { id: "s2", university: "東京大学", name: "学際情報学府" },
+    { id: "s3", university: "東京大学", name: "教育学研究科" },
+  ];
+  assert.equal(inferSchoolId("備考 外国人研究生出願。東京学芸大学「2027年度外国人研究生出願要項」", schools), "s1");
+  assert.equal(inferSchoolId("東京大学 学際情報学府の説明会", schools), "s2");
+  assert.equal(inferSchoolId("東京大学の説明会", schools), null);
+  assert.equal(inferSchoolId("JLPT 报名", schools), null);
 });

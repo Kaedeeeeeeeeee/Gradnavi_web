@@ -18,12 +18,27 @@ import { btn, formatDay, ProposalButtons, StartButton } from "./task-ui";
 type Links = {
   professor: { id: string; name: string; label: string } | null;
   document: { id: string; title: string } | null;
-  school: { id: string; name: string; url: string } | null;
+  school: { id: string; name: string; url: string; contact: string | null } | null;
 };
 
 const field = "input px-2 py-1 text-sm";
 
-export function TaskDetail({ task, links, started, aiText, report }: { task: TaskView; links: Links; started: boolean; aiText: string; report: ReportItem[] | null }) {
+export function TaskDetail({
+  task,
+  links,
+  schools,
+  started,
+  aiText,
+  report,
+}: {
+  task: TaskView;
+  links: Links;
+  /** 关注的研究科：没挂学校的任务可以选一个挂上 */
+  schools: { id: string; university: string; name: string }[];
+  started: boolean;
+  aiText: string;
+  report: ReportItem[] | null;
+}) {
   useAiPageContent(aiText, "doc");
   const { closeTab } = useShell();
   const [pending, startTransition] = useTransition();
@@ -68,6 +83,7 @@ export function TaskDetail({ task, links, started, aiText, report }: { task: Tas
           className="page-title w-full resize-none overflow-hidden bg-transparent outline-none placeholder:text-faint"
           aria-label="任务标题"
         />
+        <TaskContext task={task} links={links} schools={schools} disabled={pending} onLink={(schoolId) => run(() => updateTaskAction(task.id, { schoolId }))} />
         <div className="flex flex-wrap items-center gap-1" role="radiogroup" aria-label="状态">
           {TASK_STATUSES.map((s) => (
             <button
@@ -136,38 +152,6 @@ export function TaskDetail({ task, links, started, aiText, report }: { task: Tas
       />
 
       <Steps taskId={task.id} steps={task.steps} />
-
-      {(links.professor || links.document || links.school) && (
-        <section className="space-y-1 text-sm">
-          <h2 className="section-title">关联</h2>
-          <ul className="space-y-1">
-            {links.professor && (
-              <li>
-                教授：
-                <OpenTabLink tab={{ kind: "professor", id: links.professor.id, title: links.professor.name }} href="/aspirations" className="text-accent hover:underline">
-                  {links.professor.label}
-                </OpenTabLink>
-              </li>
-            )}
-            {links.document && (
-              <li>
-                文书：
-                <OpenTabLink tab={{ kind: "doc", id: links.document.id, title: links.document.title }} href={`/documents/${links.document.id}`} className="text-accent hover:underline">
-                  {links.document.title}
-                </OpenTabLink>
-              </li>
-            )}
-            {links.school && (
-              <li>
-                研究科：
-                <OpenTabLink tab={{ kind: "web", url: links.school.url, title: links.school.name }} href={links.school.url} className="text-accent hover:underline">
-                  {links.school.name}
-                </OpenTabLink>
-              </li>
-            )}
-          </ul>
-        </section>
-      )}
 
       <div className="border-t border-line pt-4">
         <button
@@ -339,5 +323,52 @@ function PrepDays({ task, disabled, onSave }: { task: TaskView; disabled: boolea
       />
       天
     </label>
+  );
+}
+
+/**
+ * 标题下面一行：这件事是哪所学校、哪位教授的（点开看研究科入试页面 / 教授），没有教授时写明要不要先联系教授。
+ * 什么都没挂、又关注了研究科时，可以选一个挂上。
+ */
+function TaskContext({ task, links, schools, disabled, onLink }: { task: TaskView; links: Links; schools: { id: string; university: string; name: string }[]; disabled: boolean; onLink: (schoolId: string) => void }) {
+  const parts: React.ReactNode[] = [];
+  if (links.school)
+    parts.push(
+      <OpenTabLink key="s" tab={{ kind: "web", url: links.school.url, title: links.school.name }} href={links.school.url} className="text-accent hover:underline">
+        {links.school.name}
+      </OpenTabLink>,
+    );
+  if (links.professor)
+    parts.push(
+      <OpenTabLink key="p" tab={{ kind: "professor", id: links.professor.id, title: links.professor.name }} href="/aspirations" className="text-accent hover:underline">
+        {links.professor.label}
+      </OpenTabLink>,
+    );
+  else if (links.school) parts.push(<span key="c">{links.school.contact ? `教授：${links.school.contact}` : "教授：还没定"}</span>);
+  if (links.document)
+    parts.push(
+      <OpenTabLink key="d" tab={{ kind: "doc", id: links.document.id, title: links.document.title }} href={`/documents/${links.document.id}`} className="text-accent hover:underline">
+        {links.document.title}
+      </OpenTabLink>,
+    );
+  if (parts.length)
+    return (
+      <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted">
+        {parts.flatMap((p, i) => (i ? [<span key={`sep${i}`} aria-hidden>·</span>, p] : [p]))}
+      </p>
+    );
+  if (!schools.length || task.stepKey) return null;
+  return (
+    <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
+      还没关联学校
+      <select aria-label="关联研究科" value="" disabled={disabled} onChange={(e) => e.target.value && onLink(e.target.value)} className={`${field} cursor-pointer`}>
+        <option value="">选一个关注的研究科…</option>
+        {schools.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.university} {s.name}
+          </option>
+        ))}
+      </select>
+    </p>
   );
 }

@@ -7,7 +7,8 @@ import { btn } from "@/components/tasks/task-ui";
 import type { NextPick } from "@/lib/next-pick";
 import { setTaskStatusAction } from "./actions";
 
-export type PickTask = { id: string; title: string; started: boolean; link: string | null };
+/** context：这件事是哪所学校、哪位教授的（没有教授时写要不要先联系教授） */
+export type PickTask = { id: string; title: string; started: boolean; context: string | null };
 
 /** 打开任务详情，AI 栏切到这个任务的对话并开工（和每行的「让 AI 开始」一样） */
 function useStart() {
@@ -39,10 +40,8 @@ export function NextThing({ pick, tasks }: { pick: NextPick; tasks: Record<strin
         {pick.source === "rule" && <span className="text-faint">按日期排的，AI 暂时没判断</span>}
       </div>
       <div className="space-y-1">
-        <p className="font-semibold leading-6">
-          {task.title}
-          {task.link && !task.title.includes(task.link.replace(/教授$/, "")) && <span className="ml-2 text-xs font-normal text-faint">{task.link}</span>}
-        </p>
+        {task.context && <p className="text-xs text-muted">{task.context}</p>}
+        <p className="font-semibold leading-6">{task.title}</p>
         <ul className="list-disc space-y-0.5 pl-5 text-sm">
           {pick.reasons.map((r) => (
             <li key={r}>{r}</li>
@@ -88,6 +87,7 @@ function Choice({ task, reason, onStart }: { task: PickTask; reason: string; onS
     <div className="flex items-start gap-3 rounded-md border border-line px-3 py-2 text-sm">
       <div className="min-w-0 flex-1">
         <p className="font-medium leading-5">{task.title}</p>
+        {task.context && <p className="text-xs text-faint">{task.context}</p>}
         <p className="text-xs text-muted">{reason}</p>
       </div>
       <button onClick={() => onStart(task)} className={`${btn} shrink-0`}>

@@ -7,6 +7,7 @@ import { Suspense } from "react";
 import type { CalendarItem } from "@/lib/calendar";
 import { intakeYear as toIntakeYear, type PickProfessor } from "@/lib/next-pick";
 import { PROFESSOR_STATUS_LABELS } from "@/lib/professors";
+import { CONTACT_RULE_LABELS } from "@/lib/admissions";
 import { agenda, awaitingReview, groupTasks, keyDates, overdueCount, type TaskView } from "@/lib/tasks";
 import { getNextPick } from "@/server/next-pick";
 import { listCalendar, listProposedEvents } from "@/server/calendar";
@@ -17,7 +18,7 @@ import { getProfile } from "@/server/profile";
 import { listSavedProfessors } from "@/server/professors";
 import { listGuideAlerts, listWatchedSchools } from "@/server/schools";
 import { diffGuideEvents } from "@/lib/admissions";
-import { listTodos, toTaskView } from "@/server/todos";
+import { linkTodosToSchools, listTodos, toTaskView } from "@/server/todos";
 import { Home, type GroupNames, type HomeTask } from "./home";
 import { NextThing, NextThingLoading, type PickTask } from "./next-thing";
 
@@ -44,6 +45,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
   const horizon = addDays(today, 365);
 
   await syncNextSteps(user.id);
+  await linkTodosToSchools(user.id);
   const [rows, calendar, proposedEvents, started, professors, documents, schools, guideAlerts] = await Promise.all([
     listTodos(user.id, { includeDone: true }),
     listCalendar(user.id, gridFrom < today ? gridFrom : today, gridTo > horizon ? gridTo : horizon, today),
@@ -71,6 +73,17 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
           : null,
   });
   const groups = groupTasks(tasks, today);
+  // 「下一件事」卡片上写明是哪所学校、哪位教授的事；挂了研究科没挂教授时写要不要先联系教授
+  const profById = new Map(professors.map((p) => [p.id, p]));
+  const schoolById = new Map(schools.map(({ school }) => [school.id, school]));
+  const taskContext = (t: (typeof tasks)[number]) => {
+    const prof = t.professorId ? profById.get(t.professorId) : undefined;
+    const sc = t.schoolId ? schoolById.get(t.schoolId) : prof?.schoolId ? schoolById.get(prof.schoolId) : undefined;
+    const where = sc ? `${sc.university} ${sc.name}` : prof ? [prof.university, prof.department].filter(Boolean).join(" ") : null;
+    const who = prof ? `${prof.name} 教授` : sc ? (sc.requirements?.contact ? `教授：${CONTACT_RULE_LABELS[sc.requirements.contact]}` : "教授：还没定") : null;
+    if (!where && !who) return t.documentId ? (docTitle.get(t.documentId) ?? null) : null;
+    return [where, who].filter(Boolean).join(" · ");
+  };
   const followUps = professors.filter((p) => p.proposedFollowUp);
   // 新要项提醒：监控同时加了一个「查看新要项」任务，任务完成后提醒就收起
   const alerts = guideAlerts.flatMap((al) => {
@@ -106,7 +119,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
               professors: professors.map((p) => ({ id: p.id, name: p.name, status: PROFESSOR_STATUS_LABELS[p.status], followUpDate: p.followUpDate })),
               calendar,
             }}
-            tasks={Object.fromEntries(tasks.map(toHome).map((t) => [t.id, { id: t.id, title: t.title, started: t.started, link: t.link }]))}
+            tasks={Object.fromEntries(tasks.map(toHome).map((t) => [t.id, { id: t.id, title: t.title, started: t.started, context: taskContext(t) }]))}
           />
         </Suspense>
       }
