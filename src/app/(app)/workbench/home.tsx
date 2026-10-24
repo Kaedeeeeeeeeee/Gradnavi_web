@@ -8,7 +8,7 @@ import { btn, formatDay, primaryBtn, ProposalButtons, StartButton, StatusCircle 
 import { DateInput } from "@/components/ui/date-input";
 import { CALENDAR_KIND_ICONS, CATEGORY_TILES, Icon, PersonTile, SchoolTile, Tile } from "@/components/ui/icons";
 import { CalendarDays, CalendarClock, Inbox, ListChecks, Sun } from "lucide-react";
-import { CALENDAR_KIND_LABELS, CALENDAR_KINDS, cellLabel, daysBetween, itemsOn, monthGrid, shiftMonth, type CalendarItem, type CalendarKind } from "@/lib/calendar";
+import { CALENDAR_KIND_LABELS, CALENDAR_KINDS, cellLabel, itemsOn, monthGrid, shiftMonth, type CalendarItem, type CalendarKind } from "@/lib/calendar";
 import { AGENDA_DAYS, groupTasksByProject, shortTitle, TASK_AREA_LABELS, type AgendaRow, type Countdown, type TaskGroupKey, type TaskView } from "@/lib/tasks";
 import type { GuideChange } from "@/lib/admissions";
 import { acceptAllProposalsAction, addEventAction, addTaskAction, deleteEventAction, setTaskStatusAction, updateEventAction } from "./actions";
@@ -44,7 +44,7 @@ type Props = {
   /** 日历显示的月份（YYYY-MM），一页一个月 */
   month: string;
   profileLine: string;
-  /** 今日简报：已过截止日的数量 + 今天先做的一个任务（待你确认和 AI 提议只在「等你处理」里） */
+  /** 已过截止日的数量 + 今天先做的一个任务（在待办里标「先做这个」） */
   briefing: { overdue: number; next: HomeTask | null };
   countdown: Countdown[];
   alerts: GuideAlert[];
@@ -74,17 +74,20 @@ function formatToday(date: string) {
 
 export function Home(p: Props) {
   const proposalCount = p.proposals.tasks.length + p.proposals.changes.length + p.proposals.events.length + p.proposals.followUps.length;
+  const next = p.briefing.next;
+  // 主页只有两块：「今天」（有事才出现的提醒）和待办 + 日历（一直都在的完整清单）
   return (
     <div className="@container mx-auto max-w-5xl space-y-6">
-      <Briefing today={p.today} {...p.briefing} awaiting={proposalCount + p.review.length} countdown={p.countdown} profileLine={p.profileLine} />
-      {p.alerts.map((a) => (
-        <GuideAlertCard key={`${a.schoolId}:${a.admissionYear}`} alert={a} />
-      ))}
-      {p.pausedMonitors.length > 0 && <MonitorPaused schools={p.pausedMonitors} />}
-      {proposalCount + p.review.length > 0 && <Awaiting review={p.review} {...p.proposals} proposalCount={proposalCount} today={p.today} />}
+      <Today today={p.today} overdue={p.briefing.overdue} keyDate={p.countdown[0] ?? null} profileLine={p.profileLine}>
+        {p.alerts.map((a) => (
+          <GuideAlertCard key={`${a.schoolId}:${a.admissionYear}`} alert={a} />
+        ))}
+        {p.pausedMonitors.length > 0 && <MonitorPaused schools={p.pausedMonitors} />}
+        {proposalCount + p.review.length > 0 && <Awaiting review={p.review} {...p.proposals} proposalCount={proposalCount} today={p.today} />}
+      </Today>
 
       <div className="grid gap-6 @3xl:grid-cols-2">
-        <Agenda near={p.near} rest={p.rest} far={p.far} done={p.done} names={p.groupNames} today={p.today} />
+        <Agenda near={p.near} rest={p.rest} far={p.far} done={p.done} names={p.groupNames} today={p.today} first={next && { id: next.id, label: next.status === "doing" ? "接着做" : "先做这个" }} />
 
         <MonthCalendar today={p.today} month={p.month} items={p.calendar} tasks={p.tasks} />
       </div>
@@ -92,88 +95,42 @@ export function Home(p: Props) {
   );
 }
 
-function Briefing({
+/**
+ * 「今天」：需要你看一眼、做决定的事，每部分有内容才出现：
+ * 已过截止日的提醒、新要项 / 监控暂停 / 等你处理（children）、离今天最近的一个关键日期。都没有时只剩日期和路径。
+ * 今天先做的任务在下面的待办里标出来，其余关键日期只在日历上。
+ */
+function Today({
   today,
   overdue,
-  next,
-  awaiting,
-  countdown,
+  keyDate,
   profileLine,
+  children,
 }: {
   today: string;
   overdue: number;
-  next: HomeTask | null;
-  /** 「等你处理」里的数量：手上没事时，提示先看那里 */
-  awaiting: number;
-  countdown: Countdown[];
+  keyDate: Countdown | null;
   profileLine: string;
+  children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-4 rounded-xl bg-subtle/70 px-5 py-5">
+    <section className="space-y-3 rounded-xl bg-subtle/70 px-5 py-5">
       <div className="flex flex-wrap items-baseline gap-x-3">
         <h1 className="page-title flex items-center gap-2">
           <Icon icon={Sun} className="size-5" />
-          今日简报
+          今天
         </h1>
         <span className="text-sm text-muted">{formatToday(today)}</span>
       </div>
       {overdue > 0 && <p className="rounded-lg bg-danger-soft px-3 py-1.5 text-sm text-danger">{overdue} 件任务已过截止日，在下面的「待办和日程」里。</p>}
-      <div className="space-y-1.5">
-        <h2 className="text-xs font-medium text-muted">{next?.status === "doing" ? "接着做" : "今天先做"}</h2>
-        {next ? (
-          <ul>
-            <NextTask task={next} today={today} />
-          </ul>
-        ) : (
-          <p className="text-sm text-muted">
-            {awaiting > 0 ? "手上的任务都做完了，先看看下面「等你处理」里的事。" : "手上的事都做完了，可以问问右边的 AI 接下来做什么。"}
-          </p>
-        )}
-      </div>
-      <div className="space-y-1.5">
-        <h2 className="flex items-center gap-1.5 text-xs font-medium text-muted">
-          <Icon icon={CalendarClock} className="size-3.5" />
-          关键日期
-        </h2>
-        {countdown.length === 0 ? (
-          <p className="text-sm text-muted">
-            还没有关键日期：<Link href="/aspirations" className="underline">志愿</Link>里有了研究科后，这里会显示出愿截止和考试倒计时。
-          </p>
-        ) : (
-          <ul className="text-sm">
-            {countdown.map((c) => (
-              <CountdownRow key={`${c.school}:${c.label}`} c={c} />
-            ))}
-          </ul>
-        )}
-      </div>
+      {children}
+      {keyDate && (
+        <ul className="text-sm">
+          <CountdownRow c={keyDate} />
+        </ul>
+      )}
       <p className="text-xs text-faint">{profileLine}</p>
     </section>
-  );
-}
-
-/** 今天先做：一行任务，标题下面单独写截止日（标题里常带出愿期之类的日期，分开才不混） */
-function NextTask({ task, today }: { task: HomeTask; today: string }) {
-  const due = task.dueDate;
-  const days = due ? daysBetween(today, due) : null;
-  return (
-    <li className="todo-row rounded-lg bg-surface px-3 py-2 hover:bg-surface">
-      <StatusCircle id={task.id} status={task.status} />
-      <div className="min-w-0 flex-1">
-        <TaskTitle task={task} className="hover:underline" />
-        {(due || task.link) && (
-          <div className="flex flex-wrap gap-x-2 text-xs text-muted">
-            {due && (
-              <span className={`tabular-nums ${days! < 0 ? "text-danger" : ""}`}>
-                <span className="font-medium text-foreground">{formatDay(due)} 截止</span> · {days! < 0 ? `已过 ${-days!} 天` : days === 0 ? "就是今天" : `还有 ${days} 天`}
-              </span>
-            )}
-            {task.link && !task.title.includes(task.link.replace(/教授$/, "")) && <span>{task.link}</span>}
-          </div>
-        )}
-      </div>
-      <StartButton task={task} started={task.started} quiet />
-    </li>
   );
 }
 
@@ -183,18 +140,19 @@ function splitLabel(label: string) {
   return m ? { main: `${m[1]} ${m[3]}`.trim(), extra: m[2] } : { main: label, extra: "" };
 }
 
-/** 关键日期一行：还有几天 · 日期 · 日程名（补充）· 研究科 · 要项原文；天数对齐在最左边 */
+/** 最近的关键日期：还有几天 · 研究科 日程名（补充灰色小字）· 日期 · 要项原文 */
 function CountdownRow({ c }: { c: Countdown }) {
   const { main, extra } = splitLabel(c.label);
   return (
-    <li className="grid grid-cols-[3.5rem_minmax(0,1fr)_auto] items-baseline gap-x-3 rounded-md px-1 py-1 hover:bg-surface @xl:grid-cols-[3.5rem_2.75rem_minmax(0,1fr)_auto]">
+    <li className="grid grid-cols-[3.5rem_minmax(0,1fr)_auto] items-baseline gap-x-3">
       <span className="text-right font-medium tabular-nums">{c.days === 0 ? "今天" : `${c.days} 天`}</span>
-      <span className="hidden text-xs text-muted tabular-nums @xl:inline">{formatDay(c.date)}</span>
-      <span className="min-w-0 @xl:truncate" title={[c.label, c.school].filter(Boolean).join(" · ")}>
+      <span className="min-w-0" title={[c.school, c.label].filter(Boolean).join(" ")}>
+        <Icon icon={CalendarClock} className="mr-1.5 inline size-3.5 -translate-y-px text-muted" />
+        {c.school && <span className="mr-1.5">{c.school}</span>}
         {main}
         {extra && <span className="text-xs text-muted">{extra}</span>}
+        <span className="ml-1.5 text-xs text-muted tabular-nums">{formatDay(c.date)}</span>
         {c.tentative && <span className="ml-1.5 rounded border border-dashed border-warn px-1 text-xs text-warn">仮</span>}
-        {c.school && <span className="block text-xs text-muted @xl:ml-2 @xl:inline">{c.school}</span>}
       </span>
       {c.sourceUrl ? <SourceLink url={c.sourceUrl} /> : <span />}
     </li>
@@ -275,7 +233,7 @@ function Awaiting({ review, tasks, changes, events, followUps, proposalCount, to
   const [pending, startTransition] = useTransition();
   const { openTab } = useShell();
   return (
-    <section className="space-y-1 rounded-xl border border-dashed border-line-strong px-4 py-3">
+    <section className="space-y-1 rounded-lg bg-surface px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="section-title flex items-center gap-1.5 text-foreground">
           <Icon icon={Inbox} />
@@ -414,10 +372,28 @@ function GroupHead({ children, sub, strong = false, mark }: { children: React.Re
  * - 下面其余任务按项目分组：每位教授一组、每个研究科一组，其余按分类（语言考试 / 专业课和备考 / 申请准备 / 其他）
  * 每行只有状态圆圈、标题、行尾日期；「让 AI 开始」鼠标停上去才出现。
  */
-function Agenda({ near, rest, far, done, names, today }: { near: AgendaRow<HomeTask>[]; rest: HomeTask[]; far: AgendaRow<HomeTask>[]; done: HomeTask[]; names: GroupNames; today: string }) {
+function Agenda({
+  near,
+  rest,
+  far,
+  done,
+  names,
+  today,
+  first,
+}: {
+  near: AgendaRow<HomeTask>[];
+  rest: HomeTask[];
+  far: AgendaRow<HomeTask>[];
+  done: HomeTask[];
+  names: GroupNames;
+  today: string;
+  /** 今天先做的那一件：在它所在的位置标「先做这个」 */
+  first: { id: string; label: string } | null;
+}) {
+  const mark = (t: HomeTask) => (t.id === first?.id ? first.label : undefined);
   const [expanded, setExpanded] = useState(false);
   const [adding, setAdding] = useState(false);
-  const row = (r: AgendaRow<HomeTask>) => (r.task ? <TaskRow key={r.task.id} task={r.task} today={today} /> : <EventRow key={r.item.key} item={r.item} today={today} />);
+  const row = (r: AgendaRow<HomeTask>) => (r.task ? <TaskRow key={r.task.id} task={r.task} today={today} first={mark(r.task)} /> : <EventRow key={r.item.key} item={r.item} today={today} />);
   const groups = groupTasksByProject(rest);
   const onlyOther = groups.length === 1 && groups[0].key.kind === "area" && groups[0].key.area === "other";
   return (
@@ -454,7 +430,7 @@ function Agenda({ near, rest, far, done, names, today }: { near: AgendaRow<HomeT
               </GroupHead>
               <ul>
                 {g.tasks.map((t) => (
-                  <TaskRow key={t.id} task={t} today={today} label={g.key.kind === "professor" ? shortTitle(t.title, names.professors[g.key.id]?.name ?? "") : undefined} />
+                  <TaskRow key={t.id} task={t} today={today} first={mark(t)} label={g.key.kind === "professor" ? shortTitle(t.title, names.professors[g.key.id]?.name ?? "") : undefined} />
                 ))}
               </ul>
             </div>
@@ -508,15 +484,16 @@ function DateText({ date, endDate, today, overdue = false, className = "" }: { d
 }
 
 /** 清单里的一行任务：圆圈（点开改状态）· 标题 · 子步骤 / AI 提议 · 行尾日期；悬停出现「✦ 让 AI 开始」 */
-function TaskRow({ task, today, label }: { task: HomeTask; today: string; label?: string }) {
+function TaskRow({ task, today, label, first }: { task: HomeTask; today: string; label?: string; first?: string }) {
   const steps = task.steps.length ? `${task.steps.filter((s) => s.done).length}/${task.steps.length}` : null;
   const overdue = !!task.dueDate && task.dueDate < today;
   // 标题里已经有关联对象的名字（如「查清藤本 徹教授所在…」）就不再重复
   const link = task.link && !task.title.includes(task.link.replace(/教授$/, "")) && !label ? task.link : null;
   return (
-    <li className="todo-row text-sm">
+    <li className={`todo-row text-sm ${first ? "bg-warn-soft hover:bg-warn-soft" : ""}`}>
       <StatusCircle id={task.id} status={task.status} />
       <div className="min-w-0 flex-1 leading-5">
+        {first && <span className="mr-1.5 rounded border border-warn px-1 text-xs font-medium whitespace-nowrap text-warn">{first}</span>}
         <TaskTitle task={task} label={label} className="mr-2 hover:underline" />
         {(steps || link || task.proposedChange) && (
           <span className="inline-flex flex-wrap gap-x-2 text-xs text-faint">

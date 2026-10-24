@@ -1,4 +1,4 @@
-// 任务（主页待办）：状态、子步骤、本周/之后分组、待办和日程列表、今日简报、「让 AI 开始」的开场消息（纯函数，前后端共用）。
+// 任务（主页待办）：状态、子步骤、本周/之后分组、待办和日程列表、主页「今天」、「让 AI 开始」的开场消息（纯函数，前后端共用）。
 // 不设「阶段」：长期视角靠待办和日程里展开的更远条目、日历和关键日期倒计时。
 
 import { addDays, daysBetween, type CalendarItem } from "./calendar";
@@ -217,8 +217,7 @@ export function keyDates(items: CalendarItem[], today: string): Countdown[] {
 }
 
 /**
- * 今日简报（按规则生成，不调用 AI）。待你确认的任务和 AI 的提议在下面「等你处理」里，这里不再重复：
- * 只数已过截止日的，再从自己手上的任务（待办 / 进行中）里挑一个「今天先做」：先挑最近到期的，再挑没有日期的流程任务。
+ * 主页「今天」的规则部分（不调用 AI）：只数已过截止日的，再从自己手上的任务（待办 / 进行中）里挑一个「今天先做」（在待办里标出来）：先挑最近到期的，再挑没有日期的流程任务。
  */
 export function briefing<T extends TaskView>(tasks: T[], today: string): { overdue: number; next: T | null } {
   const open = tasks.filter((t) => !t.proposed && (t.status === "todo" || t.status === "doing"));
