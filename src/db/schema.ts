@@ -312,6 +312,8 @@ export const savedProfessor = pgTable(
     fit: text("fit"),
     /** 是否招外国留学生/研究生，查不到时为空 */
     acceptsInternational: text("accepts_international"),
+    /** 教授的邮箱（套磁信收件人），用户填或 AI 从官网查到 */
+    email: text("email"),
     sources: jsonb("sources").$type<SourceLink[]>().notNull().default([]),
     status: text("status").$type<ProfessorStatus>().notNull().default("to_contact"),
     note: text("note"),
