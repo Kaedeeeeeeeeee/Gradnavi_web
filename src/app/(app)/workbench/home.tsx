@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useStartTask } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { btn, formatDay, primaryBtn, ProposalButtons, StartButton, StatusCircle } from "@/components/tasks/task-ui";
@@ -387,14 +388,15 @@ function Agenda({
   done: HomeTask[];
   names: GroupNames;
   today: string;
-  /** 今天先做的那一件：在它所在的位置标「先做这个」 */
+  /** 今天先做的那一件：放在列表最上面，标「先做这个」，原来的分组里不再出现 */
   first: { id: string; label: string } | null;
 }) {
-  const mark = (t: HomeTask) => (t.id === first?.id ? first.label : undefined);
+  const top = first ? (near.find((r) => r.task?.id === first.id)?.task ?? rest.find((t) => t.id === first.id)) : undefined;
+  const nearRows = top ? near.filter((r) => r.task?.id !== top.id) : near;
   const [expanded, setExpanded] = useState(false);
   const [adding, setAdding] = useState(false);
-  const row = (r: AgendaRow<HomeTask>) => (r.task ? <TaskRow key={r.task.id} task={r.task} today={today} first={mark(r.task)} /> : <EventRow key={r.item.key} item={r.item} today={today} />);
-  const groups = groupTasksByProject(rest);
+  const row = (r: AgendaRow<HomeTask>) => (r.task ? <TaskRow key={r.task.id} task={r.task} today={today} /> : <EventRow key={r.item.key} item={r.item} today={today} />);
+  const groups = groupTasksByProject(top ? rest.filter((t) => t.id !== top.id) : rest);
   const onlyOther = groups.length === 1 && groups[0].key.kind === "area" && groups[0].key.area === "other";
   return (
     <section className="@container card self-start">
@@ -406,8 +408,13 @@ function Agenda({
         </button>
       </div>
       <div className="px-2 pb-2">
+        {top && first && (
+          <ul className="pt-2">
+            <TaskRow task={top} today={today} first={first.label} />
+          </ul>
+        )}
         <GroupHead>近 {AGENDA_DAYS} 天</GroupHead>
-        {near.length === 0 ? <p className="px-2 py-1.5 text-sm text-faint">近 {AGENDA_DAYS} 天没有到期的待办和日程。</p> : <ul>{near.map(row)}</ul>}
+        {nearRows.length === 0 ? <p className="px-2 py-1.5 text-sm text-faint">近 {AGENDA_DAYS} 天没有到期的待办和日程。</p> : <ul>{nearRows.map(row)}</ul>}
         {expanded && far.length > 0 && <ul>{far.map(row)}</ul>}
         {far.length > 0 && (
           <ExpandButton open={expanded} onClick={() => setExpanded(!expanded)}>
@@ -430,7 +437,7 @@ function Agenda({
               </GroupHead>
               <ul>
                 {g.tasks.map((t) => (
-                  <TaskRow key={t.id} task={t} today={today} first={mark(t)} label={g.key.kind === "professor" ? shortTitle(t.title, names.professors[g.key.id]?.name ?? "") : undefined} />
+                  <TaskRow key={t.id} task={t} today={today} label={g.key.kind === "professor" ? shortTitle(t.title, names.professors[g.key.id]?.name ?? "") : undefined} />
                 ))}
               </ul>
             </div>
@@ -602,6 +609,13 @@ const CELL_LABELS = 2;
 
 function MonthCalendar({ today, month, items, tasks }: { today: string; month: string; items: CalendarItem[]; tasks: HomeTask[] }) {
   const [selected, setSelected] = useState<string | null>(null);
+  // 双击（手机上长按）某一天：在那一格旁边弹出添加小窗
+  const [quickAdd, setQuickAdd] = useState<{ date: string; anchor: DOMRect } | null>(null);
+  const press = useRef<{ timer: number; fired: boolean } | null>(null);
+  const openQuickAdd = (date: string, el: HTMLElement) => {
+    setSelected(date);
+    setQuickAdd({ date, anchor: el.getBoundingClientRect() });
+  };
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const weeks = monthGrid(month);
   const nav = {
@@ -656,7 +670,26 @@ function MonthCalendar({ today, month, items, tasks }: { today: string; month: s
             return (
               <button
                 key={date}
-                onClick={() => setSelected(isSel ? null : date)}
+                onClick={() => {
+                  // 长按刚弹出添加小窗，松手的这次点击不再切换选中
+                  if (press.current?.fired) return void (press.current = null);
+                  setSelected(isSel ? null : date);
+                }}
+                onDoubleClick={(e) => openQuickAdd(date, e.currentTarget)}
+                onPointerDown={(e) => {
+                  if (e.pointerType === "mouse") return;
+                  const el = e.currentTarget;
+                  const state = { fired: false, timer: 0 };
+                  state.timer = window.setTimeout(() => {
+                    state.fired = true;
+                    openQuickAdd(date, el);
+                  }, 500);
+                  press.current = state;
+                }}
+                onPointerUp={() => press.current && !press.current.fired && (clearTimeout(press.current.timer), (press.current = null))}
+                onPointerLeave={() => press.current && !press.current.fired && (clearTimeout(press.current.timer), (press.current = null))}
+                onContextMenu={(e) => press.current?.fired && e.preventDefault()}
+                title="双击添加"
                 className={`flex h-10 min-w-0 flex-col items-center gap-0.5 rounded pt-1 @md:h-auto @md:min-h-16 @md:items-stretch @md:px-0.5 @md:pb-1 ${inMonth ? "" : "text-faint"} ${
                   isSel ? "bg-subtle-strong" : "hover:bg-subtle"
                 }`}
@@ -720,9 +753,12 @@ function MonthCalendar({ today, month, items, tasks }: { today: string; month: s
         )}
 
         <details className="card-foot text-sm">
-          <summary className="cursor-pointer py-1 text-muted hover:text-foreground">＋ 添加</summary>
+          <summary className="cursor-pointer py-1 text-muted hover:text-foreground">
+            ＋ 添加 <span className="text-xs text-faint">（也可以双击某一天，手机上长按）</span>
+          </summary>
           <AddForm key={defaultDate} defaultDate={defaultDate} />
         </details>
+        {quickAdd && <QuickAdd key={quickAdd.date} {...quickAdd} onClose={() => setQuickAdd(null)} />}
     </section>
   );
 }
@@ -801,7 +837,58 @@ const input = "input w-full px-3 py-1.5 text-sm";
 type EventFormValues = { title: string; date: string; endDate: string; kind: CalendarKind; note: string };
 
 /** 日历里的添加框，和 Google 日历一样顶部切换：待办（有状态，可以让 AI 开始）或日程（截止、考试这类时间点） */
-function AddForm({ defaultDate }: { defaultDate: string }) {
+const QUICK_ADD_WIDTH = 320;
+
+/** 双击日历某一天弹出的添加小窗（像 Apple 日历）：挂在 body 上，放在那一格旁边，放不下就换边 */
+function QuickAdd({ date, anchor, onClose }: { date: string; anchor: DOMRect; onClose: () => void }) {
+  const panel = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  useLayoutEffect(() => {
+    // 切到「日程」或出现报错时小窗会变高，跟着重新摆位置，别让按钮掉到屏幕外
+    const place = () => {
+      const h = panel.current?.offsetHeight ?? 260;
+      const right = anchor.right + 8;
+      const left = right + QUICK_ADD_WIDTH <= window.innerWidth - 8 ? right : Math.max(8, anchor.left - QUICK_ADD_WIDTH - 8);
+      const top = Math.max(8, Math.min(anchor.top, window.innerHeight - h - 8));
+      setPos((p) => (p && p.top === top && p.left === left ? p : { top, left }));
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    if (panel.current) ro.observe(panel.current);
+    return () => ro.disconnect();
+  }, [anchor]);
+  useEffect(() => {
+    // 点小窗外面关掉；日期选择器也是挂在 body 上的 dialog，点它不算外面
+    const down = (e: PointerEvent) => !(e.target as Element).closest?.("[role=dialog]") && onClose();
+    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("pointerdown", down);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", down);
+      document.removeEventListener("keydown", key);
+    };
+  }, [onClose]);
+  return createPortal(
+    <div
+      ref={panel}
+      role="dialog"
+      aria-label={`添加到 ${formatDay(date)}`}
+      style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: QUICK_ADD_WIDTH, maxHeight: "calc(100vh - 16px)" }}
+      className="fixed z-40 overflow-y-auto rounded-xl border border-line bg-surface p-3 text-sm shadow-[0_8px_24px_rgb(15_15_15/0.12)]"
+    >
+      <div className="mb-2 flex items-center">
+        <span className="font-medium">添加到 {formatDay(date)}</span>
+        <button onClick={onClose} aria-label="关闭" className="ml-auto rounded px-1 text-faint hover:text-foreground">
+          ×
+        </button>
+      </div>
+      <AddForm defaultDate={date} bare autoFocus onAdded={onClose} />
+    </div>,
+    document.body,
+  );
+}
+
+function AddForm({ defaultDate, bare = false, autoFocus = false, onAdded }: { defaultDate: string; bare?: boolean; autoFocus?: boolean; onAdded?: () => void }) {
   const [mode, setMode] = useState<"task" | "event">("task");
   const tab = (m: typeof mode, label: string) => (
     <button
@@ -813,27 +900,32 @@ function AddForm({ defaultDate }: { defaultDate: string }) {
     </button>
   );
   return (
-    <div className="mt-2 space-y-2 rounded-xl bg-subtle p-3">
+    <div className={bare ? "space-y-2" : "mt-2 space-y-2 rounded-xl bg-subtle p-3"}>
       <div className="inline-flex rounded-lg bg-subtle-strong p-0.5">
         {tab("task", "待办")}
         {tab("event", "日程")}
       </div>
       {mode === "task" ? (
-        <TaskForm defaultDate={defaultDate} />
+        <TaskForm defaultDate={defaultDate} autoFocus={autoFocus} onAdded={onAdded} />
       ) : (
         <EventForm
           initial={{ title: "", date: defaultDate, endDate: "", kind: "other", note: "" }}
           submitLabel="添加"
           resetAfterSubmit
           bare
-          onSubmit={(form) => addEventAction(form)}
+          autoFocus={autoFocus}
+          onSubmit={async (form) => {
+            const res = await addEventAction(form);
+            if (res.ok) onAdded?.();
+            return res;
+          }}
         />
       )}
     </div>
   );
 }
 
-function TaskForm({ defaultDate }: { defaultDate: string }) {
+function TaskForm({ defaultDate, autoFocus = false, onAdded }: { defaultDate: string; autoFocus?: boolean; onAdded?: () => void }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ title: "", dueDate: defaultDate, note: "" });
@@ -844,13 +936,16 @@ function TaskForm({ defaultDate }: { defaultDate: string }) {
         setError(null);
         startTransition(async () => {
           const res = await addTaskAction(form);
-          if (res.ok) setForm((f) => ({ ...f, title: "", note: "" }));
+          if (res.ok) {
+            setForm((f) => ({ ...f, title: "", note: "" }));
+            onAdded?.();
+          }
           else setError(res.error);
         });
       }}
       className="space-y-2"
     >
-      <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="要做的事，如 给佐藤教授发邮件" className={input} />
+      <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="要做的事，如 给佐藤教授发邮件" className={input} autoFocus={autoFocus} />
       <DateInput value={form.dueDate} onChange={(dueDate) => setForm({ ...form, dueDate })} placeholder="截止日（可选）" clearable className={input} title="截止日（可选）" />
       <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="备注（可选）" className={input} />
       {error && <p className="text-xs text-danger">{error}</p>}
@@ -867,6 +962,7 @@ function EventForm({
   submitLabel,
   resetAfterSubmit = false,
   bare = false,
+  autoFocus = false,
   onSubmit,
   onCancel,
 }: {
@@ -875,6 +971,7 @@ function EventForm({
   resetAfterSubmit?: boolean;
   /** 放在别的容器里时不要自己的底色和边距 */
   bare?: boolean;
+  autoFocus?: boolean;
   onSubmit: (form: EventFormValues) => Promise<{ ok: true } | { ok: false; error: string }>;
   onCancel?: () => void;
 }) {
@@ -895,7 +992,7 @@ function EventForm({
       }}
       className={bare ? "space-y-2" : "mt-2 space-y-2 rounded-xl bg-subtle p-3"}
     >
-      <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="标题，如 JLPT N1 考试" className={input} autoFocus={!!onCancel} />
+      <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="标题，如 JLPT N1 考试" className={input} autoFocus={autoFocus || !!onCancel} />
       <div className="flex gap-2">
         <DateInput value={form.date} onChange={(date) => setForm({ ...form, date })} className={input} required title="日期" />
         <DateInput value={form.endDate} onChange={(endDate) => setForm({ ...form, endDate })} placeholder="结束日期（可选）" clearable className={input} title="结束日期（可选）" />
