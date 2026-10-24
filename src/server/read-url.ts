@@ -85,12 +85,17 @@ async function transcribeScanned(data: Uint8Array, meter?: UsageMeter): Promise<
   return results;
 }
 
-async function readPdf(data: Uint8Array, meter?: UsageMeter): Promise<string> {
+/** 有文字层的 PDF：按页标出页码；几乎没有文字（扫描版）返回 null */
+export function pdfTextContent(pages: string[]): string | null {
+  if (pages.join("").trim().length <= 200) return null;
+  return `（PDF，共 ${pages.length} 页）\n\n${pages.map((t, i) => `--- 第 ${i + 1} 页 ---\n${t}`).join("\n\n")}`;
+}
+
+/** PDF 的文字：有文字层直接取，扫描版转写（看图模型的用量记在 meter 上） */
+export async function readPdf(data: Uint8Array, meter?: UsageMeter): Promise<string> {
   const pages = await pdfPageTexts(data);
-  const total = pages.join("").trim().length;
-  if (total > 200) {
-    return `（PDF，共 ${pages.length} 页）\n\n${pages.map((t, i) => `--- 第 ${i + 1} 页 ---\n${t}`).join("\n\n")}`;
-  }
+  const text = pdfTextContent(pages);
+  if (text) return text;
   const parts = await transcribeScanned(data, meter);
   const note = pages.length > SCAN_MAX_PAGES ? `，扫描版，转写了前 ${SCAN_MAX_PAGES} 页` : "，扫描版，已转写";
   return `（PDF，共 ${pages.length} 页${note}）\n\n${parts.join("\n\n")}`;

@@ -14,9 +14,11 @@ import { endedWithoutAnswer, TOOL_META, toolChipText, toolGroupSummary } from "@
 import { uuid } from "@/lib/browser";
 import { chatMarkdownToHtml } from "@/lib/chat-markdown";
 import { tabFocus, workFocus, type AiFocus } from "@/lib/ai-context";
+import { parseAttachmentRefs } from "@/lib/attachments";
 import { parseQuotes } from "@/lib/quotes";
 import { activeTab, type DocTab } from "@/lib/shell";
 import { AddToChatButton, QuoteChips, QuoteMarkers, SentQuotes } from "./add-to-chat";
+import { AttachButton, AttachmentDrafts, DropOverlay, SentAttachments, useAttachments } from "./attachments";
 import { usePageStore, useQuotes, type Hidden } from "./page-context";
 
 // 三栏里的 AI 对话栏。顶部写这是任务对话还是通用对话；输入框上面一行写 AI 现在能看到什么（可以点掉）。
@@ -24,6 +26,7 @@ import { usePageStore, useQuotes, type Hidden } from "./page-context";
 // 「让 AI 开始」且这段对话还是空的，就代用户发出开场消息。主页上的通用对话另算。
 // 通用对话里用户换了打开的东西（志愿、文书、页面），聊天里插一行灰色分隔「你打开了 …」，快捷回复也跟着换。
 // 选中文字「加入对话」的引用显示成输入框里的编号标签，随用户下一条消息作为 data-quotes 部分一起发出（见 add-to-chat.tsx）。
+// 附件（回形针、拖进来、粘贴）上传后显示成输入框里的卡片，随下一条消息作为 data-attachments 部分发出（见 attachments.tsx）。
 
 type Props = {
   initialConversationId: string | null;
@@ -109,18 +112,28 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
   const busy = status === "submitted" || status === "streaming";
 
   const quotes = useQuotes();
+  const files = useAttachments();
 
-  async function send(text: string, withQuotes = false) {
-    // 引用在等待 beforeSend 前取出并清空，免得用户这时又加一段被一起清掉
-    const attached = withQuotes ? quotes.map(({ text: t, source, comment }) => ({ text: t, source, ...(comment ? { comment } : {}) })) : [];
+  async function send(text: string, withExtras = false) {
+    // 引用和附件在等待 beforeSend 前取出并清空，免得用户这时又加一段被一起清掉
+    const attached = withExtras ? quotes.map(({ text: t, source, comment }) => ({ text: t, source, ...(comment ? { comment } : {}) })) : [];
     if (attached.length) pageStore.clearQuotes();
+    const fileRefs = withExtras ? files.take() : [];
     // 先让页面做准备（如编辑器保存未保存的修改），AI 才能读到最新内容
     try {
       await pageStore.runBeforeSend();
     } catch (e) {
       console.error("[ai-sidebar] beforeSend", e);
     }
-    if (attached.length) sendMessage({ role: "user", parts: [{ type: "data-quotes", data: attached }, ...(text ? [{ type: "text" as const, text }] : [])] });
+    if (attached.length || fileRefs.length)
+      sendMessage({
+        role: "user",
+        parts: [
+          ...(fileRefs.length ? [{ type: "data-attachments" as const, data: fileRefs }] : []),
+          ...(attached.length ? [{ type: "data-quotes" as const, data: attached }] : []),
+          ...(text ? [{ type: "text" as const, text }] : []),
+        ],
+      });
     else sendMessage({ text });
   }
 
@@ -199,14 +212,29 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
     general.current = null;
   }
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
+  // 附件还在上传时按了发送：等传完自动发出
+  const [queued, setQueued] = useState(false);
+  function submit(e?: React.FormEvent) {
+    e?.preventDefault();
     const text = input.trim();
-    // 只有引用（和评论）没打字也能发：引用本身就是这条消息
-    if ((!text && quotes.length === 0) || busy) return;
+    if (busy) return;
+    if (files.uploading) {
+      if (text || quotes.length || files.drafts.length) setQueued(true);
+      return;
+    }
+    setQueued(false);
+    // 只有引用（和评论）或附件、没打字也能发
+    if (!text && quotes.length === 0 && !files.ready) return;
     void send(text, true);
     setInput("");
   }
+  const submitRef = useRef(submit);
+  useEffect(() => {
+    submitRef.current = submit;
+  });
+  useEffect(() => {
+    if (queued && !files.uploading) submitRef.current();
+  }, [queued, files.uploading]);
 
   const tab = active;
   const docShown = !!tab && tab.kind !== "task" && shell.isVisible("doc");
@@ -245,8 +273,38 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
     ? [{ key: "task", label: `任务 · ${conv.task.title}` }]
     : [...(focus !== work ? [{ key: "doc", label: focus.pill, slot: "doc" as const }] : []), { key: "work", label: work.pill, slot: "work" as const }];
 
+  // 拖文件进 AI 栏：盖一层提示，松开就上传（进出子元素也会触发 dragenter/leave，所以计数）
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes("Files");
+  const canSend = (!!input.trim() || quotes.length > 0 || files.drafts.length > 0) && !queued;
+
   return (
-    <>
+    <div
+      className="relative flex min-h-0 flex-1 flex-col"
+      onDragEnter={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth.current++;
+        setDragging(true);
+      }}
+      onDragOver={(e) => {
+        if (hasFiles(e)) e.preventDefault();
+      }}
+      onDragLeave={(e) => {
+        if (!hasFiles(e)) return;
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+      }}
+      onDrop={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragging(false);
+        files.add(Array.from(e.dataTransfer.files));
+      }}
+    >
+      {dragging && <DropOverlay />}
       <div className="flex items-center gap-2 border-b border-line px-4 py-2 text-xs">
         <span className="min-w-0 flex-1 truncate text-muted" title={conv.task?.title}>
           {conv.task ? (
@@ -343,30 +401,45 @@ export function AiPane({ initialConversationId, initialMessages, demo, initialBa
         onSubmit={submit}
         className="mx-3 mb-3 rounded-xl border border-line-strong bg-surface shadow-[0_1px_3px_rgb(15_15_15/0.06)] transition-[border-color,box-shadow] focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15"
       >
+        <AttachmentDrafts drafts={files.drafts} notice={files.notice} onRemove={files.remove} />
         <QuoteChips quotes={quotes} onRemove={pageStore.removeQuote} onComment={pageStore.updateComment} />
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onPaste={(e) => {
+            // 粘贴截图或复制的文件：加成附件；只有文字时照常粘贴
+            const pasted = Array.from(e.clipboardData.files);
+            if (!pasted.length) return;
+            e.preventDefault();
+            files.add(pasted, true);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) submit(e);
           }}
           rows={3}
-          placeholder={quotes.length ? "想让 AI 对引用的内容做什么？Enter 发送" : "输入问题，Enter 发送，Shift+Enter 换行"}
+          placeholder={
+            files.drafts.length
+              ? "想让 AI 用这些文件做什么？比如「看看我的简历，记下有用的信息」"
+              : quotes.length
+                ? "想让 AI 对引用的内容做什么？Enter 发送"
+                : "输入问题，Enter 发送，Shift+Enter 换行；可以拖进或粘贴文件"
+          }
           className="block w-full resize-none bg-transparent px-3 pt-2.5 text-sm outline-none placeholder:text-faint"
         />
-        <div className="flex justify-end px-2 pb-2">
+        <div className="flex items-center justify-between px-2 pb-2">
+          <AttachButton onFiles={(f) => files.add(f)} />
           {busy ? (
             <button type="button" onClick={stop} className="btn px-3 py-1.5 text-sm">
               停止
             </button>
           ) : (
-            <button type="submit" disabled={!input.trim() && quotes.length === 0} className="btn-primary px-3 py-1.5 text-sm">
-              发送
+            <button type="submit" disabled={!canSend} className="btn-primary px-3 py-1.5 text-sm">
+              {queued ? "上传完就发送…" : "发送"}
             </button>
           )}
         </div>
       </form>
-    </>
+    </div>
   );
 }
 
@@ -391,8 +464,10 @@ function Message({ message }: { message: UIMessage }) {
   if (message.role === "user") {
     const text = message.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("");
     const quotes = parseQuotes(message.parts.flatMap((p) => (p.type === "data-quotes" ? [p.data] : []))[0]);
+    const attachments = parseAttachmentRefs(message.parts.flatMap((p) => (p.type === "data-attachments" ? [p.data] : []))[0]);
     return (
       <div className="space-y-1.5">
+        <SentAttachments attachments={attachments} />
         <SentQuotes quotes={quotes} />
         {text && <div className="ml-auto w-fit max-w-[85%] rounded-xl bg-subtle px-3 py-2 whitespace-pre-wrap">{text}</div>}
       </div>

@@ -13,11 +13,13 @@ import { profileScores } from "@/lib/aspirations";
 import { getChatModel } from "@/lib/ai/model";
 import { buildSystemPrompt } from "@/lib/ai/prompt";
 import { buildTools } from "@/lib/ai/tools";
+import { attachmentsForModel, parseAttachmentRefs, type AttachmentRef } from "@/lib/attachments";
 import { auth } from "@/lib/auth";
 import { UsageMeter } from "@/lib/credits";
 import { applicationFacts } from "@/lib/onboarding";
 import { parseQuotes, quotesForModel } from "@/lib/quotes";
 import { describeTask } from "@/lib/tasks";
+import { attachmentContents, claimAttachments, ownedAttachmentIds } from "@/server/attachments";
 import { getOrCreateConversation, loadMessages, saveMessages } from "@/server/conversations";
 import { getBalance, InsufficientCreditsError, recordUsageSafe } from "@/server/credits";
 import { getProfile } from "@/server/profile";
@@ -80,13 +82,32 @@ export async function POST(req: Request) {
   // 只接受用户发来的新消息，历史一律从数据库读，避免客户端伪造 AI 的发言或工具结果
   // 「加入对话」的引用：data-quotes 部分，校验后保留（聊天记录里显示），发给模型时转成文字
   const quotes = parseQuotes(message.parts.flatMap((p) => (p.type === "data-quotes" && "data" in p ? [p.data] : []))[0]);
+  // 附件：data-attachments 部分，只保留这个用户自己上传的文件
+  const sentRefs = parseAttachmentRefs(message.parts.flatMap((p) => (p.type === "data-attachments" && "data" in p ? [p.data] : []))[0]);
+  const owned = await ownedAttachmentIds(userId, sentRefs.map((a) => a.id));
+  const attachments = sentRefs.filter((a) => owned.has(a.id));
   const userMessage: UIMessage = {
     id: message.id,
     role: "user",
-    parts: [...(quotes.length ? [{ type: "data-quotes" as const, data: quotes }] : []), ...message.parts.filter((p) => p.type === "text")],
+    parts: [
+      ...(attachments.length ? [{ type: "data-attachments" as const, data: attachments }] : []),
+      ...(quotes.length ? [{ type: "data-quotes" as const, data: quotes }] : []),
+      ...message.parts.filter((p) => p.type === "text"),
+    ],
   };
+  if (userMessage.parts.length === 0) return new Response("消息是空的", { status: 400 });
+  await claimAttachments(userId, conversationId, attachments.map((a) => a.id));
   const history = await loadMessages(conversationId);
   const messages = await validateUIMessages({ messages: [...history, userMessage], tools });
+  const recent = messages.slice(-HISTORY_LIMIT);
+  // 发给模型的附件文字：图片、扫描版 PDF 第一次发时在这里转写（用量记在本轮 meter 上），之后从数据库取
+  const refsIn = (m: UIMessage) => m.parts.flatMap((p) => (p.type === "data-attachments" ? parseAttachmentRefs(p.data) : []));
+  const contents = await attachmentContents(
+    userId,
+    recent.flatMap((m) => refsIn(m).map((a) => a.id)),
+    meter,
+  );
+  const attachmentText = (refs: AttachmentRef[]) => attachmentsForModel(refs.map((ref) => ({ ref, content: contents.get(ref.id) ?? null })));
 
   const today = new Intl.DateTimeFormat("zh-CN", { dateStyle: "full", timeZone: "Asia/Tokyo" }).format(new Date());
   const profile = await getProfile(userId);
@@ -97,9 +118,14 @@ export async function POST(req: Request) {
   const result = streamText({
     model: getChatModel(),
     instructions,
-    messages: await convertToModelMessages(messages.slice(-HISTORY_LIMIT), {
+    messages: await convertToModelMessages(recent, {
       tools,
-      convertDataPart: (part) => (part.type === "data-quotes" ? { type: "text", text: quotesForModel(parseQuotes(part.data)) } : undefined),
+      convertDataPart: (part) =>
+        part.type === "data-quotes"
+          ? { type: "text", text: quotesForModel(parseQuotes(part.data)) }
+          : part.type === "data-attachments"
+            ? { type: "text", text: attachmentText(parseAttachmentRefs(part.data)) }
+            : undefined,
     }),
     tools,
     stopWhen: isStepCount(MAX_STEPS),
