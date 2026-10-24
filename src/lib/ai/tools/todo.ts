@@ -24,6 +24,13 @@ const stepsSchema = z
     "子步骤（任务内的小清单），整份写入；同名的子步骤保留原来的勾选状态。用户要做的每个具体动作写成一条，链接写在对应那条里（如「用表单事前登记：https://…」「准备 1 分钟自我介绍」「准备要问的问题：…」）",
   );
 
+const prepSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(180)
+  .describe("做这件事大概要提前准备几天（如计划书草稿 10、成绩证明从国内寄来 21、报名 1）。主页按「截止日 − 准备天数」算最晚哪天开始，用来排「下一件事」");
+
 const dateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -49,6 +56,7 @@ export const listTodosTool = defineTool({
       documentId: t.documentId,
       schoolId: t.schoolId,
       area: t.area ?? undefined,
+      prepDays: t.prepDays ?? undefined,
       auto: !!t.stepKey,
       proposed: t.proposed || undefined,
     }));
@@ -66,6 +74,7 @@ export const addTodosTool = defineTool({
           title: z.string().min(1).max(100),
           note: z.string().max(500).optional().describe("说明：只写背景和为什么做（一两句）；要做的动作写进 steps，不要堆在这里"),
           dueDate: dateSchema.optional(),
+          prepDays: prepSchema.optional(),
           steps: stepsSchema.optional(),
           area: areaSchema.optional(),
           ...links,
@@ -91,6 +100,7 @@ export const updateTodoTool = defineTool({
     title: z.string().min(1).max(100).optional(),
     note: z.string().max(500).optional(),
     dueDate: dateSchema.nullable().optional(),
+    prepDays: prepSchema.nullable().optional(),
     professorId: z.string().nullable().optional(),
     documentId: z.string().nullable().optional(),
     schoolId: z.string().nullable().optional(),

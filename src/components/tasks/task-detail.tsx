@@ -9,6 +9,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { uuid } from "@/lib/browser";
 import type { ReportItem, ReportLink } from "@/lib/task-report";
 import { splitLinks } from "@/lib/links";
+import { defaultPrepDays } from "@/lib/next-pick";
 import { TASK_AREA_LABELS, TASK_AREAS, TASK_STATUS_LABELS, TASK_STATUSES, taskGroup, type TaskArea, type TaskStep, type TaskView } from "@/lib/tasks";
 import { btn, formatDay, ProposalButtons, StartButton } from "./task-ui";
 
@@ -97,6 +98,7 @@ export function TaskDetail({ task, links, started, aiText, report }: { task: Tas
           clearable
           className={field}
         />
+        <PrepDays key={task.prepDays ?? "auto"} task={task} disabled={pending} onSave={(days) => run(() => updateTaskAction(task.id, { prepDays: days }))} />
         {!task.professorId && !task.schoolId && (
           <>
             <span className="ml-3 text-muted">分类</span>
@@ -308,5 +310,34 @@ function Steps({ taskId, steps }: { taskId: string; steps: TaskStep[] }) {
         </button>
       </form>
     </section>
+  );
+}
+
+/** 要提前准备几天：主页「下一件事」按「截止日 − 准备天数」算最晚哪天开始。空着 = 按任务类型的默认值（AI 判断时会估一个） */
+function PrepDays({ task, disabled, onSave }: { task: TaskView; disabled: boolean; onSave: (days: number | null) => void }) {
+  const [value, setValue] = useState(task.prepDays ? String(task.prepDays) : "");
+  const save = () => {
+    const days = value.trim() ? Math.round(Number(value)) : null;
+    if (days !== null && !(days >= 1 && days <= 180)) return setValue(task.prepDays ? String(task.prepDays) : "");
+    if (days !== task.prepDays) onSave(days);
+  };
+  return (
+    <label className="ml-3 flex items-center gap-1.5 text-muted" title="主页「下一件事」按截止日减去准备天数，算出最晚哪天要开始">
+      要准备约
+      <input
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={180}
+        value={value}
+        placeholder={String(defaultPrepDays(task))}
+        disabled={disabled}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        className={`${field} w-16 text-foreground`}
+      />
+      天
+    </label>
   );
 }

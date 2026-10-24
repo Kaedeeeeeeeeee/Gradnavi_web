@@ -22,6 +22,7 @@ export type TodoInput = {
   schoolId?: string | null;
   /** 分类；不设就自动归类 */
   area?: TaskArea | null;
+  prepDays?: number | null;
   steps?: { title: string; done?: boolean }[];
 };
 type Creator = "user" | "ai" | "system";
@@ -49,6 +50,7 @@ export function toTaskView(t: TodoRow): TaskView {
     documentId: t.documentId,
     schoolId: t.schoolId,
     area: t.area,
+    prepDays: t.prepDays,
     sortOrder: t.sortOrder,
   };
 }
@@ -105,6 +107,7 @@ export async function addTodos(userId: string, items: TodoInput[], createdBy: Cr
         documentId: item.documentId || null,
         schoolId: item.schoolId || null,
         area: item.area || null,
+        prepDays: item.prepDays ?? null,
         steps: buildSteps(item.steps ?? []),
         // AI 加的任务是提议，用户在主页同意后才正式加入
         proposed: createdBy === "ai",
@@ -124,6 +127,7 @@ export type TodoPatch = Partial<{
   documentId: string | null;
   schoolId: string | null;
   area: TaskArea | null;
+  prepDays: number | null;
   steps: { title: string; done?: boolean }[];
 }>;
 

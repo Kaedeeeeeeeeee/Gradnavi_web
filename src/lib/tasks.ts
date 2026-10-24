@@ -52,6 +52,8 @@ export type TaskView = {
   documentId: string | null;
   schoolId: string | null;
   area: TaskArea | null;
+  /** 准备要几天（AI 估、用户可改）；主页「下一件事」用它算最晚开始日。空 = 按类型给默认值 */
+  prepDays: number | null;
   sortOrder: number;
 };
 
@@ -199,10 +201,12 @@ export type Countdown = { label: string; school?: string; date: string; days: nu
 /** 每个研究科（每条志愿）最多一条，按天数排，最多 MAX_COUNTDOWN 条 */
 export const MAX_COUNTDOWN = 4;
 
-export function keyDates(items: CalendarItem[], today: string): Countdown[] {
+export function keyDates(items: CalendarItem[], today: string, intakeYear: number | null = null): Countdown[] {
   const bySchool = new Map<string, Countdown>();
   for (const it of items) {
     if (it.source !== "guide" || it.kind === "other" || (it.endDate ?? it.date) < today) continue;
+    // 比用户入学早的年度（别人那届的日程）只留在日历上
+    if (intakeYear != null && it.admissionYear != null && it.admissionYear < intakeYear) continue;
     // 出愿期间这类跨天的：还没开始数到第一天（「开始」），开始了数到最后一天（「截止」）
     const range = it.kind === "deadline" && it.endDate && it.endDate !== it.date;
     const started = it.date <= today;
@@ -216,15 +220,9 @@ export function keyDates(items: CalendarItem[], today: string): Countdown[] {
   return [...bySchool.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(0, MAX_COUNTDOWN);
 }
 
-/**
- * 主页「今天」的规则部分（不调用 AI）：只数已过截止日的，再从自己手上的任务（待办 / 进行中）里挑一个「今天先做」（在待办里标出来）：先挑最近到期的，再挑没有日期的流程任务。
- */
-export function briefing<T extends TaskView>(tasks: T[], today: string): { overdue: number; next: T | null } {
-  const open = tasks.filter((t) => !t.proposed && (t.status === "todo" || t.status === "doing"));
-  const overdue = open.filter((t) => t.dueDate && t.dueDate < today).length;
-  const dated = open.filter((t) => t.dueDate).sort((a, b) => a.dueDate!.localeCompare(b.dueDate!) || compareTasks(a, b));
-  const undated = open.filter((t) => !t.dueDate).sort(compareTasks);
-  return { overdue, next: dated[0] ?? undated[0] ?? null };
+/** 主页「今天」：已过截止日的任务数（今天先做哪件见 lib/next-pick.ts） */
+export function overdueCount(tasks: TaskView[], today: string) {
+  return tasks.filter((t) => !t.proposed && (t.status === "todo" || t.status === "doing") && t.dueDate && t.dueDate < today).length;
 }
 
 /** 新的子步骤（标题去重、去空，每条最多 200 字，最多 20 条）；同名的保留原来的勾选状态 */

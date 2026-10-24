@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CalendarItem } from "../calendar";
 import { professorStepKey } from "../next-steps";
-import { agenda, briefing, buildSteps, countAwaiting, groupTasks, groupTasksByProject, keyDates, kickoffPrompt, shortTitle, taskGroup, weekEnd, type TaskView } from "../tasks";
+import { agenda, buildSteps, countAwaiting, groupTasks, groupTasksByProject, keyDates, kickoffPrompt, overdueCount, shortTitle, taskGroup, weekEnd, type TaskView } from "../tasks";
 
 const TODAY = "2026-10-21"; // 周三
 
@@ -21,6 +21,7 @@ const task = (patch: Partial<TaskView> = {}): TaskView => ({
   documentId: null,
   schoolId: null,
   area: null,
+  prepDays: null,
   sortOrder: n,
   ...patch,
 });
@@ -77,18 +78,18 @@ test("待处理数量 = 待你确认 + AI 提议（任务、改期、日程）",
   assert.equal(countAwaiting(tasks, 2), 5);
 });
 
-test("今日简报：只数已过期的，今天先做从自己手上的任务里挑", () => {
-  // 待你确认的、AI 提议的不在简报里（下面「等你处理」已经有了），只从自己手上的任务里挑
-  const review = task({ title: "套磁信", status: "review", dueDate: "2026-10-22" });
-  const proposed = task({ proposed: true, dueDate: "2026-10-21" });
+test("今天：只数自己手上已过期的（待你确认、AI 提议的不算）", () => {
+  const review = task({ title: "套磁信", status: "review", dueDate: "2026-10-20" });
+  const proposed = task({ proposed: true, dueDate: "2026-10-20" });
   const late = task({ title: "联系教授", dueDate: "2026-10-20" });
-  assert.deepEqual(briefing([review, proposed, late, task({ title: "报名 TOEFL", dueDate: "2026-10-30" })], TODAY), { overdue: 1, next: late });
-  // 先挑有日期的，再挑没日期的流程任务
-  const toefl = task({ title: "报名 TOEFL", dueDate: "2026-10-30" });
-  assert.equal(briefing([task({ title: "确认申请路径" }), toefl], TODAY).next, toefl);
-  const doing = task({ title: "写计划书", status: "doing" });
-  assert.equal(briefing([doing], TODAY).next, doing);
-  assert.deepEqual(briefing([review], TODAY), { overdue: 0, next: null });
+  assert.equal(overdueCount([review, proposed, late, task({ dueDate: "2026-10-30" })], TODAY), 1);
+});
+
+test("关键日期：比用户入学早的年度不提醒", () => {
+  const item = (year: number): CalendarItem => ({ key: `guide:s${year}:0`, source: "guide", title: "入学手続", label: "入学手続", date: "2026-11-16", kind: "deadline", admissionYear: year });
+  assert.deepEqual(keyDates([item(2027), item(2028)], TODAY, 2028).map((c) => c.date), ["2026-11-16"]);
+  assert.equal(keyDates([item(2027)], TODAY, 2028).length, 0);
+  assert.equal(keyDates([item(2027)], TODAY, null).length, 1);
 });
 
 test("关键日期倒计时：每个研究科一条，出愿期间没开始数到开始、开始了数到截止，按天数排", () => {
