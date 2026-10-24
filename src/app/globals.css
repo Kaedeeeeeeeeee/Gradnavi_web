@@ -754,3 +754,15 @@ body {
     animation: none;
   }
 }
+
+/* 「查看」跳过去的那一行 / 那一天：短暂高亮一下 */
+@keyframes reveal-flash {
+  0%,
+  40% {
+    background-color: var(--info-soft);
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+}
+.reveal-flash {
+  animation: reveal-flash 1.8s ease-out;
+}
