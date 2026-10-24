@@ -22,7 +22,7 @@ const SCAN_BATCH = 4;
 
 type Direct = { kind: "pdf"; data: Uint8Array } | { kind: "html"; html: string };
 
-async function download(url: string): Promise<Direct> {
+export async function download(url: string): Promise<Direct> {
   assertPublicUrl(url);
   const res = await fetch(url, {
     headers: {

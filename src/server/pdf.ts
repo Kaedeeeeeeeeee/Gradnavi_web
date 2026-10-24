@@ -14,7 +14,7 @@ import { buildPrintHtml } from "@/lib/doc-html";
 const FONT_DIR = path.join(process.cwd(), "node_modules/@fontsource/noto-serif-jp");
 const CHROMIUM_CANDIDATES = ["/usr/bin/chromium-browser", "/usr/bin/chromium", "/opt/pw-browsers/chromium"];
 
-function chromiumPath() {
+export function chromiumPath() {
   const fromEnv = process.env.CHROMIUM_PATH;
   if (fromEnv) return fromEnv;
   const found = CHROMIUM_CANDIDATES.find((p) => existsSync(p));
@@ -25,7 +25,7 @@ function chromiumPath() {
 let fontCss: Promise<string> | null = null;
 
 /** fontsource 的 CSS 用相对路径引用字体文件，改成绝对 file:// 地址 */
-function loadFontCss() {
+export function loadFontCss() {
   fontCss ??= Promise.all(["400.css", "700.css"].map((f) => readFile(path.join(FONT_DIR, f), "utf8"))).then((parts) =>
     parts
       .join("\n")

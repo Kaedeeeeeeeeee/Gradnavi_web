@@ -1,7 +1,8 @@
-import { boolean, date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, customType, date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { AdmissionRequirements, GuideEvent } from "../lib/admissions";
 import type { CalendarKind } from "../lib/calendar";
 import type { Feature, LedgerKind } from "../lib/credits";
+import type { FormField, FormLayout, FormMode, Handwriting, MissingInfo } from "../lib/forms";
 import type { DocKind, Outline, TargetProfessor, WriteMode, CommentCategory, CommentStatus } from "../lib/documents";
 import type { DocOp, SuggestionSource, SuggestionStatus } from "../lib/doc-ops";
 import type { VersionTrigger } from "../lib/doc-history";
@@ -239,6 +240,47 @@ export const documentVersion = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("document_version_doc_number_idx").on(t.documentId, t.number)],
+);
+
+const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
+  dataType: () => "bytea",
+  toDriver: (v) => Buffer.from(v),
+  fromDriver: (v) => new Uint8Array(v),
+});
+
+/**
+ * 申请表（入学願書、研究生出願票等学校发的 PDF）：AI 下载后按用户资料填写，在文书里查看、修改、下载。
+ * pdf 只存要填的那几页（已去掉原有的填写栏）；fields 是每一栏的位置和内容，AI 填的先放在 proposed，用户接受后才印上去。
+ */
+export const applicationForm = pgTable(
+  "application_form",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    sourceUrl: text("source_url"),
+    /** 原 PDF 里的第几页（从 1 起）和总页数 */
+    sourcePages: jsonb("source_pages").$type<number[]>().notNull().default([]),
+    totalPages: integer("total_pages").notNull().default(0),
+    pdf: bytea("pdf").notNull(),
+    mode: text("mode").$type<FormMode>().notNull(),
+    layout: jsonb("layout").$type<FormLayout>().notNull(),
+    fields: jsonb("fields").$type<FormField[]>().notNull().default([]),
+    /** 学校要求亲笔填写：下载的是参照版 */
+    handwriting: jsonb("handwriting").$type<Handwriting>(),
+    /** 上次 AI 填写时还缺的信息 */
+    missing: jsonb("missing").$type<MissingInfo[]>().notNull().default([]),
+    professorId: text("professor_id").references(() => savedProfessor.id, { onDelete: "set null" }),
+    schoolId: text("school_id").references(() => graduateSchool.id, { onDelete: "set null" }),
+    /** 每次保存 +1（预览里拖动和 AI 同时改时发现冲突） */
+    version: integer("version").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("application_form_user_idx").on(t.userId, t.updatedAt)],
 );
 
 /** AI 对文书的修改建议，用户接受后才写进正文 */
