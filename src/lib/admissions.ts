@@ -291,6 +291,8 @@ export function projectGuide(guide: GuideInfo, today: string): { tentative: bool
     key: `guide:${guide.schoolId}:${i}`,
     source: "guide" as const,
     title: `${guide.schoolName} ${e.label}`,
+    school: guide.schoolName,
+    label: e.label,
     date: tentative ? shiftYears(e.date, 1) : e.date,
     endDate: e.endDate ? (tentative ? shiftYears(e.endDate, 1) : e.endDate) : null,
     kind: e.kind,

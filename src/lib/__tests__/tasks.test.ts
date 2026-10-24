@@ -77,13 +77,18 @@ test("待处理数量 = 待你确认 + AI 提议（任务、改期、日程）",
   assert.equal(countAwaiting(tasks, 2), 5);
 });
 
-test("今日简报：先说要处理的，再建议今天先做哪件", () => {
-  const lines = briefing([task({ title: "套磁信", status: "review", dueDate: "2026-10-24" }), task({ proposed: true }), task({ title: "联系教授", dueDate: "2026-10-21" })], 1, TODAY);
-  assert.deepEqual(lines, ["1 件事待你确认，AI 提了 2 项安排等你同意。", "今天建议先做：看一下 AI 做好的「套磁信」（10/24 前要完成）。"]);
-  // 没有待你确认时，先挑有日期的，再挑没日期的流程任务
-  assert.deepEqual(briefing([task({ title: "确认申请路径" }), task({ title: "报名 TOEFL", dueDate: "2026-10-30" })], 0, TODAY), ["今天建议先做：「报名 TOEFL」（10/30 截止）。"]);
-  assert.deepEqual(briefing([task({ title: "写计划书", status: "doing" })], 0, TODAY), ["接着做：「写计划书」。"]);
-  assert.match(briefing([], 0, TODAY)[0], /都做完了/);
+test("今日简报：只数已过期的，今天先做从自己手上的任务里挑", () => {
+  // 待你确认的、AI 提议的不在简报里（下面「等你处理」已经有了），只从自己手上的任务里挑
+  const review = task({ title: "套磁信", status: "review", dueDate: "2026-10-22" });
+  const proposed = task({ proposed: true, dueDate: "2026-10-21" });
+  const late = task({ title: "联系教授", dueDate: "2026-10-20" });
+  assert.deepEqual(briefing([review, proposed, late, task({ title: "报名 TOEFL", dueDate: "2026-10-30" })], TODAY), { overdue: 1, next: late });
+  // 先挑有日期的，再挑没日期的流程任务
+  const toefl = task({ title: "报名 TOEFL", dueDate: "2026-10-30" });
+  assert.equal(briefing([task({ title: "确认申请路径" }), toefl], TODAY).next, toefl);
+  const doing = task({ title: "写计划书", status: "doing" });
+  assert.equal(briefing([doing], TODAY).next, doing);
+  assert.deepEqual(briefing([review], TODAY), { overdue: 0, next: null });
 });
 
 test("关键日期倒计时：每个研究科一条，出愿期间没开始数到开始、开始了数到截止，按天数排", () => {
@@ -91,14 +96,14 @@ test("关键日期倒计时：每个研究科一条，出愿期间没开始数�
   const items = [
     guide("todai", { title: "東大 出願期間", date: "2026-10-15", endDate: "2026-11-05", kind: "deadline", tentative: true, sourceUrl: "https://example.ac.jp" }),
     guide("todai", { title: "東大 筆記試験", date: "2027-02-01", kind: "exam" }),
-    guide("hit", { title: "一橋 出願期間", date: "2026-12-01", endDate: "2026-12-08", kind: "deadline" }),
+    guide("hit", { title: "一橋 経済学研究科 出願期間", school: "一橋 経済学研究科", label: "出願期間", date: "2026-12-01", endDate: "2026-12-08", kind: "deadline" }),
     guide("hit", { title: "一橋 説明会", date: "2026-10-25", kind: "other" }),
     guide("old", { title: "去年的截止", date: "2026-10-01", kind: "deadline" }),
     { key: "todo:x", source: "todo", title: "自己的任务", date: "2026-10-30", kind: "deadline" } satisfies CalendarItem,
   ];
   assert.deepEqual(keyDates(items, TODAY), [
-    { label: "東大 出願期間 截止", date: "2026-11-05", days: 15, tentative: true, sourceUrl: "https://example.ac.jp" },
-    { label: "一橋 出願期間 开始", date: "2026-12-01", days: 41, tentative: false, sourceUrl: undefined },
+    { label: "東大 出願期間 截止", school: undefined, date: "2026-11-05", days: 15, tentative: true, sourceUrl: "https://example.ac.jp" },
+    { label: "出願期間 开始", school: "一橋 経済学研究科", date: "2026-12-01", days: 41, tentative: false, sourceUrl: undefined },
   ]);
 });
 
