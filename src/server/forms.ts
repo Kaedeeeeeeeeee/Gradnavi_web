@@ -341,13 +341,17 @@ export type NewFormInput = {
 
 /** 下载学校的申请表 PDF，读出版面，让 AI 按用户资料填一遍（结果都是提议，等用户接受） */
 export async function createFormFromUrl(userId: string, input: NewFormInput, meter?: UsageMeter): Promise<FillResult> {
+  // 各步用时记进日志（下载、读版面、AI 填写），慢的时候看得出卡在哪
+  const t0 = Date.now();
   const direct = await download(input.url).catch((e) => {
     throw new Error(`下载不了这个 PDF（${e instanceof Error ? e.message : String(e)}）`);
   });
   if (direct.kind !== "pdf") throw new Error("这个链接不是 PDF。请找到申请表（様式）PDF 的直接链接");
   let analyzed;
   try {
+    const t1 = Date.now();
     analyzed = await analyzeFormPdf(direct.data, input.pages);
+    console.info(`[forms] 下载 ${t1 - t0}ms，读版面 ${Date.now() - t1}ms（${direct.data.length} 字节）`);
   } catch (e) {
     throw e instanceof FormPdfError ? new Error(e.message) : e;
   }
@@ -372,7 +376,9 @@ export async function createFormFromUrl(userId: string, input: NewFormInput, met
     })
     .returning();
   const ctx = await fillContext(userId, form.professorId, form.schoolId);
+  const t2 = Date.now();
   const ai = await runFill(form, ctx, input.instructions ?? "", meter);
+  console.info(`[forms] AI 填写 ${Date.now() - t2}ms（${form.mode}，${analyzed.layout.cells.length} 个格子，${ai?.fields.length ?? 0} 栏）`);
   return applyFill(form, ai, input.handwritten);
 }
 

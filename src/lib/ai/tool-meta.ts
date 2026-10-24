@@ -45,7 +45,10 @@ const str = (v: unknown, key: string) => {
  * 完成后说结果（如「找到 5 位教授」）。返回 null = 不显示（如重复调用被跳过）。
  */
 export function toolChipText(name: string, state: "running" | "done" | "failed", input: unknown, output?: unknown): string | null {
-  const label = TOOL_META[name]?.label ?? name;
+  const meta = TOOL_META[name];
+  // 没登记中文名的工具（新加的忘了登记，或者页面还是旧版本）不把变量名显示出来
+  if (!meta) return state === "running" ? "正在处理" : state === "failed" ? "有一步没成功" : "处理完了一步";
+  const label = meta.label;
   if (state === "failed") return `${label}没成功`;
   if (name === "search_professors") {
     const schools = input && typeof input === "object" && Array.isArray((input as { schools?: unknown }).schools) ? ((input as { schools: unknown[] }).schools.filter((s) => typeof s === "string") as string[]) : [];
@@ -61,6 +64,11 @@ export function toolChipText(name: string, state: "running" | "done" | "failed",
     return state === "running" ? `正在联网检索${q ? `「${q.slice(0, 30)}」` : ""}` : `联网检索${q ? `「${q.slice(0, 30)}」` : ""}`;
   }
   if (name === "fetch_page") return state === "running" ? "正在读取网页" : "读了网页";
+  if (name === "fill_application_form" || name === "refill_application_form") {
+    if (state === "running") return name === "fill_application_form" ? "正在下载并填写申请表" : "正在重新填写申请表";
+    const n = output && typeof output === "object" ? (output as { pendingTotal?: unknown }).pendingTotal : undefined;
+    return typeof n === "number" && n > 0 ? `填好了申请表，${n} 栏待你确认` : "填好了申请表";
+  }
   if (state === "running") return `正在${label.replace(/了|（待你确认）/g, "")}`;
   return label;
 }
@@ -73,7 +81,7 @@ export function toolGroupSummary(names: string[]): string {
     .map(([n, c]) => {
       if (n === "web_search") return `检索 ${c} 次`;
       if (n === "fetch_page") return `读了 ${c} 个网页`;
-      const label = TOOL_META[n]?.label ?? n;
+      const label = TOOL_META[n]?.label ?? "其他操作";
       return c > 1 ? `${label} ${c} 次` : label;
     })
     .join("，");
