@@ -249,6 +249,33 @@ const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
 });
 
 /**
+ * 聊天附件：用户发给 AI 的图片、PDF、Word、文本文件（简历、成绩单、证书……），存在自己的数据库里。
+ * content 是发给模型的文字：PDF / Word / 文本上传时就取好；图片和扫描版 PDF 第一次发给 AI 时由看图模型转写（记在那轮对话的 credit 上），之后复用。
+ * 上传时还没属于哪段对话，发出消息后填上 conversationId；对话删了附件一起删。
+ */
+export const chatAttachment = pgTable(
+  "chat_attachment",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id").references(() => aiConversation.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    mediaType: text("media_type").notNull(),
+    size: integer("size").notNull(),
+    data: bytea("data").notNull(),
+    content: text("content"),
+    /** PDF 的页数 */
+    pages: integer("pages"),
+    /** 转写失败过（不再每轮重试） */
+    failed: boolean("failed").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("chat_attachment_user_idx").on(t.userId, t.createdAt), index("chat_attachment_conversation_idx").on(t.conversationId)],
+);
+
+/**
  * 申请表（入学願書、研究生出願票等学校发的 PDF）：AI 下载后按用户资料填写，在文书里查看、修改、下载。
  * pdf 只存要填的那几页（已去掉原有的填写栏）；fields 是每一栏的位置和内容，AI 填的先放在 proposed，用户接受后才印上去。
  */
