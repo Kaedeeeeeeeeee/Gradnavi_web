@@ -8,7 +8,7 @@ import { defineTool } from "./registry";
 const links = {
   professorId: z.string().optional().describe("挂在志愿里的某位教授下（教授 ID）"),
   documentId: z.string().optional().describe("挂在某份文书下（文书 ID）"),
-  schoolId: z.string().optional().describe("挂在某个关注的研究科下（研究科 ID，用 list_watched_schools 查）"),
+  schoolId: z.string().optional().describe("挂在某个关注的研究科下（研究科 ID，用 list_watched_schools 查）。某所学校的出愿、考试、说明会等任务都要挂上"),
 };
 
 const areaSchema = z
@@ -23,6 +23,13 @@ const stepsSchema = z
   .describe(
     "子步骤（任务内的小清单），整份写入；同名的子步骤保留原来的勾选状态。用户要做的每个具体动作写成一条，链接写在对应那条里（如「用表单事前登记：https://…」「准备 1 分钟自我介绍」「准备要问的问题：…」）",
   );
+
+const prepSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(180)
+  .describe("做这件事大概要提前准备几天（如计划书草稿 10、成绩证明从国内寄来 21、报名 1）。主页按「截止日 − 准备天数」算最晚哪天开始，用来排「下一件事」");
 
 const dateSchema = z
   .string()
@@ -49,6 +56,7 @@ export const listTodosTool = defineTool({
       documentId: t.documentId,
       schoolId: t.schoolId,
       area: t.area ?? undefined,
+      prepDays: t.prepDays ?? undefined,
       auto: !!t.stepKey,
       proposed: t.proposed || undefined,
     }));
@@ -58,7 +66,7 @@ export const listTodosTool = defineTool({
 export const addTodosTool = defineTool({
   name: "add_todos",
   description:
-    "给用户添加一条或多条任务。添加的任务是提议：主页上虚线显示，用户同意后才正式加入。只加商量好的、接下来真要做的事；可以顺便带上子步骤。有截止日期的显示在日历上。",
+    "给用户添加一条或多条任务。添加的任务是提议：主页上虚线显示，用户同意后才正式加入。只加商量好的、接下来真要做的事；可以顺便带上子步骤。有截止日期的显示在日历上。和某所学校 / 某位教授有关的任务：一定挂上 schoolId / professorId，标题里写上学校名（如「東京学芸大学：外国人研究生出願（11/5〜11/11 必着）」），用户在主页单看标题就要知道是哪所学校的事。",
   inputSchema: z.object({
     items: z
       .array(
@@ -66,6 +74,7 @@ export const addTodosTool = defineTool({
           title: z.string().min(1).max(100),
           note: z.string().max(500).optional().describe("说明：只写背景和为什么做（一两句）；要做的动作写进 steps，不要堆在这里"),
           dueDate: dateSchema.optional(),
+          prepDays: prepSchema.optional(),
           steps: stepsSchema.optional(),
           area: areaSchema.optional(),
           ...links,
@@ -91,6 +100,7 @@ export const updateTodoTool = defineTool({
     title: z.string().min(1).max(100).optional(),
     note: z.string().max(500).optional(),
     dueDate: dateSchema.nullable().optional(),
+    prepDays: prepSchema.nullable().optional(),
     professorId: z.string().nullable().optional(),
     documentId: z.string().nullable().optional(),
     schoolId: z.string().nullable().optional(),

@@ -4,7 +4,8 @@ const nextConfig: NextConfig = {
   // 自托管：生成最小化的独立运行包，供 Docker 镜像使用
   output: "standalone",
   // PDF 导出：puppeteer-core 不打包；日文字体文件按路径读取，需显式带进 standalone 包
-  serverExternalPackages: ["puppeteer-core"],
+  // 聊天里读扫描版 PDF 用的原生画布模块（.node 文件）也不打包，Docker 镜像里单独复制
+  serverExternalPackages: ["puppeteer-core", "@napi-rs/canvas"],
   outputFileTracingIncludes: {
     "/api/documents/\\[id\\]/pdf": [
       "./node_modules/@fontsource/noto-serif-jp/{400,700}.css",

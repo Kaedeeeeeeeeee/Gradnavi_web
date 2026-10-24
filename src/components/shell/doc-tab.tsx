@@ -18,7 +18,9 @@ import { TaskDetail } from "@/components/tasks/task-detail";
 import { describeTask } from "@/lib/tasks";
 import { summarizeToolCalls } from "@/lib/task-report";
 import { getTaskConversation, listToolCalls } from "@/server/conversations";
-import { getTodo, taskLinks, toTaskView } from "@/server/todos";
+import { getTodo, taskLinks, watchedSchoolRefs, toTaskView } from "@/server/todos";
+import { FormView } from "@/components/forms/form-view";
+import { getForm } from "@/server/forms";
 import { WebTab } from "./web-tab";
 
 // 文稿栏当前标签的内容（服务器渲染）。title 为 null 表示对应数据已不存在，外壳会关掉这个标签。
@@ -32,6 +34,7 @@ export async function renderDocTab(userId: string, tab: DocTab | null): Promise<
   if (tab.kind === "task") return taskTab(userId, tab.id);
   if (tab.kind === "search") return searchTab(userId, tab.id);
   if (tab.kind === "compare") return compareTab(userId);
+  if (tab.kind === "form") return formTab(userId, tab.id);
   return documentTab(userId, tab.id);
 }
 
@@ -61,6 +64,7 @@ async function documentTab(userId: string, id: string) {
           track={onboarding ? decideTrack(onboarding) : null}
           professors={professors.map((p) => ({ id: p.id, label: `${p.name}（${p.university}）` }))}
           linkedStatus={linked?.status ?? null}
+          linkedEmail={linked?.email ?? null}
           suggestions={bundle.suggestions.map((s) => ({ id: s.id, op: s.op, zh: s.zh, summary: s.summary, source: s.source }))}
           comments={bundle.comments.map((c) => ({ id: c.id, quote: c.quote, body: c.body, category: c.category, status: c.status }))}
           parent={bundle.parent && { ...bundle.parent, version: doc.parentVersion }}
@@ -72,6 +76,31 @@ async function documentTab(userId: string, id: string) {
           versionCount={bundle.versionCount}
         />
       </div>
+    ),
+  };
+}
+
+async function formTab(userId: string, id: string) {
+  const form = await getForm(userId, id);
+  if (!form) return { title: null, node: null };
+  return {
+    title: form.title,
+    node: (
+      <FormView
+        key={form.id}
+        form={{
+          id: form.id,
+          title: form.title,
+          sourceUrl: form.sourceUrl,
+          sourcePages: form.sourcePages,
+          totalPages: form.totalPages,
+          mode: form.mode,
+          pages: form.layout.pages,
+          fields: form.fields,
+          handwriting: form.handwriting,
+          missing: form.missing,
+        }}
+      />
     ),
   };
 }
@@ -155,11 +184,11 @@ async function compareTab(userId: string) {
 async function taskTab(userId: string, id: string) {
   const row = await getTodo(userId, id);
   if (!row) return { title: null, node: null };
-  const [links, conversation] = await Promise.all([taskLinks(userId, row), getTaskConversation(userId, id)]);
+  const [links, conversation, schools] = await Promise.all([taskLinks(userId, row), getTaskConversation(userId, id), watchedSchoolRefs(userId)]);
   const task = toTaskView(row);
   // 待你确认：列出 AI 在这个任务的对话里做了什么，每条能直接打开
   const report = task.status === "review" ? summarizeToolCalls(conversation ? await listToolCalls(conversation.id) : []) : null;
   const aiText = `任务详情（用户正在看）：\n${describeTask(task, { professor: links.professor?.label, document: links.document?.title, school: links.school?.name })}`;
-  return { title: row.title, node: <TaskDetail key={row.id} task={task} links={links} started={!!conversation} aiText={aiText} report={report} /> };
+  return { title: row.title, node: <TaskDetail key={row.id} task={task} links={links} schools={schools} started={!!conversation} aiText={aiText} report={report} /> };
 }
 

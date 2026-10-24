@@ -15,6 +15,7 @@ export type ProfessorInput = Omit<ProfessorCandidate, "research" | "papers" | "s
   paperRefs?: PaperRef[];
   sources?: SourceLink[];
   note?: string | null;
+  email?: string;
 };
 
 export async function listSavedProfessors(userId: string) {
@@ -65,13 +66,15 @@ export async function saveProfessor(userId: string, input: ProfessorInput) {
     acceptsInternational: input.acceptsInternational?.trim() || null,
     sources: input.sources ?? [],
   };
+  // 没带邮箱时保留原来记下的
+  const email = input.email?.trim() ? { email: input.email.trim() } : {};
   const [row] = await db
     .insert(savedProfessor)
-    .values({ id: crypto.randomUUID(), userId, ...info, note: input.note?.trim() || null })
+    .values({ id: crypto.randomUUID(), userId, ...info, ...email, note: input.note?.trim() || null })
     .onConflictDoUpdate({
       target: [savedProfessor.userId, savedProfessor.name, savedProfessor.university],
       // 重新加入「放弃」过的教授 = 重新考虑
-      set: { ...info, status: sql`case when ${savedProfessor.status} = 'dropped' then 'to_contact' else ${savedProfessor.status} end`, updatedAt: new Date() },
+      set: { ...info, ...email, status: sql`case when ${savedProfessor.status} = 'dropped' then 'to_contact' else ${savedProfessor.status} end`, updatedAt: new Date() },
     })
     .returning();
   const school = await linkKnownSchool(userId, row);
@@ -107,6 +110,7 @@ export type ProfessorPatch = Partial<{
   fit: string | null;
   papers: string[];
   acceptsInternational: string | null;
+  email: string | null;
   schoolId: string | null;
 }>;
 

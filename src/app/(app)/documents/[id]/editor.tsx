@@ -9,7 +9,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { useAddToChat, useAiBeforeSend, useAiPageContent, useAskAi } from "@/components/ai/page-context";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
 import { takeAutoAsk } from "@/components/shell/pending-ask";
-import { copyText } from "@/lib/browser";
 import { cleanQuoteText } from "@/lib/quotes";
 import { isRewrite, SELECTION_ACTION_LABELS, SELECTION_ACTIONS, type SelectionAction } from "@/lib/doc-assist";
 import { alignZh, blockKey, type ZhEntry } from "@/lib/doc-zh";
@@ -57,6 +56,8 @@ type Props = {
   professors: ProfessorOption[];
   /** 关联教授在清单里的联系状态 */
   linkedStatus: ProfessorStatus | null;
+  /** 关联教授记下的邮箱（套磁信收件人） */
+  linkedEmail: string | null;
   suggestions: SuggestionView[];
   comments: CommentView[];
   /** 定制版：复制自哪份文书的第几版 */
@@ -337,15 +338,14 @@ export function DocumentEditor(props: Props) {
     else window.open(url, "_self");
   }
 
-  async function copyLetter() {
-    if (!editor) return false;
-    const ok = await copyText(editor.getText({ blockSeparator: "\n" }));
-    if (ok) {
+  /** 套磁信全文（纯文本）；复制或用邮箱打开时存一版 */
+  const letter = {
+    text: () => editor?.getText({ blockSeparator: "\n" }) ?? "",
+    async taken() {
       await flush();
       void snapshotAction(doc.id, "copy");
-    }
-    return ok;
-  }
+    },
+  };
 
   const reviewer = doc.targetProfessor ? `${doc.targetProfessor.name}教授` : "教授";
   const guided = doc.kind === "plan" || doc.kind === "intro";
@@ -386,9 +386,10 @@ export function DocumentEditor(props: Props) {
           professor={doc.targetProfessor}
           professors={props.professors}
           linkedStatus={props.linkedStatus}
+          linkedEmail={props.linkedEmail}
           attachment={props.attachment}
           plans={props.plans}
-          onCopy={copyLetter}
+          letter={letter}
         />
       )}
 

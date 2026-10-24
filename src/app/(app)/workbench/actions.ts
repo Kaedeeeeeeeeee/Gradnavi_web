@@ -6,6 +6,8 @@ import { z } from "zod";
 import { CALENDAR_KINDS } from "@/lib/calendar";
 import { requireUser } from "@/lib/session";
 import { kickoffPrompt, TASK_AREAS, TASK_STATUSES } from "@/lib/tasks";
+import { pickKickoffNote } from "@/lib/next-pick";
+import { getSavedPick } from "@/server/next-pick";
 import { acceptEventProposal, addCalendarEvent, deleteCalendarEvent, listProposedEvents, rejectEventProposal, rescheduleEvent, updateCalendarEvent } from "@/server/calendar";
 import { getTaskConversation, loadMessages } from "@/server/conversations";
 import { getSavedProfessor, listFollowUpProposals, resolveFollowUpProposal } from "@/server/professors";
@@ -55,6 +57,8 @@ const taskPatch = z.object({
   note: z.string().trim().max(500).nullable().optional(),
   dueDate: date.nullable().optional(),
   area: z.enum(TASK_AREAS).nullable().optional(),
+  prepDays: z.number().int().min(1, "至少 1 天").max(180, "最多 180 天").nullable().optional(),
+  schoolId: z.string().max(64).nullable().optional(),
 });
 
 export async function updateTaskAction(id: string, patch: z.input<typeof taskPatch>): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -94,16 +98,20 @@ export async function openTaskConversationAction(id: string, start: boolean): Pr
     await updateTodo(user.id, id, { status: "doing" });
     refresh();
   }
-  const [conversation, professor] = await Promise.all([
+  const [conversation, professor, pick] = await Promise.all([
     getTaskConversation(user.id, id),
     task.professorId ? getSavedProfessor(user.id, task.professorId) : null,
+    getSavedPick(user.id),
   ]);
+  // 从主页「下一件事」开始的：开场里带上为什么现在先做这件
+  const why = start && pick ? pickKickoffNote(pick, id) : null;
+  const kickoff = kickoffPrompt(toTaskView(task), professor?.name);
   return {
     taskId: id,
     title: task.title,
     conversationId: conversation?.id ?? null,
     messages: conversation ? await loadMessages(conversation.id) : [],
-    kickoff: kickoffPrompt(toTaskView(task), professor?.name),
+    kickoff: why ? `${kickoff}\n\n${why}` : kickoff,
   };
 }
 

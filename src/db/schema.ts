@@ -1,13 +1,15 @@
-import { boolean, date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, customType, date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { AdmissionRequirements, GuideEvent } from "../lib/admissions";
 import type { CalendarKind } from "../lib/calendar";
 import type { Feature, LedgerKind } from "../lib/credits";
+import type { FormField, FormLayout, FormMode, Handwriting, MissingInfo } from "../lib/forms";
 import type { DocKind, Outline, TargetProfessor, WriteMode, CommentCategory, CommentStatus } from "../lib/documents";
 import type { DocOp, SuggestionSource, SuggestionStatus } from "../lib/doc-ops";
 import type { VersionTrigger } from "../lib/doc-history";
 import type { ZhEntry } from "../lib/doc-zh";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { PaperRef, ProfessorCandidate, ProfessorStatus, SourceLink } from "../lib/professors";
+import type { NextPick } from "../lib/next-pick";
 import type { OnboardingAnswers } from "../lib/onboarding";
 import type { TaskArea, TaskChange, TaskStatus, TaskStep } from "../lib/tasks";
 
@@ -118,6 +120,8 @@ export const todo = pgTable(
     stepKey: text("step_key"),
     /** 分类（语言考试 / 专业课和备考 / 申请准备 / 其他）；为空时按关联对象、流程 key 和标题自动归类（见 lib/tasks.ts taskGroup） */
     area: text("area").$type<TaskArea>(),
+    /** 准备要几天（AI 估、用户可改），主页「下一件事」用它算最晚开始日；空 = 按类型给默认值 */
+    prepDays: integer("prep_days"),
     /** 用户删掉的流程任务只做标记，免得下次对账又加回来 */
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -238,6 +242,47 @@ export const documentVersion = pgTable(
   (t) => [uniqueIndex("document_version_doc_number_idx").on(t.documentId, t.number)],
 );
 
+const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
+  dataType: () => "bytea",
+  toDriver: (v) => Buffer.from(v),
+  fromDriver: (v) => new Uint8Array(v),
+});
+
+/**
+ * 申请表（入学願書、研究生出願票等学校发的 PDF）：AI 下载后按用户资料填写，在文书里查看、修改、下载。
+ * pdf 只存要填的那几页（已去掉原有的填写栏）；fields 是每一栏的位置和内容，AI 填的先放在 proposed，用户接受后才印上去。
+ */
+export const applicationForm = pgTable(
+  "application_form",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    sourceUrl: text("source_url"),
+    /** 原 PDF 里的第几页（从 1 起）和总页数 */
+    sourcePages: jsonb("source_pages").$type<number[]>().notNull().default([]),
+    totalPages: integer("total_pages").notNull().default(0),
+    pdf: bytea("pdf").notNull(),
+    mode: text("mode").$type<FormMode>().notNull(),
+    layout: jsonb("layout").$type<FormLayout>().notNull(),
+    fields: jsonb("fields").$type<FormField[]>().notNull().default([]),
+    /** 学校要求亲笔填写：下载的是参照版 */
+    handwriting: jsonb("handwriting").$type<Handwriting>(),
+    /** 上次 AI 填写时还缺的信息 */
+    missing: jsonb("missing").$type<MissingInfo[]>().notNull().default([]),
+    professorId: text("professor_id").references(() => savedProfessor.id, { onDelete: "set null" }),
+    schoolId: text("school_id").references(() => graduateSchool.id, { onDelete: "set null" }),
+    /** 每次保存 +1（预览里拖动和 AI 同时改时发现冲突） */
+    version: integer("version").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("application_form_user_idx").on(t.userId, t.updatedAt)],
+);
+
 /** AI 对文书的修改建议，用户接受后才写进正文 */
 export const documentSuggestion = pgTable(
   "document_suggestion",
@@ -309,6 +354,8 @@ export const savedProfessor = pgTable(
     fit: text("fit"),
     /** 是否招外国留学生/研究生，查不到时为空 */
     acceptsInternational: text("accepts_international"),
+    /** 教授的邮箱（套磁信收件人），用户填或 AI 从官网查到 */
+    email: text("email"),
     sources: jsonb("sources").$type<SourceLink[]>().notNull().default([]),
     status: text("status").$type<ProfessorStatus>().notNull().default("to_contact"),
     note: text("note"),
@@ -522,3 +569,16 @@ export const feedback = pgTable(
   },
   (t) => [index("feedback_created_idx").on(t.createdAt)],
 );
+
+/**
+ * 主页「下一件事」的判断结果，每个用户一条。inputKey 是判断用到的全部输入（任务事实、日程、user.md、日期），
+ * 输入没变就直接用，变了才重新让 AI 判断（按用量扣 credit）。
+ */
+export const nextPick = pgTable("next_pick", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  inputKey: text("input_key").notNull(),
+  pick: jsonb("pick").$type<NextPick>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

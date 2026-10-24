@@ -71,6 +71,13 @@ export function summarizeToolCalls(calls: ToolCallRecord[]): ReportItem[] {
       case "update_school_requirements":
         push("req", { text: "记下了研究科的入试要点", link: { kind: "page", href: "/aspirations", title: "志愿" } });
         break;
+      case "fill_application_form":
+      case "refill_application_form":
+      case "update_application_form": {
+        const id = str(out.id) ?? str(input.id);
+        if (id) push(`form:${id}`, { text: `填写了申请表${str(out.title) ? `「${str(out.title)}」` : ""}，在文书里等你确认`, link: { kind: "page", href: `/documents/forms/${id}`, title: "申请表" } });
+        break;
+      }
       case "update_user_md":
         push("usermd", { text: "把了解到的情况记进了「AI 对你的了解」", link: { kind: "page", href: "/profile", title: "AI 对你的了解" } });
         break;

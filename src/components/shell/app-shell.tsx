@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { usePageStore } from "@/components/ai/page-context";
-import { AI_ICON, Icon, NAV_ICONS } from "@/components/ui/icons";
+import { AI_ICON, FORM_ICON, Icon, NAV_ICONS } from "@/components/ui/icons";
 import { Columns2, FileText, Globe, House, Landmark, ListChecks, UserRound, UserSearch, type LucideIcon } from "lucide-react";
 import { workFocus } from "@/lib/ai-context";
 import {
@@ -89,6 +89,7 @@ export function useShell() {
 /** 文稿栏里网页标签和 AI 等用的路径（发给 AI 作为“当前页面”） */
 function tabPath(tab: DocTab) {
   if (tab.kind === "doc") return `/documents/${tab.id}`;
+  if (tab.kind === "form") return `/documents/forms/${tab.id}`;
   if (tab.kind === "professor") return `/professors/${tab.id}`;
   if (tab.kind === "school") return `/schools/${tab.id}`;
   if (tab.kind === "task") return `/tasks/${tab.id}`;
@@ -451,7 +452,7 @@ function WorkTabs({ pathname }: { pathname: string }) {
   );
 }
 
-const TAB_ICONS: Record<DocTab["kind"], LucideIcon> = { doc: FileText, professor: UserRound, school: Landmark, task: ListChecks, search: UserSearch, compare: Columns2, web: Globe };
+const TAB_ICONS: Record<DocTab["kind"], LucideIcon> = { doc: FileText, form: FORM_ICON, professor: UserRound, school: Landmark, task: ListChecks, search: UserSearch, compare: Columns2, web: Globe };
 
 function DocTabBar({ tabs, onActivate, onClose }: { tabs: Tabs; onActivate: (key: string) => void; onClose: (key: string) => void }) {
   if (!tabs.tabs.length) return <span className="px-1 text-sm font-medium">文稿 / 浏览</span>;

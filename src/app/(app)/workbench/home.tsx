@@ -46,8 +46,10 @@ type Props = {
   /** 日历显示的月份（YYYY-MM），一页一个月 */
   month: string;
   profileLine: string;
-  /** 已过截止日的数量 + 今天先做的一个任务（在待办里标「先做这个」） */
-  briefing: { overdue: number; next: HomeTask | null };
+  /** 已过截止日的任务数 */
+  overdue: number;
+  /** 「下一件事」：AI 挑的现在最该做的一件（服务端组件，判断时先显示占位） */
+  next: React.ReactNode;
   countdown: Countdown[];
   alerts: GuideAlert[];
   /** credit 用完、募集要项监控暂停了的研究科 */
@@ -76,7 +78,6 @@ function formatToday(date: string) {
 
 export function Home(p: Props) {
   const proposalCount = p.proposals.tasks.length + p.proposals.changes.length + p.proposals.events.length + p.proposals.followUps.length;
-  const next = p.briefing.next;
   // 同意提议后条目会从「等你处理」消失：弹一条小提示，点「查看」跳到它去了哪里
   const [notice, setNotice] = useState<Notice | null>(null);
   const [revealDate, setRevealDate] = useState<{ date: string } | null>(null);
@@ -93,7 +94,8 @@ export function Home(p: Props) {
   // 主页只有两块：「今天」（有事才出现的提醒）和待办 + 日历（一直都在的完整清单）
   return (
     <div className="@container mx-auto max-w-5xl space-y-6">
-      <Today today={p.today} overdue={p.briefing.overdue} keyDate={p.countdown[0] ?? null} profileLine={p.profileLine}>
+      <Today today={p.today} overdue={p.overdue} keyDate={p.countdown[0] ?? null} profileLine={p.profileLine}>
+        {p.next}
         {p.alerts.map((a) => (
           <GuideAlertCard key={`${a.schoolId}:${a.admissionYear}`} alert={a} />
         ))}
@@ -102,7 +104,7 @@ export function Home(p: Props) {
       </Today>
 
       <div data-reveal="agenda" className="grid gap-6 @3xl:grid-cols-2">
-        <Agenda near={p.near} rest={p.rest} far={p.far} done={p.done} names={p.groupNames} today={p.today} first={next && { id: next.id, label: next.status === "doing" ? "接着做" : "先做这个" }} />
+        <Agenda near={p.near} rest={p.rest} far={p.far} done={p.done} names={p.groupNames} today={p.today} />
 
         <MonthCalendar today={p.today} month={p.month} items={p.calendar} tasks={p.tasks} reveal={revealDate} />
       </div>
@@ -152,8 +154,8 @@ function Toast({ notice, onReveal, onClose }: { notice: Notice; onReveal: (to: R
 
 /**
  * 「今天」：需要你看一眼、做决定的事，每部分有内容才出现：
- * 已过截止日的提醒、新要项 / 监控暂停 / 等你处理（children）、离今天最近的一个关键日期。都没有时只剩日期和路径。
- * 今天先做的任务在下面的待办里标出来，其余关键日期只在日历上。
+ * 已过截止日的提醒、下一件事 / 新要项 / 监控暂停 / 等你处理（children）、离今天最近的一个关键日期（只算用户这届的）。
+ * 其余关键日期只在日历上。
  */
 function Today({
   today,
@@ -459,7 +461,6 @@ function Agenda({
   done,
   names,
   today,
-  first,
 }: {
   near: AgendaRow<HomeTask>[];
   rest: HomeTask[];
@@ -467,15 +468,11 @@ function Agenda({
   done: HomeTask[];
   names: GroupNames;
   today: string;
-  /** 今天先做的那一件：放在列表最上面，标「先做这个」，原来的分组里不再出现 */
-  first: { id: string; label: string } | null;
 }) {
-  const top = first ? (near.find((r) => r.task?.id === first.id)?.task ?? rest.find((t) => t.id === first.id)) : undefined;
-  const nearRows = top ? near.filter((r) => r.task?.id !== top.id) : near;
   const [expanded, setExpanded] = useState(false);
   const [adding, setAdding] = useState(false);
   const row = (r: AgendaRow<HomeTask>) => (r.task ? <TaskRow key={r.task.id} task={r.task} today={today} /> : <EventRow key={r.item.key} item={r.item} today={today} />);
-  const groups = groupTasksByProject(top ? rest.filter((t) => t.id !== top.id) : rest);
+  const groups = groupTasksByProject(rest);
   const onlyOther = groups.length === 1 && groups[0].key.kind === "area" && groups[0].key.area === "other";
   return (
     <section className="@container card self-start">
@@ -487,13 +484,8 @@ function Agenda({
         </button>
       </div>
       <div className="px-2 pb-2">
-        {top && first && (
-          <ul className="pt-2">
-            <TaskRow task={top} today={today} first={first.label} />
-          </ul>
-        )}
         <GroupHead>近 {AGENDA_DAYS} 天</GroupHead>
-        {nearRows.length === 0 ? <p className="px-2 py-1.5 text-sm text-faint">近 {AGENDA_DAYS} 天没有到期的待办和日程。</p> : <ul>{nearRows.map(row)}</ul>}
+        {near.length === 0 ? <p className="px-2 py-1.5 text-sm text-faint">近 {AGENDA_DAYS} 天没有到期的待办和日程。</p> : <ul>{near.map(row)}</ul>}
         {expanded && far.length > 0 && <ul>{far.map(row)}</ul>}
         {far.length > 0 && (
           <ExpandButton open={expanded} onClick={() => setExpanded(!expanded)}>
@@ -570,16 +562,15 @@ function DateText({ date, endDate, today, overdue = false, className = "" }: { d
 }
 
 /** 清单里的一行任务：圆圈（点开改状态）· 标题 · 子步骤 / AI 提议 · 行尾日期；悬停出现「✦ 让 AI 开始」 */
-function TaskRow({ task, today, label, first }: { task: HomeTask; today: string; label?: string; first?: string }) {
+function TaskRow({ task, today, label }: { task: HomeTask; today: string; label?: string }) {
   const steps = task.steps.length ? `${task.steps.filter((s) => s.done).length}/${task.steps.length}` : null;
   const overdue = !!task.dueDate && task.dueDate < today;
   // 标题里已经有关联对象的名字（如「查清藤本 徹教授所在…」）就不再重复
   const link = task.link && !task.title.includes(task.link.replace(/教授$/, "")) && !label ? task.link : null;
   return (
-    <li data-reveal={`task:${task.id}`} className={`todo-row text-sm ${first ? "bg-warn-soft hover:bg-warn-soft" : ""}`}>
+    <li data-reveal={`task:${task.id}`} className="todo-row text-sm">
       <StatusCircle id={task.id} status={task.status} />
       <div className="min-w-0 flex-1 leading-5">
-        {first && <span className="mr-1.5 rounded border border-warn px-1 text-xs font-medium whitespace-nowrap text-warn">{first}</span>}
         <TaskTitle task={task} label={label} className="mr-2 hover:underline" />
         {(steps || link || task.proposedChange) && (
           <span className="inline-flex flex-wrap gap-x-2 text-xs text-faint">

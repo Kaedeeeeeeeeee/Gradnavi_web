@@ -2,6 +2,7 @@ import "server-only";
 import { bindTools, type AnyAiTool, type ToolContext } from "./registry";
 import { CALENDAR_TOOLS } from "./calendar";
 import { DOCUMENT_TOOLS } from "./documents";
+import { FORM_TOOLS } from "./forms";
 import { PROFESSOR_TOOLS } from "./professors";
 import { addTodosTool, deleteTodoTool, listTodosTool, updateTodoTool } from "./todo";
 import { readUserMd, updateUserMd } from "./user-md";
@@ -15,6 +16,7 @@ export const ALL_TOOLS: AnyAiTool[] = [
   updateTodoTool,
   deleteTodoTool,
   ...DOCUMENT_TOOLS,
+  ...FORM_TOOLS,
   ...PROFESSOR_TOOLS,
   ...CALENDAR_TOOLS,
 ];

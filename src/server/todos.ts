@@ -2,8 +2,9 @@ import "server-only";
 import { and, asc, eq, isNull, max, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { graduateSchool, schoolWatch, todo } from "@/db/schema";
+import { CONTACT_RULE_LABELS } from "@/lib/admissions";
 import { getWatchedSchool } from "./schools";
-import { buildSteps, type TaskArea, type TaskStatus, type TaskStep, type TaskView } from "@/lib/tasks";
+import { buildSteps, inferSchoolId, type TaskArea, type TaskStatus, type TaskStep, type TaskView } from "@/lib/tasks";
 import { getDocument } from "./documents";
 import { getSavedProfessor } from "./professors";
 
@@ -22,6 +23,7 @@ export type TodoInput = {
   schoolId?: string | null;
   /** 分类；不设就自动归类 */
   area?: TaskArea | null;
+  prepDays?: number | null;
   steps?: { title: string; done?: boolean }[];
 };
 type Creator = "user" | "ai" | "system";
@@ -32,6 +34,29 @@ async function checkLinks(userId: string, links: { professorId?: string | null; 
   if (links.documentId && !(await getDocument(userId, links.documentId))) throw new Error("找不到这份文书");
   if (links.schoolId && !(await db.$count(schoolWatch, and(eq(schoolWatch.userId, userId), eq(schoolWatch.schoolId, links.schoolId)))))
     throw new Error("没有关注这个研究科");
+}
+
+/** 用户关注的研究科（认任务属于哪个学校用） */
+export async function watchedSchoolRefs(userId: string) {
+  return db
+    .select({ id: graduateSchool.id, university: graduateSchool.university, name: graduateSchool.name })
+    .from(schoolWatch)
+    .innerJoin(graduateSchool, eq(schoolWatch.schoolId, graduateSchool.id))
+    .where(eq(schoolWatch.userId, userId));
+}
+
+/** 没挂教授、研究科、文书的任务，标题或说明里提到了关注的研究科就挂上（主页打开时补一次，AI 建任务时也补） */
+export async function linkTodosToSchools(userId: string) {
+  const rows = await db
+    .select({ id: todo.id, title: todo.title, note: todo.note })
+    .from(todo)
+    .where(and(eq(todo.userId, userId), isNull(todo.professorId), isNull(todo.schoolId), isNull(todo.documentId), isNull(todo.stepKey), sql`${todo.status} <> 'done'`));
+  if (!rows.length) return;
+  const schools = await watchedSchoolRefs(userId);
+  for (const r of rows) {
+    const schoolId = inferSchoolId(`${r.title} ${r.note ?? ""}`, schools);
+    if (schoolId) await db.update(todo).set({ schoolId }).where(mine(userId, r.id));
+  }
 }
 
 export function toTaskView(t: TodoRow): TaskView {
@@ -49,6 +74,7 @@ export function toTaskView(t: TodoRow): TaskView {
     documentId: t.documentId,
     schoolId: t.schoolId,
     area: t.area,
+    prepDays: t.prepDays,
     sortOrder: t.sortOrder,
   };
 }
@@ -64,9 +90,11 @@ export async function taskLinks(userId: string, t: Pick<TodoRow, "professorId" |
       : null,
   ]);
   return {
-    professor: professor ? { id: professor.id, name: professor.name, label: `${professor.name}（${professor.university}）` } : null,
+    professor: professor ? { id: professor.id, name: professor.name, label: `${professor.name}（${[professor.university, professor.department].filter(Boolean).join(" ")}）` } : null,
     document: doc ? { id: doc.id, title: doc.title } : null,
-    school: school ? { id: school.id, name: `${school.university} ${school.name}`, url: school.url } : null,
+    school: school
+      ? { id: school.id, name: `${school.university} ${school.name}`, url: school.url, contact: "requirements" in school && school.requirements?.contact ? CONTACT_RULE_LABELS[school.requirements.contact] : null }
+      : null,
   };
 }
 
@@ -90,6 +118,7 @@ export async function getTodo(userId: string, id: string): Promise<TodoRow | nul
 export async function addTodos(userId: string, items: TodoInput[], createdBy: Creator) {
   if (!items.length) return [];
   for (const item of items) await checkLinks(userId, item);
+  const schools = items.some((i) => !i.professorId && !i.schoolId && !i.documentId) ? await watchedSchoolRefs(userId) : [];
   const [{ last }] = await db.select({ last: max(todo.sortOrder) }).from(todo).where(eq(todo.userId, userId));
   const start = (last ?? -1) + 1;
   return db
@@ -103,8 +132,10 @@ export async function addTodos(userId: string, items: TodoInput[], createdBy: Cr
         dueDate: item.dueDate || null,
         professorId: item.professorId || null,
         documentId: item.documentId || null,
-        schoolId: item.schoolId || null,
+        // 没挂上时按标题和说明认学校，免得主页上看不出是哪所学校的事
+        schoolId: item.schoolId || (!item.professorId && !item.documentId ? inferSchoolId(`${item.title} ${item.note ?? ""}`, schools) : null),
         area: item.area || null,
+        prepDays: item.prepDays ?? null,
         steps: buildSteps(item.steps ?? []),
         // AI 加的任务是提议，用户在主页同意后才正式加入
         proposed: createdBy === "ai",
@@ -124,6 +155,7 @@ export type TodoPatch = Partial<{
   documentId: string | null;
   schoolId: string | null;
   area: TaskArea | null;
+  prepDays: number | null;
   steps: { title: string; done?: boolean }[];
 }>;
 
