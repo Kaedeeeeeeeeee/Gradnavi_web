@@ -302,3 +302,16 @@ export function kickoffPrompt(t: Pick<TaskView, "stepKey" | "title" | "note" | "
       return `我想开始做这件事：「${t.title}」${t.note ? `（${t.note}）` : ""}。先帮我拆成具体的子步骤；能直接用工具帮我做的就做，需要我决定或只能我自己操作的，告诉我怎么做。`;
   }
 }
+
+export type SchoolRef = { id: string; university: string; name: string };
+
+/**
+ * 没挂学校的任务：标题和说明里提到了哪个关注的研究科（大学名对上；同一所大学关注了几个研究科时，研究科名也要对上）。
+ * 认不出或对上不止一个时返回 null
+ */
+export function inferSchoolId(text: string, schools: SchoolRef[]): string | null {
+  const byUniv = schools.filter((s) => s.university && text.includes(s.university));
+  if (byUniv.length === 1) return byUniv[0].id;
+  const byName = byUniv.filter((s) => s.name && text.includes(s.name));
+  return byName.length === 1 ? byName[0].id : null;
+}

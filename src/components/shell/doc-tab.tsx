@@ -18,7 +18,7 @@ import { TaskDetail } from "@/components/tasks/task-detail";
 import { describeTask } from "@/lib/tasks";
 import { summarizeToolCalls } from "@/lib/task-report";
 import { getTaskConversation, listToolCalls } from "@/server/conversations";
-import { getTodo, taskLinks, toTaskView } from "@/server/todos";
+import { getTodo, taskLinks, watchedSchoolRefs, toTaskView } from "@/server/todos";
 import { WebTab } from "./web-tab";
 
 // 文稿栏当前标签的内容（服务器渲染）。title 为 null 表示对应数据已不存在，外壳会关掉这个标签。
@@ -155,11 +155,11 @@ async function compareTab(userId: string) {
 async function taskTab(userId: string, id: string) {
   const row = await getTodo(userId, id);
   if (!row) return { title: null, node: null };
-  const [links, conversation] = await Promise.all([taskLinks(userId, row), getTaskConversation(userId, id)]);
+  const [links, conversation, schools] = await Promise.all([taskLinks(userId, row), getTaskConversation(userId, id), watchedSchoolRefs(userId)]);
   const task = toTaskView(row);
   // 待你确认：列出 AI 在这个任务的对话里做了什么，每条能直接打开
   const report = task.status === "review" ? summarizeToolCalls(conversation ? await listToolCalls(conversation.id) : []) : null;
   const aiText = `任务详情（用户正在看）：\n${describeTask(task, { professor: links.professor?.label, document: links.document?.title, school: links.school?.name })}`;
-  return { title: row.title, node: <TaskDetail key={row.id} task={task} links={links} started={!!conversation} aiText={aiText} report={report} /> };
+  return { title: row.title, node: <TaskDetail key={row.id} task={task} links={links} schools={schools} started={!!conversation} aiText={aiText} report={report} /> };
 }
 

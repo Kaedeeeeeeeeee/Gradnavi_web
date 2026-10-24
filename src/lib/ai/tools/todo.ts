@@ -8,7 +8,7 @@ import { defineTool } from "./registry";
 const links = {
   professorId: z.string().optional().describe("挂在志愿里的某位教授下（教授 ID）"),
   documentId: z.string().optional().describe("挂在某份文书下（文书 ID）"),
-  schoolId: z.string().optional().describe("挂在某个关注的研究科下（研究科 ID，用 list_watched_schools 查）"),
+  schoolId: z.string().optional().describe("挂在某个关注的研究科下（研究科 ID，用 list_watched_schools 查）。某所学校的出愿、考试、说明会等任务都要挂上"),
 };
 
 const areaSchema = z
@@ -66,7 +66,7 @@ export const listTodosTool = defineTool({
 export const addTodosTool = defineTool({
   name: "add_todos",
   description:
-    "给用户添加一条或多条任务。添加的任务是提议：主页上虚线显示，用户同意后才正式加入。只加商量好的、接下来真要做的事；可以顺便带上子步骤。有截止日期的显示在日历上。",
+    "给用户添加一条或多条任务。添加的任务是提议：主页上虚线显示，用户同意后才正式加入。只加商量好的、接下来真要做的事；可以顺便带上子步骤。有截止日期的显示在日历上。和某所学校 / 某位教授有关的任务：一定挂上 schoolId / professorId，标题里写上学校名（如「東京学芸大学：外国人研究生出願（11/5〜11/11 必着）」），用户在主页单看标题就要知道是哪所学校的事。",
   inputSchema: z.object({
     items: z
       .array(
