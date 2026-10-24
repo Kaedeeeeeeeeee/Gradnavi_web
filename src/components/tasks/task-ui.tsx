@@ -156,6 +156,7 @@ export function ProposalButtons({
   id,
   date,
   editable = true,
+  onAccepted,
 }: {
   /** professor = AI 对志愿里教授跟进日的提议 */
   kind: "task" | "event" | "professor";
@@ -163,6 +164,8 @@ export function ProposalButtons({
   /** 提议的日期，用于「改」的默认值 */
   date?: string | null;
   editable?: boolean;
+  /** 同意（或改了日期再同意）之后，参数是最后生效的日期；主页用它提示「已加入待办 · 查看」 */
+  onAccepted?: (date: string | null) => void;
 }) {
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
@@ -188,6 +191,7 @@ export function ProposalButtons({
                 await acceptProposalAction({ kind, id });
               }
               setEditing(false);
+              onAccepted?.(value);
             })
           }
         >
@@ -201,7 +205,16 @@ export function ProposalButtons({
 
   return (
     <span className="flex shrink-0 items-center gap-1">
-      <button disabled={pending} className={primaryBtn} onClick={() => run(() => acceptProposalAction({ kind, id }))}>
+      <button
+        disabled={pending}
+        className={primaryBtn}
+        onClick={() =>
+          run(async () => {
+            await acceptProposalAction({ kind, id });
+            onAccepted?.(date ?? null);
+          })
+        }
+      >
         同意
       </button>
       {editable && (

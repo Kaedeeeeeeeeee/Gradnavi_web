@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useStartTask } from "@/components/ai/page-context";
@@ -76,6 +77,14 @@ function formatToday(date: string) {
 export function Home(p: Props) {
   const proposalCount = p.proposals.tasks.length + p.proposals.changes.length + p.proposals.events.length + p.proposals.followUps.length;
   const next = p.briefing.next;
+  // 同意提议后条目会从「等你处理」消失：弹一条小提示，点「查看」跳到它去了哪里
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [revealDate, setRevealDate] = useState<{ date: string } | null>(null);
+  const notify = (text: string, to?: Reveal) => setNotice({ text, to, n: Date.now() });
+  const reveal = (to: Reveal) => {
+    if ("date" in to) return setRevealDate({ date: to.date });
+    flash(document.querySelector(`[data-reveal="${"task" in to ? `task:${to.task}` : "agenda"}"]`));
+  };
   // 主页只有两块：「今天」（有事才出现的提醒）和待办 + 日历（一直都在的完整清单）
   return (
     <div className="@container mx-auto max-w-5xl space-y-6">
@@ -84,15 +93,55 @@ export function Home(p: Props) {
           <GuideAlertCard key={`${a.schoolId}:${a.admissionYear}`} alert={a} />
         ))}
         {p.pausedMonitors.length > 0 && <MonitorPaused schools={p.pausedMonitors} />}
-        {proposalCount + p.review.length > 0 && <Awaiting review={p.review} {...p.proposals} proposalCount={proposalCount} today={p.today} />}
+        {proposalCount + p.review.length > 0 && <Awaiting review={p.review} {...p.proposals} proposalCount={proposalCount} today={p.today} notify={notify} />}
       </Today>
 
-      <div className="grid gap-6 @3xl:grid-cols-2">
+      <div data-reveal="agenda" className="grid gap-6 @3xl:grid-cols-2">
         <Agenda near={p.near} rest={p.rest} far={p.far} done={p.done} names={p.groupNames} today={p.today} first={next && { id: next.id, label: next.status === "doing" ? "接着做" : "先做这个" }} />
 
-        <MonthCalendar today={p.today} month={p.month} items={p.calendar} tasks={p.tasks} />
+        <MonthCalendar today={p.today} month={p.month} items={p.calendar} tasks={p.tasks} reveal={revealDate} />
       </div>
+      {notice && <Toast key={notice.n} notice={notice} onReveal={reveal} onClose={() => setNotice(null)} />}
     </div>
+  );
+}
+
+/** 「查看」跳到哪里：某件任务、日历上某一天、整个待办和日程 */
+type Reveal = { task: string } | { date: string } | { agenda: true };
+type Notice = { text: string; to?: Reveal; n: number };
+
+/** 滚动到这个元素，并短暂高亮一下 */
+function flash(el: Element | null) {
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.remove("reveal-flash");
+  void (el as HTMLElement).offsetWidth;
+  el.classList.add("reveal-flash");
+  window.setTimeout(() => el.classList.remove("reveal-flash"), 2000);
+}
+
+/** 屏幕底部的小提示，几秒后自己消失 */
+function Toast({ notice, onReveal, onClose }: { notice: Notice; onReveal: (to: Reveal) => void; onClose: () => void }) {
+  useEffect(() => {
+    const t = window.setTimeout(onClose, 6000);
+    return () => window.clearTimeout(t);
+  }, [onClose]);
+  return createPortal(
+    <div role="status" className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-primary px-4 py-2 text-sm text-on-primary shadow-lg">
+      <span>{notice.text}</span>
+      {notice.to && (
+        <button
+          onClick={() => {
+            onReveal(notice.to!);
+            onClose();
+          }}
+          className="font-medium underline-offset-2 hover:underline"
+        >
+          查看
+        </button>
+      )}
+    </div>,
+    document.body,
   );
 }
 
@@ -230,7 +279,16 @@ function GuideAlertCard({ alert: a }: { alert: GuideAlert }) {
  * 等你处理：待你确认的任务和 AI 的提议都是「等你点一下」，放在一个虚线框里。
  * 提议仍然是虚线、仍然要用户点同意才生效；待你确认的任务仍然只有用户能标完成。
  */
-function Awaiting({ review, tasks, changes, events, followUps, proposalCount, today }: Props["proposals"] & { review: HomeTask[]; proposalCount: number; today: string }) {
+function Awaiting({
+  review,
+  tasks,
+  changes,
+  events,
+  followUps,
+  proposalCount,
+  today,
+  notify,
+}: Props["proposals"] & { review: HomeTask[]; proposalCount: number; today: string; notify: (text: string, to?: Reveal) => void }) {
   const [pending, startTransition] = useTransition();
   const { openTab } = useShell();
   return (
@@ -242,7 +300,12 @@ function Awaiting({ review, tasks, changes, events, followUps, proposalCount, to
         </h2>
         <span className="text-xs text-muted">{review.length + proposalCount} 项 · 点一下就好；AI 的提议同意后才会加进任务和日历</span>
         {proposalCount > 1 && (
-          <button disabled={pending} onClick={() => startTransition(() => acceptAllProposalsAction())} className={`${btn} ml-auto`}>
+          <button disabled={pending} onClick={() =>
+              startTransition(async () => {
+                await acceptAllProposalsAction();
+                notify(`已同意 ${proposalCount} 项提议，加进了待办和日历`, { agenda: true });
+              })
+            } className={`${btn} ml-auto`}>
             全部同意提议
           </button>
         )}
@@ -273,7 +336,7 @@ function Awaiting({ review, tasks, changes, events, followUps, proposalCount, to
         ))}
         {tasks.map((t) => (
           <ProposalRow key={t.id} label="新任务" title={<TaskTitle task={t} className="hover:underline" />} when={t.dueDate && `截止 ${formatDay(t.dueDate)}`}>
-            <ProposalButtons kind="task" id={t.id} date={t.dueDate} />
+            <ProposalButtons kind="task" id={t.id} date={t.dueDate} onAccepted={() => notify("已加入待办", { task: t.id })} />
           </ProposalRow>
         ))}
         {changes.map((t) => (
@@ -283,7 +346,7 @@ function Awaiting({ review, tasks, changes, events, followUps, proposalCount, to
             title={<TaskTitle task={t} className="hover:underline" />}
             when={`${t.dueDate ? formatDay(t.dueDate) : "未定"} → ${t.proposedChange!.dueDate ? formatDay(t.proposedChange!.dueDate) : "不设截止日"}`}
           >
-            <ProposalButtons kind="task" id={t.id} date={t.proposedChange!.dueDate} />
+            <ProposalButtons kind="task" id={t.id} date={t.proposedChange!.dueDate} onAccepted={() => notify("截止日已改好", { task: t.id })} />
           </ProposalRow>
         ))}
         {events.map((e) => (
@@ -293,12 +356,23 @@ function Awaiting({ review, tasks, changes, events, followUps, proposalCount, to
             title={e.title}
             when={e.isNew ? formatRange(e.date, e.endDate) : `${formatRange(e.date, e.endDate)} → ${formatRange(e.change!.date, e.change!.endDate)}`}
           >
-            <ProposalButtons kind="event" id={e.id} date={e.change?.date ?? e.date} />
+            <ProposalButtons
+              kind="event"
+              id={e.id}
+              date={e.change?.date ?? e.date}
+              onAccepted={(d) => notify(e.isNew ? "已加入日历" : "日程已改期", { date: d ?? e.change?.date ?? e.date })}
+            />
           </ProposalRow>
         ))}
         {followUps.map((f) => (
           <ProposalRow key={f.id} label="跟进日" title={`跟进 ${f.name}`} when={`${f.date ? formatDay(f.date) : "未定"} → ${f.proposed ? formatDay(f.proposed) : "取消跟进日"}`}>
-            <ProposalButtons kind="professor" id={f.id} date={f.proposed} editable={!!f.proposed} />
+            <ProposalButtons
+              kind="professor"
+              id={f.id}
+              date={f.proposed}
+              editable={!!f.proposed}
+              onAccepted={(d) => (d ? notify("跟进日已加入日历", { date: d }) : notify("已取消跟进日"))}
+            />
           </ProposalRow>
         ))}
       </ul>
@@ -497,7 +571,7 @@ function TaskRow({ task, today, label, first }: { task: HomeTask; today: string;
   // 标题里已经有关联对象的名字（如「查清藤本 徹教授所在…」）就不再重复
   const link = task.link && !task.title.includes(task.link.replace(/教授$/, "")) && !label ? task.link : null;
   return (
-    <li className={`todo-row text-sm ${first ? "bg-warn-soft hover:bg-warn-soft" : ""}`}>
+    <li data-reveal={`task:${task.id}`} className={`todo-row text-sm ${first ? "bg-warn-soft hover:bg-warn-soft" : ""}`}>
       <StatusCircle id={task.id} status={task.status} />
       <div className="min-w-0 flex-1 leading-5">
         {first && <span className="mr-1.5 rounded border border-warn px-1 text-xs font-medium whitespace-nowrap text-warn">{first}</span>}
@@ -607,8 +681,22 @@ function labelClass(it: CalendarItem) {
 /** 宽的时候格子里最多写几条，其余显示「+N」 */
 const CELL_LABELS = 2;
 
-function MonthCalendar({ today, month, items, tasks }: { today: string; month: string; items: CalendarItem[]; tasks: HomeTask[] }) {
+function MonthCalendar({ today, month, items, tasks, reveal }: { today: string; month: string; items: CalendarItem[]; tasks: HomeTask[]; reveal: { date: string } | null }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const router = useRouter();
+  // 「查看」某一天：选中那天；不在这个月就先翻过去，翻到了再滚动过去高亮那一格
+  const [seen, setSeen] = useState(reveal);
+  if (reveal !== seen) {
+    setSeen(reveal);
+    if (reveal) setSelected(reveal.date);
+  }
+  const flashed = useRef<typeof reveal>(null);
+  useEffect(() => {
+    if (!reveal || flashed.current === reveal) return;
+    if (!reveal.date.startsWith(month)) return void router.push(`/workbench?m=${reveal.date.slice(0, 7)}`, { scroll: false });
+    flashed.current = reveal;
+    flash(document.querySelector(`[data-date="${reveal.date}"]`));
+  }, [reveal, month, router]);
   // 双击（手机上长按）某一天：在那一格旁边弹出添加小窗
   const [quickAdd, setQuickAdd] = useState<{ date: string; anchor: DOMRect } | null>(null);
   const press = useRef<{ timer: number; fired: boolean } | null>(null);
@@ -670,6 +758,7 @@ function MonthCalendar({ today, month, items, tasks }: { today: string; month: s
             return (
               <button
                 key={date}
+                data-date={date}
                 onClick={() => {
                   // 长按刚弹出添加小窗，松手的这次点击不再切换选中
                   if (press.current?.fired) return void (press.current = null);
