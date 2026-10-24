@@ -193,8 +193,8 @@ export function countAwaiting(tasks: Pick<TaskView, "status" | "proposed" | "pro
   return tasks.filter((t) => t.proposed || t.proposedChange || t.status === "review").length + otherProposals;
 }
 
-/** 关键日期倒计时：每个研究科最近的一个出愿 / 考试日（来自募集要项，含仮日程） */
-export type Countdown = { label: string; date: string; days: number; tentative: boolean; sourceUrl?: string };
+/** 关键日期倒计时：每个研究科最近的一个出愿 / 考试日（来自募集要项，含仮日程）。label 是日程名（含「开始 / 截止」），school 是研究科名 */
+export type Countdown = { label: string; school?: string; date: string; days: number; tentative: boolean; sourceUrl?: string };
 
 /** 每个研究科（每条志愿）最多一条，按天数排，最多 MAX_COUNTDOWN 条 */
 export const MAX_COUNTDOWN = 4;
@@ -207,48 +207,25 @@ export function keyDates(items: CalendarItem[], today: string): Countdown[] {
     const range = it.kind === "deadline" && it.endDate && it.endDate !== it.date;
     const started = it.date <= today;
     const date = range && started ? it.endDate! : it.date;
-    const label = range ? `${it.title} ${started ? "截止" : "开始"}` : it.title;
+    const name = it.label ?? it.title;
+    const label = range ? `${name} ${started ? "截止" : "开始"}` : name;
     const school = it.key.split(":")[1] ?? it.key;
     const prev = bySchool.get(school);
-    if (!prev || date < prev.date) bySchool.set(school, { label, date, days: daysBetween(today, date), tentative: !!it.tentative, sourceUrl: it.sourceUrl });
+    if (!prev || date < prev.date) bySchool.set(school, { label, school: it.school, date, days: daysBetween(today, date), tentative: !!it.tentative, sourceUrl: it.sourceUrl });
   }
   return [...bySchool.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(0, MAX_COUNTDOWN);
 }
 
-const shortDate = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
-
 /**
- * 今日简报：一两句今天该做什么（按规则生成，不调用 AI）。
- * 「今天建议先做」的挑法：先挑待你确认的（快到期的在前），再挑最近到期的，最后才是没有日期的流程任务。
+ * 今日简报（按规则生成，不调用 AI）。待你确认的任务和 AI 的提议在下面「等你处理」里，这里不再重复：
+ * 只数已过截止日的，再从自己手上的任务（待办 / 进行中）里挑一个「今天先做」：先挑最近到期的，再挑没有日期的流程任务。
  */
-export function briefing(tasks: TaskView[], proposedEvents: number, today: string): string[] {
-  const real = tasks.filter((t) => !t.proposed);
-  const review = awaitingReview(real);
-  const changes = real.filter((t) => t.proposedChange).length;
-  const proposalCount = tasks.length - real.length + changes + proposedEvents;
-  const open = real.filter((t) => t.status === "todo" || t.status === "doing");
+export function briefing<T extends TaskView>(tasks: T[], today: string): { overdue: number; next: T | null } {
+  const open = tasks.filter((t) => !t.proposed && (t.status === "todo" || t.status === "doing"));
   const overdue = open.filter((t) => t.dueDate && t.dueDate < today).length;
-
-  const notes = [
-    review.length > 0 && `${review.length} 件事待你确认`,
-    proposalCount > 0 && `AI 提了 ${proposalCount} 项安排等你同意`,
-    overdue > 0 && `${overdue} 件已过截止日`,
-  ].filter(Boolean);
-  const lines: string[] = [];
-  if (notes.length) lines.push(`${notes.join("，")}。`);
-
-  const due = (t: TaskView, suffix: string) =>
-    !t.dueDate ? "" : t.dueDate === today ? "（今天截止）" : t.dueDate < today ? "（已过截止日）" : `（${shortDate(t.dueDate)} ${suffix}）`;
-  if (review[0]) {
-    lines.push(`今天建议先做：看一下 AI 做好的「${review[0].title}」${due(review[0], "前要完成")}。`);
-    return lines;
-  }
   const dated = open.filter((t) => t.dueDate).sort((a, b) => a.dueDate!.localeCompare(b.dueDate!) || compareTasks(a, b));
   const undated = open.filter((t) => !t.dueDate).sort(compareTasks);
-  const next = dated[0] ?? undated[0];
-  if (next) lines.push(`${next.status === "doing" ? "接着做" : "今天建议先做"}：「${next.title}」${due(next, "截止")}。`);
-  else if (!notes.length) lines.push("手上的事都做完了，可以问问右边的 AI 接下来做什么。");
-  return lines;
+  return { overdue, next: dated[0] ?? undated[0] ?? null };
 }
 
 /** 新的子步骤（标题去重、去空，每条最多 200 字，最多 20 条）；同名的保留原来的勾选状态 */
