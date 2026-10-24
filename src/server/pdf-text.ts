@@ -45,3 +45,22 @@ export async function pdfPageImages(data: Uint8Array, { maxPages = 30, width = 1
     await pdf.loadingTask.destroy();
   }
 }
+
+/** 一页转成 JPEG（申请表预览的底图） */
+export async function pdfPageImage(data: Uint8Array, page: number, width = 1240): Promise<Uint8Array> {
+  const CanvasFactory = await createIsomorphicCanvasFactory(canvasImport);
+  const { createCanvas, loadImage } = await canvasImport();
+  const pdf = await getDocumentProxy(new Uint8Array(data), { CanvasFactory });
+  try {
+    const png = await renderPageAsImage(pdf, page, { canvasImport, width });
+    const img = await loadImage(Buffer.from(png));
+    const canvas = createCanvas(img.width, img.height);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, img.width, img.height);
+    ctx.drawImage(img, 0, 0);
+    return await canvas.encode("jpeg", 85);
+  } finally {
+    await pdf.loadingTask.destroy();
+  }
+}

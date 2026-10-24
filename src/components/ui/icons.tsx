@@ -25,6 +25,7 @@ import {
   CircleDashed,
   CircleEllipsis,
   ClipboardList,
+  ClipboardPen,
   Clock,
   FileText,
   Flag,
@@ -102,6 +103,13 @@ export const DOC_KIND_ICONS: Record<DocKind, { icon: LucideIcon; color: TileColo
   other: { icon: FileText, color: "gray" },
 };
 
+/** 申请表（学校发的 PDF 表格） */
+export const FORM_ICON = ClipboardPen;
+
+export function FormTile({ className }: { className?: string }) {
+  return <Tile color="orange" icon={ClipboardPen} className={className} />;
+}
+
 export function DocKindTile({ kind, className }: { kind: DocKind; className?: string }) {
   const k = DOC_KIND_ICONS[kind] ?? DOC_KIND_ICONS.other;
   return <Tile color={k.color} icon={k.icon} className={className} />;
@@ -149,6 +157,11 @@ export const TOOL_ICONS: Record<string, LucideIcon> = {
   update_document: PencilLine,
   propose_outline: PencilLine,
   create_tailored_copy: Copy,
+  fill_application_form: ClipboardPen,
+  refill_application_form: ClipboardPen,
+  update_application_form: ClipboardPen,
+  read_application_form: ClipboardPen,
+  list_application_forms: ClipboardPen,
   search_professors: UserSearch,
   list_aspirations: GraduationCap,
   save_professor: BookmarkPlus,

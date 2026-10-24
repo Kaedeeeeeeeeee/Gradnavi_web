@@ -19,6 +19,8 @@ import { describeTask } from "@/lib/tasks";
 import { summarizeToolCalls } from "@/lib/task-report";
 import { getTaskConversation, listToolCalls } from "@/server/conversations";
 import { getTodo, taskLinks, watchedSchoolRefs, toTaskView } from "@/server/todos";
+import { FormView } from "@/components/forms/form-view";
+import { getForm } from "@/server/forms";
 import { WebTab } from "./web-tab";
 
 // 文稿栏当前标签的内容（服务器渲染）。title 为 null 表示对应数据已不存在，外壳会关掉这个标签。
@@ -32,6 +34,7 @@ export async function renderDocTab(userId: string, tab: DocTab | null): Promise<
   if (tab.kind === "task") return taskTab(userId, tab.id);
   if (tab.kind === "search") return searchTab(userId, tab.id);
   if (tab.kind === "compare") return compareTab(userId);
+  if (tab.kind === "form") return formTab(userId, tab.id);
   return documentTab(userId, tab.id);
 }
 
@@ -72,6 +75,31 @@ async function documentTab(userId: string, id: string) {
           versionCount={bundle.versionCount}
         />
       </div>
+    ),
+  };
+}
+
+async function formTab(userId: string, id: string) {
+  const form = await getForm(userId, id);
+  if (!form) return { title: null, node: null };
+  return {
+    title: form.title,
+    node: (
+      <FormView
+        key={form.id}
+        form={{
+          id: form.id,
+          title: form.title,
+          sourceUrl: form.sourceUrl,
+          sourcePages: form.sourcePages,
+          totalPages: form.totalPages,
+          mode: form.mode,
+          pages: form.layout.pages,
+          fields: form.fields,
+          handwriting: form.handwriting,
+          missing: form.missing,
+        }}
+      />
     ),
   };
 }

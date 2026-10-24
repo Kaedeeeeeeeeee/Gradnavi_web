@@ -74,6 +74,16 @@ export function tabFocus(tab: DocTab): AiFocus | null {
           { label: "用中文讲讲这份写了什么", text: `用中文概括「${title}」现在每一部分在说什么。` },
         ],
       };
+    case "form":
+      return {
+        key,
+        label: `「${title}」`,
+        pill: `申请表 · ${title}`,
+        replies: [
+          { label: "还缺什么信息？", text: `「${title}」（申请表 ID：${tab.id}）还有哪些栏没填？缺的信息直接问我。` },
+          { label: "检查一遍", text: `检查一遍「${title}」（申请表 ID：${tab.id}）填的内容，有没有和我的资料对不上、格式不对的地方。` },
+        ],
+      };
     case "search":
       return {
         key,
