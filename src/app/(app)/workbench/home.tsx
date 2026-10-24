@@ -844,11 +844,18 @@ function QuickAdd({ date, anchor, onClose }: { date: string; anchor: DOMRect; on
   const panel = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   useLayoutEffect(() => {
-    const h = panel.current?.offsetHeight ?? 260;
-    const right = anchor.right + 8;
-    const left = right + QUICK_ADD_WIDTH <= window.innerWidth - 8 ? right : Math.max(8, anchor.left - QUICK_ADD_WIDTH - 8);
-    const top = Math.max(8, Math.min(anchor.top, window.innerHeight - h - 8));
-    setPos({ top, left });
+    // 切到「日程」或出现报错时小窗会变高，跟着重新摆位置，别让按钮掉到屏幕外
+    const place = () => {
+      const h = panel.current?.offsetHeight ?? 260;
+      const right = anchor.right + 8;
+      const left = right + QUICK_ADD_WIDTH <= window.innerWidth - 8 ? right : Math.max(8, anchor.left - QUICK_ADD_WIDTH - 8);
+      const top = Math.max(8, Math.min(anchor.top, window.innerHeight - h - 8));
+      setPos((p) => (p && p.top === top && p.left === left ? p : { top, left }));
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    if (panel.current) ro.observe(panel.current);
+    return () => ro.disconnect();
   }, [anchor]);
   useEffect(() => {
     // 点小窗外面关掉；日期选择器也是挂在 body 上的 dialog，点它不算外面
@@ -866,8 +873,8 @@ function QuickAdd({ date, anchor, onClose }: { date: string; anchor: DOMRect; on
       ref={panel}
       role="dialog"
       aria-label={`添加到 ${formatDay(date)}`}
-      style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: QUICK_ADD_WIDTH }}
-      className="fixed z-40 rounded-xl border border-line bg-surface p-3 text-sm shadow-[0_8px_24px_rgb(15_15_15/0.12)]"
+      style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: QUICK_ADD_WIDTH, maxHeight: "calc(100vh - 16px)" }}
+      className="fixed z-40 overflow-y-auto rounded-xl border border-line bg-surface p-3 text-sm shadow-[0_8px_24px_rgb(15_15_15/0.12)]"
     >
       <div className="mb-2 flex items-center">
         <span className="font-medium">添加到 {formatDay(date)}</span>
