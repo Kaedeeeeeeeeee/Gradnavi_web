@@ -1,13 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { OpenTabLink, useShell } from "@/components/shell/app-shell";
+import { copyText } from "@/lib/browser";
 import type { TargetProfessor } from "@/lib/documents";
+import { composeLink, isEmail, MAIL_CLIENTS, splitLetter, type MailClient } from "@/lib/mail-compose";
 import { PROFESSOR_STATUS_LABELS, type ProfessorStatus } from "@/lib/professors";
-import { createTailoredCopyAction, linkProfessorAction, markLetterSentAction, setAttachmentAction, setTargetProfessorAction } from "../actions";
+import {
+  createTailoredCopyAction,
+  linkProfessorAction,
+  markLetterSentAction,
+  setAttachmentAction,
+  setProfessorEmailAction,
+  setTargetProfessorAction,
+} from "../actions";
 
-// 编辑器上方的几块面板：目标教授、给教授的定制版、套磁信（复制、附件、联系状态）。
+// 编辑器上方的几块面板：目标教授、给教授的定制版、套磁信（用邮箱打开、复制、附件、联系状态）。
 
 export type ProfessorOption = { id: string; label: string };
 export type DocLink = { id: string; title: string };
@@ -88,23 +97,26 @@ export function TailoredCopies({
   );
 }
 
-/** 套磁信：复制全文（用户用自己的邮箱发送）、附上计划书、发送后标记状态 */
+/** 套磁信：在用户自己的邮箱里打开（或复制全文）、附上计划书、发送后标记状态。GradNavi 不代发邮件 */
 export function LetterPanel({
   docId,
   professor,
   professors,
   linkedStatus,
+  linkedEmail,
   attachment,
   plans,
-  onCopy,
+  letter,
 }: {
   docId: string;
   professor: TargetProfessor | null;
   professors: ProfessorOption[];
   linkedStatus: ProfessorStatus | null;
+  linkedEmail: string | null;
   attachment: DocLink | null;
   plans: PlanOption[];
-  onCopy: () => Promise<boolean>;
+  /** 编辑器里的全文；taken = 复制或打开邮箱后存一版 */
+  letter: { text: () => string; taken: () => Promise<void> };
 }) {
   const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -113,10 +125,11 @@ export function LetterPanel({
   const sorted = [...plans].sort((a, b) => Number(b.professorId === professorId && !!professorId) - Number(a.professorId === professorId && !!professorId));
 
   async function copy() {
-    if (!(await onCopy())) {
+    if (!(await copyText(letter.text()))) {
       alert("复制失败，请在编辑器里全选（Ctrl/⌘+A）后手动复制");
       return;
     }
+    void letter.taken();
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -124,18 +137,21 @@ export function LetterPanel({
   return (
     <div className={box} data-testid="letter-panel">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-muted">GradNavi 不代发邮件：复制全文后用你自己的邮箱发送。</span>
-        <button onClick={copy} className="btn-primary ml-auto px-3 py-1.5">
-          {copied ? "已复制" : "复制全文"}
-        </button>
-        {professorId &&
-          (linkedStatus === "to_contact" ? (
-            <button disabled={pending} onClick={() => startTransition(() => markLetterSentAction(docId, professorId))} className={btn}>
-              我已发送，标记为“已发信”
-            </button>
-          ) : (
-            linkedStatus && <span className="text-muted">教授状态：{PROFESSOR_STATUS_LABELS[linkedStatus]}</span>
-          ))}
+        <span className="text-muted">GradNavi 不代发邮件：在你自己的邮箱里打开，检查后自己点发送。</span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <OpenInMail key={`${professorId ?? ""}:${linkedEmail ?? ""}`} professorId={professorId} savedEmail={linkedEmail} letter={letter} />
+          <button onClick={copy} className={btn}>
+            {copied ? "已复制" : "复制全文"}
+          </button>
+          {professorId &&
+            (linkedStatus === "to_contact" ? (
+              <button disabled={pending} onClick={() => startTransition(() => markLetterSentAction(docId, professorId))} className={btn}>
+                我已发送，标记为“已发信”
+              </button>
+            ) : (
+              linkedStatus && <span className="text-muted">教授状态：{PROFESSOR_STATUS_LABELS[linkedStatus]}</span>
+            ))}
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted">附件</span>
@@ -167,6 +183,116 @@ export function LetterPanel({
       </div>
       <ProfessorForm docId={docId} professor={professor} professors={professors} defaultOpen={!professor} label="收件教授" />
     </div>
+  );
+}
+
+const CLIENT_KEY = "gradnavi:mail-client";
+
+/**
+ * 「用邮箱打开」：收件人、标题（第一行「件名：」）、正文都填好，用户检查后自己点发送。
+ * 正文同时复制到剪贴板：日文正文编码后很长，链接放不下或邮箱不支持带正文时直接粘贴。
+ */
+function OpenInMail({ professorId, savedEmail, letter }: { professorId?: string; savedEmail: string | null; letter: { text: () => string; taken: () => Promise<void> } }) {
+  const [to, setTo] = useState(savedEmail ?? "");
+  const [notice, setNotice] = useState<{ text: string; subject?: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+  const menu = useRef<HTMLDetailsElement>(null);
+  // 上次用的邮箱排在最前面（打开菜单时再读，避免服务器渲染和浏览器不一致）
+  const [last, setLast] = useState<MailClient | null>(null);
+  function readLast() {
+    try {
+      const v = localStorage.getItem(CLIENT_KEY);
+      if (MAIL_CLIENTS.some((c) => c.id === v)) setLast(v as MailClient);
+    } catch {
+      // 读不到就按默认顺序
+    }
+  }
+
+  function saveEmail() {
+    const value = to.trim();
+    setError(value && !isEmail(value) ? "邮箱格式不对" : null);
+    if (!professorId || value === (savedEmail ?? "") || (value && !isEmail(value))) return;
+    startTransition(async () => {
+      try {
+        await setProfessorEmailAction(professorId, value);
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    });
+  }
+
+  async function open(client: MailClient) {
+    menu.current?.removeAttribute("open");
+    const recipient = isEmail(to) ? to.trim() : "";
+    const { subject, body } = splitLetter(letter.text());
+    const { url, prefilled } = composeLink(client, { to: recipient, subject, body });
+    // 先在点击当下开始复制、打开新窗口，避免浏览器拦截
+    const copying = copyText(body);
+    const win = client === "default" ? null : window.open("", "_blank");
+    const ok = await copying;
+    await letter.taken();
+    if (client === "default") window.location.assign(url);
+    else if (win) {
+      win.opener = null;
+      win.location.href = url;
+    } else window.open(url, "_blank", "noopener");
+    try {
+      localStorage.setItem(CLIENT_KEY, client);
+    } catch {
+      // 记不住上次用的邮箱也没关系
+    }
+    setLast(client);
+    const paste = ok ? "正文已复制，在邮件正文里粘贴（Ctrl/⌘+V）" : "复制失败，请在编辑器里全选（Ctrl/⌘+A）后复制正文";
+    const missing = recipient ? "" : "收件人还空着，记得填上。";
+    if (prefilled === "all")
+      setNotice({ text: `已在邮箱里打开，${missing}检查后自己点发送。${ok ? "正文也复制了一份，邮件里正文不完整时删掉重新粘贴即可。" : ""}` });
+    else if (prefilled === "no-body") setNotice({ text: `信比较长，邮件里只填好了收件人和标题。${paste}。${missing}` });
+    else setNotice({ text: `已打开邮箱首页：点「写信」，收件人填 ${recipient || "教授邮箱"}，${paste}。`, subject });
+    setTimeout(() => setNotice(null), 15000);
+  }
+
+  const clients = last ? [...MAIL_CLIENTS].sort((a, b) => Number(b.id === last) - Number(a.id === last)) : MAIL_CLIENTS;
+
+  return (
+    <>
+      <label className="flex items-center gap-2">
+        <span className="text-muted">收件人</span>
+        <input
+          type="email"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          onBlur={saveEmail}
+          placeholder="教授邮箱（研究室主页上一般有）"
+          className="input w-56 min-w-0 max-w-full px-2 py-1"
+          data-testid="letter-to"
+        />
+      </label>
+      <details ref={menu} className="relative" onToggle={(e) => e.currentTarget.open && readLast()}>
+        <summary className="btn-primary cursor-pointer list-none px-3 py-1.5 [&::-webkit-details-marker]:hidden" data-testid="open-in-mail">
+          用邮箱打开 <span className="text-xs">▾</span>
+        </summary>
+        <div className="absolute right-0 top-full z-30 mt-1 w-48 rounded-lg border border-line-strong bg-background p-1 text-sm shadow-lg">
+          {clients.map((c) => (
+            <button key={c.id} onClick={() => void open(c.id)} className="block w-full rounded px-2 py-1.5 text-left hover:bg-subtle">
+              {c.label}
+              {c.id === last && <span className="text-muted">（上次用的）</span>}
+            </button>
+          ))}
+        </div>
+      </details>
+      {error && <span className="basis-full text-right text-danger">{error}</span>}
+      {notice && (
+        <span className="basis-full text-right text-muted" role="status" data-testid="mail-notice">
+          {notice.text}
+          {notice.subject && (
+            <>
+              标题：<span className="select-all text-foreground">{notice.subject}</span>
+            </>
+          )}
+        </span>
+      )}
+    </>
   );
 }
 

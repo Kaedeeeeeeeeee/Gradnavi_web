@@ -116,13 +116,14 @@ export const saveProfessorTool = defineTool({
     papers: z.array(z.string().max(300)).max(5).optional(),
     paperRefs: z.array(paperRef).max(5).optional().describe("近期论文，带检索到的链接"),
     acceptsInternational: z.string().max(200).optional(),
+    email: z.string().email().max(200).optional().describe("教授的邮箱：只填官网、研究室主页上查到的"),
     sources: z.array(z.object({ title: z.string().max(200), url: z.string().url().max(500) })).max(5).optional(),
     note: z.string().max(1000).optional(),
   }),
   execute: async ({ searchId, ...input }, { userId }) => {
     // 从候选卡片加入：以检索到的信息为准（论文链接、来源只认检索结果），AI 只补备注
     const fromSearch = searchId ? (await getProfessorSearch(userId, searchId))?.candidates.find((c) => candidateKey(c) === candidateKey(input)) : undefined;
-    const merged = fromSearch ? { ...fromSearch, note: input.note } : input;
+    const merged = fromSearch ? { ...fromSearch, note: input.note, email: input.email } : input;
     const row = await saveProfessor(userId, { ...merged, papers: merged.papers ?? merged.paperRefs?.map(paperLabel) });
     return { id: row.id, name: row.name, university: row.university, schoolLinked: !!row.schoolId, url: "/aspirations" };
   },
@@ -142,6 +143,7 @@ export const updateSavedProfessorTool = defineTool({
     fit: z.string().max(1000).optional(),
     papers: z.array(z.string().max(300)).max(5).optional(),
     acceptsInternational: z.string().max(200).nullable().optional(),
+    email: z.string().email().max(200).nullable().optional().describe("教授的邮箱（套磁信收件人）：只填官网、研究室主页上查到的或用户告诉你的"),
   }),
   execute: async ({ id, ...patch }, { userId }) => {
     const row = await updateSavedProfessor(userId, id, patch, "ai");
@@ -152,6 +154,7 @@ export const updateSavedProfessorTool = defineTool({
       followUpDate: row.followUpDate,
       proposedFollowUp: row.proposedFollowUp ? `${row.proposedFollowUp.date ?? "取消跟进日"}（已提议，等用户在主页同意）` : null,
       note: row.note,
+      email: row.email,
     };
   },
 });

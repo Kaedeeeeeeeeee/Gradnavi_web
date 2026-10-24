@@ -64,6 +64,7 @@ async function documentTab(userId: string, id: string) {
           track={onboarding ? decideTrack(onboarding) : null}
           professors={professors.map((p) => ({ id: p.id, label: `${p.name}（${p.university}）` }))}
           linkedStatus={linked?.status ?? null}
+          linkedEmail={linked?.email ?? null}
           suggestions={bundle.suggestions.map((s) => ({ id: s.id, op: s.op, zh: s.zh, summary: s.summary, source: s.source }))}
           comments={bundle.comments.map((c) => ({ id: c.id, quote: c.quote, body: c.body, category: c.category, status: c.status }))}
           parent={bundle.parent && { ...bundle.parent, version: doc.parentVersion }}

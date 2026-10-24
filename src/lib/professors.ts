@@ -289,12 +289,13 @@ export function letterSkeleton(p: ProfessorInfo) {
 
 /** 给 AI 和页面用的一行摘要 */
 export function describeProfessor(
-  p: ProfessorInfo & { id?: string; status?: ProfessorStatus; note?: string | null; followUpDate?: string | null; fit?: string | null },
+  p: ProfessorInfo & { id?: string; status?: ProfessorStatus; note?: string | null; followUpDate?: string | null; fit?: string | null; email?: string | null },
 ) {
   const parts = [`${p.name}（${professorAffiliation(p)}）`];
   if (p.id) parts.push(`ID：${p.id}`);
   if (p.status) parts.push(`联系状态：${PROFESSOR_STATUS_LABELS[p.status]}`);
   if (p.followUpDate) parts.push(`跟进：${p.followUpDate}`);
+  if (p.email) parts.push(`邮箱：${p.email}`);
   if (p.research) parts.push(`研究：${p.research.slice(0, 200)}`);
   if (p.fit) parts.push(`为什么适合：${p.fit.slice(0, 200)}`);
   if (p.note) parts.push(`备注：${p.note.slice(0, 100)}`);
