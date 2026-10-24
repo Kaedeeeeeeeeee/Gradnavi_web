@@ -29,6 +29,7 @@ import {
 import { applyComment, assistSelection, reviewAsProfessor, translateParagraphs, writeAtCursor, type SelectionResult } from "@/server/doc-assist";
 import { SELECTION_ACTIONS } from "@/lib/doc-assist";
 import { professorToTarget } from "@/lib/professors";
+import { isEmail } from "@/lib/mail-compose";
 import { answerField } from "@/lib/onboarding";
 import { getProfile } from "@/server/profile";
 import { getSavedProfessor, updateSavedProfessor } from "@/server/professors";
@@ -89,6 +90,15 @@ export async function linkProfessorAction(id: string, professorId: string) {
 export async function markLetterSentAction(id: string, professorId: string) {
   const user = await requireUser();
   await updateSavedProfessor(user.id, professorId, { status: "contacted" });
+  revalidatePath("/", "layout");
+}
+
+/** 套磁信收件人：记在志愿里这位教授的邮箱上，空字符串 = 清掉 */
+export async function setProfessorEmailAction(professorId: string, email: string) {
+  const user = await requireUser();
+  const value = email.trim();
+  if (value && !isEmail(value)) throw new Error("邮箱格式不对");
+  await updateSavedProfessor(user.id, professorId, { email: value || null });
   revalidatePath("/", "layout");
 }
 
