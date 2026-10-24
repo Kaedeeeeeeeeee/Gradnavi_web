@@ -9,16 +9,18 @@ import {
 } from "ai";
 import { headers } from "next/headers";
 import { z } from "zod";
+import { profileScores } from "@/lib/aspirations";
 import { getChatModel } from "@/lib/ai/model";
 import { buildSystemPrompt } from "@/lib/ai/prompt";
 import { buildTools } from "@/lib/ai/tools";
 import { auth } from "@/lib/auth";
 import { UsageMeter } from "@/lib/credits";
+import { applicationFacts } from "@/lib/onboarding";
 import { parseQuotes, quotesForModel } from "@/lib/quotes";
 import { describeTask } from "@/lib/tasks";
 import { getOrCreateConversation, loadMessages, saveMessages } from "@/server/conversations";
 import { getBalance, InsufficientCreditsError, recordUsageSafe } from "@/server/credits";
-import { getUserMd } from "@/server/profile";
+import { getProfile } from "@/server/profile";
 import { getTodo, taskLinks, toTaskView } from "@/server/todos";
 
 export const maxDuration = 60;
@@ -87,7 +89,11 @@ export async function POST(req: Request) {
   const messages = await validateUIMessages({ messages: [...history, userMessage], tools });
 
   const today = new Intl.DateTimeFormat("zh-CN", { dateStyle: "full", timeZone: "Asia/Tokyo" }).format(new Date());
-  const instructions = buildSystemPrompt({ userMd: await getUserMd(userId), page, today, task });
+  const profile = await getProfile(userId);
+  const userMd = profile?.markdown ?? "";
+  // 引导问卷定下的路径 / 入学时间 / 路线（和主页顶部那行一样），让 AI 不再问已经知道的事
+  const facts = profile?.onboarding ? applicationFacts(profile.onboarding, profileScores(userMd, profile.onboarding).jlpt) : undefined;
+  const instructions = buildSystemPrompt({ userMd, page, today, task, facts });
   const result = streamText({
     model: getChatModel(),
     instructions,

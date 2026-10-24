@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { addDays, monthGrid, parseMonth, todayJst } from "@/lib/calendar";
 import { profileScores } from "@/lib/aspirations";
-import { decideTrack, PATH_LABELS, suggestPath, TRACK_LABELS } from "@/lib/onboarding";
+import { applicationFacts } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
 import { Suspense } from "react";
 import type { CalendarItem } from "@/lib/calendar";
@@ -79,7 +79,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
     return [{ ...al, changes: diffGuideEvents(al.previous, al.events), task: t ? { id: t.id, title: t.title, started: started.has(t.id) } : null }];
   });
   const intake = toIntakeYear(answers.targetEntry);
-  const path = answers.path === "unsure" ? `${PATH_LABELS[suggestPath(answers, profileScores(profile.markdown, answers).jlpt)]}（建议，待确认）` : PATH_LABELS[answers.path];
+  const { path, track } = applicationFacts(answers, profileScores(profile.markdown, answers).jlpt);
   const { near, rest, far } = agenda(tasks.map(toHome), calendar, today);
   const groupNames: GroupNames = {
     professors: Object.fromEntries(professors.map((p) => [p.id, { name: p.name, school: [p.university, p.department].filter(Boolean).join(" ") }])),
@@ -90,7 +90,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
     <Home
       today={today}
       month={month}
-      profileLine={`路径：${path} · 目标入学：${answers.targetEntry} · 路线：${TRACK_LABELS[decideTrack(answers)]}`}
+      profileLine={`路径：${path} · 目标入学：${answers.targetEntry} · 路线：${track}`}
       overdue={overdueCount(tasks, today)}
       next={
         // AI 判断要几秒：存着的结果直接显示，要重新判断时先显示占位，主页其余部分不用等

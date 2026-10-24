@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { profileScores } from "../aspirations";
 import { listSections, undoSectionChange, upsertSection, getSection } from "../md-sections";
-import { answerField, buildUserMd, decideTrack, entryOptions, guessField, onboardingQuestions, openingMessage, suggestPath, type OnboardingAnswers } from "../onboarding";
+import { buildSystemPrompt } from "../ai/prompt";
+import { answerField, applicationFacts, buildUserMd, decideTrack, entryOptions, guessField, onboardingQuestions, openingMessage, suggestPath, type OnboardingAnswers } from "../onboarding";
 
 const base: OnboardingAnswers = {
   status: "国内本科在读",
@@ -91,4 +92,17 @@ test("撤销记住的信息：没再改过就恢复原样，改过就只删这�
   assert.ok(!undone.includes("预算有限") && undone.includes("想去关西"));
   // 已经撤销过了
   assert.equal(undoSectionChange(undone, c2), null);
+});
+
+test("申请概况：没选路径时给建议并标待确认，系统提示里能看到", () => {
+  const answers = { status: "大四在读", major: "教育学", field: "humanities" as const, planStatus: "rough" as const, targetEntry: "2027年4月" };
+  assert.deepEqual(applicationFacts({ ...answers, path: "kenkyusei" }), {
+    path: "先读研究生，再考修士",
+    targetEntry: "2027年4月",
+    track: "先找教授，再写贴合教授方向的计划书",
+  });
+  assert.equal(applicationFacts({ ...answers, path: "unsure" }).path, "先读研究生，再考修士（建议，待确认）");
+  const prompt = buildSystemPrompt({ userMd: "# 我的档案", today: "2026年10月24日", facts: applicationFacts({ ...answers, path: "kenkyusei" }) });
+  assert.match(prompt, /## 申请概况[^]*路径：先读研究生，再考修士/);
+  assert.doesNotMatch(buildSystemPrompt({ userMd: "", today: "x" }), /## 申请概况/);
 });
