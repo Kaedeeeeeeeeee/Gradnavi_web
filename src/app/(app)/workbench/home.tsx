@@ -80,10 +80,15 @@ export function Home(p: Props) {
   // 同意提议后条目会从「等你处理」消失：弹一条小提示，点「查看」跳到它去了哪里
   const [notice, setNotice] = useState<Notice | null>(null);
   const [revealDate, setRevealDate] = useState<{ date: string } | null>(null);
+  const { openTab } = useShell();
   const notify = (text: string, to?: Reveal) => setNotice({ text, to, n: Date.now() });
   const reveal = (to: Reveal) => {
     if ("date" in to) return setRevealDate({ date: to.date });
-    flash(document.querySelector(`[data-reveal="${"task" in to ? `task:${to.task}` : "agenda"}"]`));
+    if (!("task" in to)) return flash(document.querySelector('[data-reveal="agenda"]'));
+    // 待你确认、已完成的任务不在列表里：直接打开任务详情
+    const row = document.querySelector(`[data-reveal="task:${to.task.id}"]`);
+    if (row) flash(row);
+    else openTab({ kind: "task", id: to.task.id, title: to.task.title });
   };
   // 主页只有两块：「今天」（有事才出现的提醒）和待办 + 日历（一直都在的完整清单）
   return (
@@ -107,7 +112,7 @@ export function Home(p: Props) {
 }
 
 /** 「查看」跳到哪里：某件任务、日历上某一天、整个待办和日程 */
-type Reveal = { task: string } | { date: string } | { agenda: true };
+type Reveal = { task: { id: string; title: string } } | { date: string } | { agenda: true };
 type Notice = { text: string; to?: Reveal; n: number };
 
 /** 滚动到这个元素，并短暂高亮一下 */
@@ -336,7 +341,7 @@ function Awaiting({
         ))}
         {tasks.map((t) => (
           <ProposalRow key={t.id} label="新任务" title={<TaskTitle task={t} className="hover:underline" />} when={t.dueDate && `截止 ${formatDay(t.dueDate)}`}>
-            <ProposalButtons kind="task" id={t.id} date={t.dueDate} onAccepted={() => notify("已加入待办", { task: t.id })} />
+            <ProposalButtons kind="task" id={t.id} date={t.dueDate} onAccepted={() => notify("已加入待办", { task: t })} />
           </ProposalRow>
         ))}
         {changes.map((t) => (
@@ -346,7 +351,7 @@ function Awaiting({
             title={<TaskTitle task={t} className="hover:underline" />}
             when={`${t.dueDate ? formatDay(t.dueDate) : "未定"} → ${t.proposedChange!.dueDate ? formatDay(t.proposedChange!.dueDate) : "不设截止日"}`}
           >
-            <ProposalButtons kind="task" id={t.id} date={t.proposedChange!.dueDate} onAccepted={() => notify("截止日已改好", { task: t.id })} />
+            <ProposalButtons kind="task" id={t.id} date={t.proposedChange!.dueDate} onAccepted={() => notify("截止日已改好", { task: t })} />
           </ProposalRow>
         ))}
         {events.map((e) => (
