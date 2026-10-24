@@ -531,6 +531,10 @@ function chipTarget(name: string, input: unknown, output: unknown): DocTab | nul
     const id = field(output, "searchId");
     return id ? { kind: "search", id, title: `找教授：${field(input, "keywords") ?? ""}`.slice(0, 40) } : null;
   }
+  if (name === "fill_application_form" || name === "refill_application_form" || name === "update_application_form") {
+    const id = field(output, "id") ?? field(input, "id");
+    return id ? { kind: "form", id, title: field(output, "title") ?? field(input, "title") ?? "申请表" } : null;
+  }
   if (name === "fetch_page") {
     const url = field(input, "url");
     return url ? { kind: "web", url, title: url.replace(/^https?:\/\//, "").slice(0, 40) } : null;

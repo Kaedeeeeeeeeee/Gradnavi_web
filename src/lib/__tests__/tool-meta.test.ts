@@ -37,3 +37,13 @@ test("这轮没写出结论：最后一步还在调用工具，或整轮没有�
   // 写完回答后记了一笔，最后一步空着：不算没下文
   assert.ok(!endedWithoutAnswer([step, text("结论……"), { type: "tool-update_user_md" }, step]));
 });
+
+test("没登记中文名的工具不显示变量名；申请表工具说清在做什么", () => {
+  assert.equal(toolChipText("some_new_tool", "running", {}), "正在处理");
+  assert.equal(toolChipText("some_new_tool", "done", {}), "处理完了一步");
+  assert.equal(toolChipText("some_new_tool", "failed", {}), "有一步没成功");
+  assert.equal(toolGroupSummary(["some_new_tool"]), "其他操作");
+  assert.equal(toolChipText("fill_application_form", "running", {}), "正在下载并填写申请表");
+  assert.equal(toolChipText("fill_application_form", "done", {}, { pendingTotal: 12 }), "填好了申请表，12 栏待你确认");
+  assert.equal(toolChipText("update_application_form", "running", {}), "正在提议申请表内容");
+});
