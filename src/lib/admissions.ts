@@ -293,6 +293,7 @@ export function projectGuide(guide: GuideInfo, today: string): { tentative: bool
     title: `${guide.schoolName} ${e.label}`,
     school: guide.schoolName,
     label: e.label,
+    admissionYear: tentative ? guide.admissionYear + 1 : guide.admissionYear,
     date: tentative ? shiftYears(e.date, 1) : e.date,
     endDate: e.endDate ? (tentative ? shiftYears(e.endDate, 1) : e.endDate) : null,
     kind: e.kind,

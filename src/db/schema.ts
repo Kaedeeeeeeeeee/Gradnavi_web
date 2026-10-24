@@ -8,6 +8,7 @@ import type { VersionTrigger } from "../lib/doc-history";
 import type { ZhEntry } from "../lib/doc-zh";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { PaperRef, ProfessorCandidate, ProfessorStatus, SourceLink } from "../lib/professors";
+import type { NextPick } from "../lib/next-pick";
 import type { OnboardingAnswers } from "../lib/onboarding";
 import type { TaskArea, TaskChange, TaskStatus, TaskStep } from "../lib/tasks";
 
@@ -118,6 +119,8 @@ export const todo = pgTable(
     stepKey: text("step_key"),
     /** 分类（语言考试 / 专业课和备考 / 申请准备 / 其他）；为空时按关联对象、流程 key 和标题自动归类（见 lib/tasks.ts taskGroup） */
     area: text("area").$type<TaskArea>(),
+    /** 准备要几天（AI 估、用户可改），主页「下一件事」用它算最晚开始日；空 = 按类型给默认值 */
+    prepDays: integer("prep_days"),
     /** 用户删掉的流程任务只做标记，免得下次对账又加回来 */
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -522,3 +525,16 @@ export const feedback = pgTable(
   },
   (t) => [index("feedback_created_idx").on(t.createdAt)],
 );
+
+/**
+ * 主页「下一件事」的判断结果，每个用户一条。inputKey 是判断用到的全部输入（任务事实、日程、user.md、日期），
+ * 输入没变就直接用，变了才重新让 AI 判断（按用量扣 credit）。
+ */
+export const nextPick = pgTable("next_pick", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  inputKey: text("input_key").notNull(),
+  pick: jsonb("pick").$type<NextPick>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

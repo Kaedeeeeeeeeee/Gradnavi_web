@@ -31,6 +31,8 @@ export type CalendarItem = {
   /** 募集要项日程：研究科名和日程名分开（title = 研究科名 + 日程名），主页关键日期分开显示 */
   school?: string;
   label?: string;
+  /** 募集要项日程是哪个年度的（仮日程是推算出的那一年度）；主页只提醒用户这届的 */
+  admissionYear?: number;
   /** AI 提议、用户还没同意的日程（日历上虚线显示）；proposedChange 是 AI 对已有日程改期的提议 */
   proposed?: boolean;
   proposedChange?: { date: string; endDate: string | null } | null;

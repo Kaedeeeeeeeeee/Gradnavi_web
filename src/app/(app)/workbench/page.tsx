@@ -3,7 +3,12 @@ import { addDays, monthGrid, parseMonth, todayJst } from "@/lib/calendar";
 import { profileScores } from "@/lib/aspirations";
 import { decideTrack, PATH_LABELS, suggestPath, TRACK_LABELS } from "@/lib/onboarding";
 import { requireUser } from "@/lib/session";
-import { agenda, awaitingReview, briefing, groupTasks, keyDates } from "@/lib/tasks";
+import { Suspense } from "react";
+import type { CalendarItem } from "@/lib/calendar";
+import { intakeYear as toIntakeYear, type PickProfessor } from "@/lib/next-pick";
+import { PROFESSOR_STATUS_LABELS } from "@/lib/professors";
+import { agenda, awaitingReview, groupTasks, keyDates, overdueCount, type TaskView } from "@/lib/tasks";
+import { getNextPick } from "@/server/next-pick";
 import { listCalendar, listProposedEvents } from "@/server/calendar";
 import { listTaskConversationIds } from "@/server/conversations";
 import { listDocuments } from "@/server/documents";
@@ -14,13 +19,14 @@ import { listGuideAlerts, listWatchedSchools } from "@/server/schools";
 import { diffGuideEvents } from "@/lib/admissions";
 import { listTodos, toTaskView } from "@/server/todos";
 import { Home, type GroupNames, type HomeTask } from "./home";
+import { NextThing, NextThingLoading, type PickTask } from "./next-thing";
 
 export const metadata = { title: "主页 · GradNavi" };
 
 /** 新募集要项公布后在主页提醒多少天 */
 const ALERT_DAYS = 30;
 
-// 主页两块：「今天」（等你处理 = 待你确认的任务 + AI 的提议，有才出现；最近的一个关键日期）→ 待办和日程（今天先做的那件标「先做这个」）+ 月历（全部关键日期）。
+// 主页两块：「今天」（AI 挑的「下一件事」；等你处理 = 待你确认的任务 + AI 的提议，有才出现；最近的一个关键日期）→ 待办和日程 + 月历（全部关键日期）。
 export default async function WorkbenchPage({ searchParams }: PageProps<"/workbench">) {
   const user = await requireUser();
   const profile = await getProfile(user.id);
@@ -72,6 +78,7 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
     if (t?.status === "done") return [];
     return [{ ...al, changes: diffGuideEvents(al.previous, al.events), task: t ? { id: t.id, title: t.title, started: started.has(t.id) } : null }];
   });
+  const intake = toIntakeYear(answers.targetEntry);
   const path = answers.path === "unsure" ? `${PATH_LABELS[suggestPath(answers, profileScores(profile.markdown, answers).jlpt)]}（建议，待确认）` : PATH_LABELS[answers.path];
   const { near, rest, far } = agenda(tasks.map(toHome), calendar, today);
   const groupNames: GroupNames = {
@@ -84,10 +91,28 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
       today={today}
       month={month}
       profileLine={`路径：${path} · 目标入学：${answers.targetEntry} · 路线：${TRACK_LABELS[decideTrack(answers)]}`}
-      briefing={briefing(tasks.map(toHome), today)}
+      overdue={overdueCount(tasks, today)}
+      next={
+        // AI 判断要几秒：存着的结果直接显示，要重新判断时先显示占位，主页其余部分不用等
+        <Suspense fallback={<NextThingLoading />}>
+          <NextThingSlot
+            input={{
+              userId: user.id,
+              today,
+              userMd: profile.markdown,
+              profileLine: `路径：${path} · 目标入学：${answers.targetEntry}`,
+              intakeYear: intake,
+              tasks,
+              professors: professors.map((p) => ({ id: p.id, name: p.name, status: PROFESSOR_STATUS_LABELS[p.status], followUpDate: p.followUpDate })),
+              calendar,
+            }}
+            tasks={Object.fromEntries(tasks.map(toHome).map((t) => [t.id, { id: t.id, title: t.title, started: t.started, link: t.link }]))}
+          />
+        </Suspense>
+      }
       alerts={alerts}
       pausedMonitors={schools.filter(({ school }) => school.pausedAt).map(({ school }) => `${school.university} ${school.name}`)}
-      countdown={keyDates(calendar, today)}
+      countdown={keyDates(calendar, today, intake)}
       review={awaitingReview(tasks).map(toHome)}
       proposals={{
         tasks: groups.proposals.map(toHome),
@@ -104,4 +129,11 @@ export default async function WorkbenchPage({ searchParams }: PageProps<"/workbe
       calendar={calendar.filter((it) => it.date <= gridTo && (it.endDate ?? it.date) >= gridFrom)}
     />
   );
+}
+
+type PickInput = { userId: string; today: string; userMd: string; profileLine: string; intakeYear: number | null; tasks: TaskView[]; professors: PickProfessor[]; calendar: CalendarItem[] };
+
+async function NextThingSlot({ input, tasks }: { input: PickInput; tasks: Record<string, PickTask> }) {
+  const pick = await getNextPick(input);
+  return pick ? <NextThing pick={pick} tasks={tasks} /> : null;
 }
