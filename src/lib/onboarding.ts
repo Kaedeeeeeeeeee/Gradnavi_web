@@ -189,6 +189,15 @@ export function suggestPath(a: OnboardingAnswers, jlpt?: number): Exclude<PathCh
   return "master";
 }
 
+/**
+ * 主页顶部和 AI 系统提示里的「路径 / 目标入学 / 路线」。用户没选路径时用建议的路径，标「建议，待确认」。
+ * jlpt 同 suggestPath
+ */
+export function applicationFacts(a: OnboardingAnswers, jlpt?: number) {
+  const path = a.path === "unsure" ? `${PATH_LABELS[suggestPath(a, jlpt)]}（建议，待确认）` : PATH_LABELS[a.path];
+  return { path, targetEntry: a.targetEntry, track: TRACK_LABELS[decideTrack(a)] };
+}
+
 const line = (label: string, value: string | undefined) => `- ${label}：${value?.trim() || "（还没聊到）"}`;
 
 const PLAN_STATUS_TEXT: Record<PlanStatus, string> = {
