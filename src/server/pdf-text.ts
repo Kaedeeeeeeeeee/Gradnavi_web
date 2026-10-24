@@ -11,6 +11,13 @@ export async function pdfToText(data: Uint8Array): Promise<string> {
   return text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/** 按页取文字（聊天里读 PDF 用：标出页码，AI 才能说「见 p.15」） */
+export async function pdfPageTexts(data: Uint8Array): Promise<string[]> {
+  const pdf = await getDocumentProxy(new Uint8Array(data));
+  const { text } = await extractText(pdf, { mergePages: false });
+  return text.map((t) => t.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim());
+}
+
 const canvasImport = () => import("@napi-rs/canvas");
 
 /**
