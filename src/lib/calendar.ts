@@ -28,7 +28,7 @@ export type CalendarItem = {
   href?: string;
   /** 募集要项原文链接（官方日期附来源） */
   sourceUrl?: string;
-  /** 募集要项日程：研究科名和日程名分开（title = 研究科名 + 日程名），今日简报分两处显示 */
+  /** 募集要项日程：研究科名和日程名分开（title = 研究科名 + 日程名），主页关键日期分开显示 */
   school?: string;
   label?: string;
   /** AI 提议、用户还没同意的日程（日历上虚线显示）；proposedChange 是 AI 对已有日程改期的提议 */

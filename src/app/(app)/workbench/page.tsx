@@ -20,7 +20,7 @@ export const metadata = { title: "主页 · GradNavi" };
 /** 新募集要项公布后在主页提醒多少天 */
 const ALERT_DAYS = 30;
 
-// 主页：今日简报（含关键日期倒计时）→ 等你处理（待你确认的任务 + AI 的提议，提议同意后才生效）→ 待办和日程（有日期的近 7 天在前，没日期的收在下面）+ 月历。
+// 主页两块：「今天」（等你处理 = 待你确认的任务 + AI 的提议，有才出现；最近的一个关键日期）→ 待办和日程（今天先做的那件标「先做这个」）+ 月历（全部关键日期）。
 export default async function WorkbenchPage({ searchParams }: PageProps<"/workbench">) {
   const user = await requireUser();
   const profile = await getProfile(user.id);
